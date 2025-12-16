@@ -1,0 +1,7 @@
+[package]
+name = "sultan"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+sultan_core = { path = "../sultan_core" }

@@ -1,0 +1,3 @@
+[submodule "sultan_core"]
+	path = sultan_core
+	url = git@github.com:sultanpos/sultan_core.git
