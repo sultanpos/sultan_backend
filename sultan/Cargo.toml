@@ -5,3 +5,17 @@ edition = "2024"
 
 [dependencies]
 sultan_core = { path = "../sultan_core" }
+time = "0.3"
+argon2 = "0.5.3"
+tracing = "0.1"
+axum = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "macros", "uuid", "chrono", "migrate"], default-features = false }
+dotenvy = "0.15"
+tower = "0.5"
+uuid = { version = "1.18.0", features = ["serde", "v4"] }
+chrono = { version = "0.4.41", features = ["serde"] }
+tower-http = { version = "0.6", features = ["trace", "cors"] }
+anyhow = "1"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt", "std", "json"] }
