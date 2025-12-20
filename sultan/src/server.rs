@@ -32,7 +32,7 @@ async fn init_sqlite_db(config: &AppConfig) -> anyhow::Result<SqlitePool> {
         .await?;
 
     tracing::info!("Running SQLite migrations");
-    sqlx::migrate!("../../sultan_core/migrations")
+    sqlx::migrate!("../sultan_core/migrations")
         .run(&pool)
         .await?;
 
