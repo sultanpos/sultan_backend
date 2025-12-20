@@ -127,7 +127,7 @@ async fn test_login_invalid_credentials() {
         .expect("Request failed");
 
     // Assert
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
     let error_msg = response["error"].as_str().unwrap();
     assert!(
         error_msg.contains("Invalid credentials"),
