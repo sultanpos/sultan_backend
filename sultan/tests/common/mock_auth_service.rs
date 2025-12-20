@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use sultan_core::application::{AuthServiceTrait, AuthTokens};
-use sultan_core::domain::{context::BranchContext, DomainResult, Error};
+use sultan_core::domain::{DomainResult, Error, context::BranchContext};
 
 pub struct MockAuthService {
     pub should_succeed: bool,
