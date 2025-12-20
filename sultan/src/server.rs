@@ -60,7 +60,12 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
 
     Ok(AppState {
         config: Arc::new(config.clone()),
-        auth_service: Arc::new(auth_service),
+        auth_service: Arc::new(auth_service)
+            as Arc<
+                dyn sultan_core::application::AuthServiceTrait<
+                        sultan_core::domain::context::BranchContext,
+                    >,
+            >,
     })
 }
 

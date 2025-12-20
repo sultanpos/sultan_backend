@@ -21,3 +21,9 @@ anyhow = "1"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt", "std", "json"] }
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
+
+[dev-dependencies]
+once_cell = "1.21"
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+async-trait = "0.1"
