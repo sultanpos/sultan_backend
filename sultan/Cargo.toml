@@ -20,3 +20,4 @@ tower-http = { version = "0.6", features = ["trace", "cors"] }
 anyhow = "1"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt", "std", "json"] }
 tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"

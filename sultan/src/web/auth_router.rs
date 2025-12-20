@@ -2,9 +2,10 @@ use axum::{Json, Router, extract::State, http::StatusCode, response::IntoRespons
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use sultan_core::domain::DomainResult;
-use tracing::{info, instrument};
+use tracing::instrument;
 
 use crate::web::{AppState, app_state::ConcreteAuthService};
+use crate::with_branch_context;
 
 // ============================================================================
 // DTOs (Request/Response models)
@@ -18,7 +19,8 @@ struct LoginRequest {
 
 #[derive(Debug, Clone, Serialize)]
 struct LoginResponse {
-    success: bool,
+    access_token: String,
+    refresh_token: String,
 }
 
 // ============================================================================
@@ -31,10 +33,20 @@ async fn login(
     State(auth_service): State<Arc<ConcreteAuthService>>,
     Json(payload): Json<LoginRequest>,
 ) -> DomainResult<impl IntoResponse> {
-    Ok((StatusCode::OK, Json(LoginResponse { success: true })))
-}
+    with_branch_context!(ctx => {
+        let tokens = auth_service
+            .login(&ctx, &payload.username, &payload.password)
+            .await?;
 
-// ============================================================================
+        Ok((
+            StatusCode::OK,
+            Json(LoginResponse {
+                access_token: tokens.access_token,
+                refresh_token: tokens.refresh_token,
+            }),
+        ))
+    })
+} // ============================================================================
 // Router
 // ============================================================================
 
