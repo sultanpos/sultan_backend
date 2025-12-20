@@ -42,6 +42,31 @@ async fn test_login_success() {
         "mock_refresh_token_67890"
     );
 }
+
+#[tokio::test]
+async fn test_login_validation_error() {
+    // Setup - use mock auth service
+    let mock_service = Arc::new(MockAuthService::new_success());
+    let app_state = create_mock_app_state(mock_service);
+
+    // Build router
+    let app = Router::new()
+        .nest("/api/auth", auth_router())
+        .with_state(app_state);
+
+    // Make login request
+    let body = json!({
+        "username": "",
+        "password": "testpassword123"
+    });
+
+    let (status, response) = make_request(app, "POST", "/api/auth", Some(body))
+        .await
+        .expect("Request failed");
+
+    // Assert
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
 /*
 #[tokio::test]
 async fn test_login_invalid_credentials() {

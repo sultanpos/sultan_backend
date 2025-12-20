@@ -1,8 +1,10 @@
 use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::post};
 use std::sync::Arc;
 use sultan_core::application::AuthServiceTrait;
+use sultan_core::domain::Error;
 use sultan_core::domain::{DomainResult, context::BranchContext};
 use tracing::instrument;
+use validator::Validate;
 
 use crate::domain::dto::{LoginRequest, LoginResponse};
 use crate::web::AppState;
@@ -18,6 +20,10 @@ async fn login(
     State(auth_service): State<Arc<dyn AuthServiceTrait<BranchContext>>>,
     Json(payload): Json<LoginRequest>,
 ) -> DomainResult<impl IntoResponse> {
+    payload
+        .validate()
+        .map_err(|e| Error::ValidationError(format!("{}", e)))?;
+
     with_branch_context!(ctx => {
         let tokens = auth_service
             .login(&ctx, &payload.username, &payload.password)
