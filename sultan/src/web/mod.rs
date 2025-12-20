@@ -1,4 +1,4 @@
 pub mod app_state;
-pub mod error;
+pub mod auth_router;
 
 pub use app_state::AppState;

@@ -1818,6 +1818,7 @@ dependencies = [
  "sqlx",
  "sultan_core",
  "time",
+ "tokio",
  "tower",
  "tower-http",
  "tracing",
@@ -1831,6 +1832,7 @@ version = "25.0.1"
 dependencies = [
  "argon2",
  "async-trait",
+ "axum",
  "chrono",
  "hex",
  "jsonwebtoken",

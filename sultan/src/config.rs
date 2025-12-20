@@ -7,6 +7,7 @@ pub struct AppConfig {
     pub access_token_ttl: Duration,
     pub refresh_token_ttl: Duration,
     pub database_url: String,
+    pub database_max_connections: u32,
     pub write_log_to_file: bool,
 }
 
@@ -30,11 +31,17 @@ impl AppConfig {
             .to_lowercase();
         let write_log_to_file = matches!(write_log_to_file.as_str(), "1" | "true" | "yes");
 
+        let database_max_connections: u32 = env::var("DATABASE_MAX_CONNECTIONS")
+            .unwrap_or_else(|_| "5".to_string())
+            .parse()
+            .expect("DATABASE_MAX_CONNECTIONS must be a valid number");
+
         Self {
             jwt_secret,
             access_token_ttl: Duration::seconds(access_token_ttl_secs),
             refresh_token_ttl: Duration::days(refresh_token_ttl_days),
             database_url,
+            database_max_connections,
             write_log_to_file,
         }
     }
@@ -51,6 +58,7 @@ mod tests {
             access_token_ttl: Duration::seconds(900),
             refresh_token_ttl: Duration::days(30),
             database_url: "sqlite:test.db".to_string(),
+            database_max_connections: 5,
             write_log_to_file: false,
         };
 
