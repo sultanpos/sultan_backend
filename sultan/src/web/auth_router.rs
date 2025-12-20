@@ -1,27 +1,11 @@
 use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::post};
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use sultan_core::domain::DomainResult;
 use tracing::instrument;
 
+use crate::domain::dto::{LoginRequest, LoginResponse};
 use crate::web::{AppState, app_state::ConcreteAuthService};
 use crate::with_branch_context;
-
-// ============================================================================
-// DTOs (Request/Response models)
-// ============================================================================
-
-#[derive(Debug, Clone, Deserialize)]
-struct LoginRequest {
-    username: String,
-    password: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct LoginResponse {
-    access_token: String,
-    refresh_token: String,
-}
 
 // ============================================================================
 // HTTP Handlers
