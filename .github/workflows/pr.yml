@@ -14,7 +14,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -33,7 +34,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-llvm-cov

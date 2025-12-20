@@ -1936,10 +1936,8 @@ version = "25.0.1"
 dependencies = [
  "argon2",
  "async-trait",
- "axum",
  "chrono",
  "hex",
- "http-body-util",
  "jsonwebtoken",
  "md5",
  "mockall",
