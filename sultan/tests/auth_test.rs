@@ -135,3 +135,97 @@ async fn test_login_invalid_credentials() {
         error_msg
     );
 }
+
+#[tokio::test]
+async fn test_refresh_token_validation_error() {
+    // Setup - use mock auth service
+    let mock_service = Arc::new(MockAuthService::new_success());
+    let app_state = create_mock_app_state(mock_service);
+
+    // Build router
+    let app = Router::new()
+        .nest("/api/auth", auth_router())
+        .with_state(app_state);
+
+    // Make refresh request with empty token
+    let body = json!({
+        "refresh_token": ""
+    });
+
+    let (status, response) = make_request(app, "POST", "/api/auth/refresh", Some(body))
+        .await
+        .expect("Request failed");
+
+    // Assert
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let error_msg = response["error"].as_str().unwrap();
+    assert!(
+        error_msg.contains("Refresh token cannot be empty"),
+        "Expected error message to contain 'Refresh token cannot be empty', got: {}",
+        error_msg
+    );
+}
+
+#[tokio::test]
+async fn test_refresh_token_service_error() {
+    // Setup - use mock auth service that returns error
+    let mock_service = Arc::new(MockAuthService::new_failure());
+    let app_state = create_mock_app_state(mock_service);
+
+    // Build router
+    let app = Router::new()
+        .nest("/api/auth", auth_router())
+        .with_state(app_state);
+
+    // Make refresh request with valid token format but service returns error
+    let body = json!({
+        "refresh_token": "invalid_refresh_token"
+    });
+
+    let (status, response) = make_request(app, "POST", "/api/auth/refresh", Some(body))
+        .await
+        .expect("Request failed");
+
+    // Assert
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let error_msg = response["error"].as_str().unwrap();
+    assert!(
+        error_msg.contains("Invalid refresh token"),
+        "Expected error message to contain 'Invalid refresh token', got: {}",
+        error_msg
+    );
+}
+
+#[tokio::test]
+async fn test_refresh_token_success() {
+    // Setup - use mock auth service
+    let mock_service = Arc::new(MockAuthService::new_success());
+    let app_state = create_mock_app_state(mock_service);
+
+    // Build router
+    let app = Router::new()
+        .nest("/api/auth", auth_router())
+        .with_state(app_state);
+
+    // Make refresh request with valid token
+    let body = json!({
+        "refresh_token": "valid_refresh_token_xyz"
+    });
+
+    let (status, response) = make_request(app, "POST", "/api/auth/refresh", Some(body))
+        .await
+        .expect("Request failed");
+
+    // Assert
+    assert_eq!(status, StatusCode::OK);
+    assert!(response.get("access_token").is_some());
+    assert!(response.get("refresh_token").is_some());
+    assert_eq!(
+        response["access_token"].as_str().unwrap(),
+        "mock_access_token_12345"
+    );
+    assert_eq!(
+        response["refresh_token"].as_str().unwrap(),
+        "mock_refresh_token_67890"
+    );
+}

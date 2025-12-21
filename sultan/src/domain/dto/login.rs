@@ -15,3 +15,15 @@ pub struct LoginResponse {
     pub access_token: String,
     pub refresh_token: String,
 }
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct RefreshTokenRequest {
+    #[validate(length(min = 1, message = "Refresh token cannot be empty"))]
+    pub refresh_token: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct LogoutRequest {
+    #[validate(length(min = 1, message = "Refresh token cannot be empty"))]
+    pub refresh_token: String,
+}
