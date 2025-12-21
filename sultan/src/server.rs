@@ -18,6 +18,7 @@ use crate::{
     web::{
         AppState,
         auth_router::{AuthApiDoc, auth_router},
+        category_router::category_router,
     },
 };
 
@@ -71,6 +72,7 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
                         sultan_core::domain::context::BranchContext,
                     >,
             >,
+        jwt_manager: Arc::new(jwt_manager) as Arc<dyn sultan_core::crypto::JwtManager>,
     })
 }
 
@@ -126,8 +128,15 @@ pub async fn create_app() -> anyhow::Result<Router> {
         .allow_headers([CONTENT_TYPE, AUTHORIZATION])
         .allow_credentials(true);
 
+    // Apply auth middleware to category router
+    let protected_category_router = category_router().layer(axum::middleware::from_fn_with_state(
+        app_state.clone(),
+        crate::web::auth_middleware::verify_jwt,
+    ));
+
     let router = Router::new()
         .nest("/api/auth", auth_router())
+        .nest("/api/category", protected_category_router)
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", AuthApiDoc::openapi()))
         .fallback(handle_404)
         .with_state(app_state)

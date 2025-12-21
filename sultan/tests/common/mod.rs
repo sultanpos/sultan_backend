@@ -9,6 +9,7 @@ use std::sync::Arc;
 use sultan::config::AppConfig;
 use sultan::web::AppState;
 use sultan_core::application::AuthServiceTrait;
+use sultan_core::crypto::{DefaultJwtManager, JwtConfig};
 use sultan_core::domain::context::BranchContext;
 use time::Duration;
 use tower::ServiceExt;
@@ -24,9 +25,15 @@ pub fn create_mock_app_state(auth_service: Arc<dyn AuthServiceTrait<BranchContex
         write_log_to_file: false,
     };
 
+    let jwt_manager = DefaultJwtManager::new(JwtConfig::new(
+        config.jwt_secret.clone(),
+        config.access_token_ttl.whole_minutes(),
+    ));
+
     AppState {
         config: Arc::new(config),
         auth_service,
+        jwt_manager: Arc::new(jwt_manager),
     }
 }
 
