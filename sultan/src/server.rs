@@ -10,6 +10,7 @@ use sultan_core::{
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::OpenApi;
+use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 
@@ -18,7 +19,7 @@ use crate::{
     web::{
         AppState,
         auth_router::{AuthApiDoc, auth_router},
-        category_router::category_router,
+        category_router::{CategoryApiDoc, category_router},
     },
 };
 
@@ -134,10 +135,27 @@ pub async fn create_app() -> anyhow::Result<Router> {
         crate::web::auth_middleware::verify_jwt,
     ));
 
+    // Merge OpenAPI specs
+    let mut openapi = AuthApiDoc::openapi();
+    openapi.merge(CategoryApiDoc::openapi());
+
+    // Add Bearer token security scheme
+    if let Some(components) = openapi.components.as_mut() {
+        components.add_security_scheme(
+            "bearer_auth",
+            SecurityScheme::Http(
+                HttpBuilder::new()
+                    .scheme(HttpAuthScheme::Bearer)
+                    .bearer_format("JWT")
+                    .build(),
+            ),
+        );
+    }
+
     let router = Router::new()
         .nest("/api/auth", auth_router())
         .nest("/api/category", protected_category_router)
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", AuthApiDoc::openapi()))
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", openapi))
         .fallback(handle_404)
         .with_state(app_state)
         .layer(cors)
