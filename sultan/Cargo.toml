@@ -22,6 +22,9 @@ tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt", "std
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
 validator = { version = "0.18", features = ["derive"] }
+utoipa = { version = "5.3", features = ["axum_extras"] }
+utoipa-axum = "0.2"
+utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
 
 [dev-dependencies]
 once_cell = "1.21"

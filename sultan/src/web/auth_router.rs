@@ -5,6 +5,7 @@ use sultan_core::application::AuthServiceTrait;
 use sultan_core::domain::Error;
 use sultan_core::domain::{DomainResult, context::BranchContext};
 use tracing::instrument;
+use utoipa::OpenApi;
 use validator::Validate;
 
 use crate::domain::dto::{LoginRequest, LoginResponse, LogoutRequest, RefreshTokenRequest};
@@ -12,10 +13,37 @@ use crate::web::AppState;
 use crate::with_branch_context;
 
 // ============================================================================
+// OpenAPI Documentation
+// ============================================================================
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(login, refresh, logout),
+    components(schemas(LoginRequest, LoginResponse, RefreshTokenRequest, LogoutRequest)),
+    tags(
+        (name = "auth", description = "Authentication endpoints")
+    )
+)]
+pub struct AuthApiDoc;
+
+// ============================================================================
 // HTTP Handlers
 // ============================================================================
 
-/// Register a new user
+/// Login with username and password
+///
+/// Authenticate a user with their credentials and receive access and refresh tokens.
+#[utoipa::path(
+    post,
+    path = "/api/auth",
+    tag = "auth",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "Login successful", body = LoginResponse),
+        (status = 400, description = "Bad request - validation error"),
+        (status = 401, description = "Unauthorized - invalid credentials")
+    )
+)]
 #[instrument(skip(auth_service, payload))]
 async fn login(
     State(auth_service): State<Arc<dyn AuthServiceTrait<BranchContext>>>,
@@ -40,6 +68,20 @@ async fn login(
     })
 }
 
+/// Refresh access token
+///
+/// Use a refresh token to obtain a new access token and refresh token.
+#[utoipa::path(
+    post,
+    path = "/api/auth/refresh",
+    tag = "auth",
+    request_body = RefreshTokenRequest,
+    responses(
+        (status = 200, description = "Token refreshed successfully", body = LoginResponse),
+        (status = 400, description = "Bad request - validation error"),
+        (status = 401, description = "Unauthorized - invalid refresh token")
+    )
+)]
 #[instrument(skip(auth_service, payload))]
 async fn refresh(
     State(auth_service): State<Arc<dyn AuthServiceTrait<BranchContext>>>,
@@ -64,6 +106,20 @@ async fn refresh(
     })
 }
 
+/// Logout user
+///
+/// Invalidate a refresh token to log out the user.
+#[utoipa::path(
+    delete,
+    path = "/api/auth",
+    tag = "auth",
+    request_body = LogoutRequest,
+    responses(
+        (status = 204, description = "Logout successful"),
+        (status = 400, description = "Bad request - validation error"),
+        (status = 401, description = "Unauthorized - invalid refresh token")
+    )
+)]
 #[instrument(skip(auth_service, payload))]
 async fn logout(
     State(auth_service): State<Arc<dyn AuthServiceTrait<BranchContext>>>,
