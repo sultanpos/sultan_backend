@@ -9,11 +9,16 @@ use sultan_core::{
 };
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 
 use crate::{
     config::AppConfig,
-    web::{AppState, auth_router::auth_router},
+    web::{
+        AppState,
+        auth_router::{AuthApiDoc, auth_router},
+    },
 };
 
 async fn init_sqlite_db(config: &AppConfig) -> anyhow::Result<SqlitePool> {
@@ -123,6 +128,7 @@ pub async fn create_app() -> anyhow::Result<Router> {
 
     let router = Router::new()
         .nest("/api/auth", auth_router())
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", AuthApiDoc::openapi()))
         .fallback(handle_404)
         .with_state(app_state)
         .layer(cors)

@@ -97,6 +97,18 @@ cargo build --release
 
 The server will start on `http://0.0.0.0:8721`
 
+### 6. Access API Documentation
+
+Once the server is running, you can access the interactive Swagger UI at:
+
+**http://localhost:8721/swagger-ui/**
+
+The Swagger UI provides:
+- Interactive API documentation
+- Ability to test endpoints directly from the browser
+- Request/response examples
+- Schema definitions
+
 ## 🧪 Testing
 
 ### Run all tests
@@ -165,23 +177,17 @@ sultan_backend/
 
 ## 🔌 API Endpoints
 
+All API endpoints are documented using OpenAPI 3.0 specification and available through Swagger UI at `/swagger-ui/`.
+
 ### Authentication
 
+**Base URL**: `/api/auth`
+
 - `POST /api/auth` - Login with username and password
-  ```json
-  {
-    "username": "admin",
-    "password": "password123"
-  }
-  ```
-  
-  Response:
-  ```json
-  {
-    "access_token": "eyJ...",
-    "refresh_token": "eyJ..."
-  }
-  ```
+- `POST /api/auth/refresh` - Refresh access token using refresh token
+- `DELETE /api/auth` - Logout (invalidate refresh token)
+
+For detailed request/response schemas and to test the endpoints interactively, visit the Swagger UI documentation.
 
 ## 🔧 Configuration
 
