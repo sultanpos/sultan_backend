@@ -8,7 +8,9 @@ use tracing::instrument;
 use utoipa::OpenApi;
 use validator::Validate;
 
-use crate::domain::dto::{LoginRequest, LoginResponse, LogoutRequest, RefreshTokenRequest};
+use crate::domain::dto::{
+    ErrorResponse, LoginRequest, LoginResponse, LogoutRequest, RefreshTokenRequest,
+};
 use crate::web::AppState;
 use crate::with_branch_context;
 
@@ -19,7 +21,7 @@ use crate::with_branch_context;
 #[derive(OpenApi)]
 #[openapi(
     paths(login, refresh, logout),
-    components(schemas(LoginRequest, LoginResponse, RefreshTokenRequest, LogoutRequest)),
+    components(schemas(LoginRequest, LoginResponse, RefreshTokenRequest, LogoutRequest, ErrorResponse)),
     tags(
         (name = "auth", description = "Authentication endpoints")
     )
@@ -40,8 +42,8 @@ pub struct AuthApiDoc;
     request_body = LoginRequest,
     responses(
         (status = 200, description = "Login successful", body = LoginResponse),
-        (status = 400, description = "Bad request - validation error"),
-        (status = 401, description = "Unauthorized - invalid credentials")
+        (status = 400, description = "Bad request - validation error", body = ErrorResponse),
+        (status = 401, description = "Unauthorized - invalid credentials", body = ErrorResponse)
     )
 )]
 #[instrument(skip(auth_service, payload))]
@@ -78,8 +80,8 @@ async fn login(
     request_body = RefreshTokenRequest,
     responses(
         (status = 200, description = "Token refreshed successfully", body = LoginResponse),
-        (status = 400, description = "Bad request - validation error"),
-        (status = 401, description = "Unauthorized - invalid refresh token")
+        (status = 400, description = "Bad request - validation error", body = ErrorResponse),
+        (status = 401, description = "Unauthorized - invalid refresh token", body = ErrorResponse)
     )
 )]
 #[instrument(skip(auth_service, payload))]
@@ -116,8 +118,8 @@ async fn refresh(
     request_body = LogoutRequest,
     responses(
         (status = 204, description = "Logout successful"),
-        (status = 400, description = "Bad request - validation error"),
-        (status = 401, description = "Unauthorized - invalid refresh token")
+        (status = 400, description = "Bad request - validation error", body = ErrorResponse),
+        (status = 401, description = "Unauthorized - invalid refresh token", body = ErrorResponse)
     )
 )]
 #[instrument(skip(auth_service, payload))]
