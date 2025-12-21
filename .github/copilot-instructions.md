@@ -224,30 +224,32 @@ sqlx::migrate!("../sultan_core/migrations")
 
 ### Code Quality Checks (ALWAYS RUN THESE)
 
-**CRITICAL**: Before committing any changes, ALWAYS run these commands in order:
+**CRITICAL**: Before committing any changes to the sultan project, ALWAYS run these commands in order:
 
 1. **Format Code**:
 ```bash
-cargo fmt --all
+cargo fmt --package sultan
 ```
 
 2. **Lint with Clippy** (must pass with zero warnings):
 ```bash
-cargo clippy --all-targets --all-features -- -D warnings
+cargo clippy --package sultan --all-targets -- -D warnings
 ```
 
 3. **Run All Tests** (all must pass):
 ```bash
-cargo test --workspace
+cargo test --package sultan
 ```
 
 These three commands are **mandatory** and will be checked in CI/CD. Never skip them.
+
+**Note**: We only run these commands for the `sultan` package (web layer). The `sultan_core` submodule has its own CI/CD pipeline and quality checks.
 
 ### Development Process
 
 1. **Before making changes**: Understand the current implementation
 2. **Make atomic changes**: One logical change per commit
-3. **After EVERY change**: Run `cargo fmt`, `cargo clippy`, `cargo test`
+3. **After EVERY change**: Run `cargo fmt --package sultan`, `cargo clippy --package sultan`, `cargo test --package sultan`
 4. **Write tests**: Add integration tests for new endpoints
 5. **Update documentation**: Keep README and comments current
 
@@ -258,7 +260,7 @@ These three commands are **mandatory** and will be checked in CI/CD. Never skip 
 3. **Add to AppState** with trait object
 4. **Register router** in `sultan/src/server.rs`
 5. **Write tests** in `sultan/tests/`
-6. **Run**: `cargo fmt`, `cargo clippy`, `cargo test`
+6. **Run**: `cargo fmt --package sultan`, `cargo clippy --package sultan`, `cargo test --package sultan`
 
 ## Common Patterns & Best Practices
 
@@ -319,15 +321,15 @@ sqlx::migrate!("../sultan_core/migrations")
 
 ## Code Style Guidelines
 
-1. **Format**: Always run `cargo fmt --all`
-2. **Clippy**: Fix all warnings (`cargo clippy -- -D warnings`)
+1. **Format**: Always run `cargo fmt --package sultan`
+2. **Clippy**: Fix all warnings (`cargo clippy --package sultan -- -D warnings`)
 3. **Imports**: Group by std, external crates, internal modules
 4. **Naming**: snake_case for functions/variables, PascalCase for types
 5. **Error Messages**: Be specific and actionable
 
 ## Remember
 
-- **ALWAYS RUN**: `cargo fmt`, `cargo clippy`, `cargo test` after ANY changes
+- **ALWAYS RUN**: `cargo fmt --package sultan`, `cargo clippy --package sultan`, `cargo test --package sultan` after ANY changes
 - **Test first**: Write tests before implementing features
 - **Type safety**: Leverage Rust's type system
 - **Clean architecture**: Respect layer boundaries
