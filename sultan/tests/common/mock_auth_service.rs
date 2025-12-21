@@ -65,6 +65,9 @@ impl AuthServiceTrait<BranchContext> for MockAuthService {
     }
 
     async fn logout(&self, _ctx: &BranchContext, _refresh_token: &str) -> DomainResult<()> {
+        if !self.should_succeed {
+            return Err(Error::Unauthorized("Invalid refresh token".to_string()));
+        }
         Ok(())
     }
 }
