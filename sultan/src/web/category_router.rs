@@ -14,7 +14,9 @@ use tracing::instrument;
 use utoipa::OpenApi;
 use validator::Validate;
 
-use crate::domain::dto::category::{CategoryResponse, CategoryUpdateRequest};
+use crate::domain::dto::category::{
+    CategoryChildResponse, CategoryResponse, CategoryUpdateRequest,
+};
 use crate::domain::dto::{CategoryCreateRequest, CategoryCreateResponse, ErrorResponse};
 use crate::web::AppState;
 
@@ -30,6 +32,7 @@ use crate::web::AppState;
         CategoryCreateResponse,
         CategoryUpdateRequest,
         CategoryResponse,
+        CategoryChildResponse,
         ErrorResponse
     )),
     tags(
@@ -196,15 +199,16 @@ async fn get_by_id(
         Some(category) => Ok((
             StatusCode::OK,
             Json(CategoryResponse {
+                id: category.id,
                 name: category.name,
                 description: category.description,
                 children: category.children.map(|children| {
                     children
                         .into_iter()
-                        .map(|child| CategoryResponse {
+                        .map(|child| CategoryChildResponse {
+                            id: child.id,
                             name: child.name,
                             description: child.description,
-                            children: None, // For simplicity, not including grandchildren
                         })
                         .collect()
                 }),
@@ -242,15 +246,16 @@ async fn get_all(
             result
                 .into_iter()
                 .map(|category| CategoryResponse {
+                    id: category.id,
                     name: category.name,
                     description: category.description,
                     children: category.children.map(|children| {
                         children
                             .into_iter()
-                            .map(|child| CategoryResponse {
+                            .map(|child| CategoryChildResponse {
+                                id: child.id,
                                 name: child.name,
                                 description: child.description,
-                                children: None,
                             })
                             .collect()
                     }),

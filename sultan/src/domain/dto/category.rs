@@ -54,9 +54,23 @@ pub struct CategoryUpdateRequest {
     pub parent_id: Update<i64>,
 }
 
+/// Child category response (simplified, no recursion)
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CategoryChildResponse {
+    pub id: i64,
+    /// Category name
+    #[schema(example = "Laptops")]
+    pub name: String,
+
+    /// Category description
+    #[schema(example = "Laptops and Notebooks")]
+    pub description: Option<String>,
+}
+
 /// Category response with hierarchical structure
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CategoryResponse {
+    pub id: i64,
     /// Category name
     #[schema(example = "Electronics")]
     pub name: String,
@@ -66,5 +80,5 @@ pub struct CategoryResponse {
     pub description: Option<String>,
 
     /// Child categories (one level deep)
-    pub children: Option<Vec<CategoryResponse>>,
+    pub children: Option<Vec<CategoryChildResponse>>,
 }
