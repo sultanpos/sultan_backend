@@ -40,18 +40,32 @@ impl CategoryServiceTrait<BranchContext> for MockCategoryService {
     async fn update(
         &self,
         _ctx: &BranchContext,
-        _id: i64,
+        id: i64,
         _category: &CategoryUpdate,
     ) -> DomainResult<()> {
         if !self.should_succeed {
             return Err(Error::Internal("Failed to update category".to_string()));
         }
+        // Return NotFound if id is not 1
+        if id != 1 {
+            return Err(Error::NotFound(format!(
+                "Category with id {} not found",
+                id
+            )));
+        }
         Ok(())
     }
 
-    async fn delete(&self, _ctx: &BranchContext, _id: i64) -> DomainResult<()> {
+    async fn delete(&self, _ctx: &BranchContext, id: i64) -> DomainResult<()> {
         if !self.should_succeed {
             return Err(Error::Internal("Failed to delete category".to_string()));
+        }
+        // Return NotFound if id is not 1
+        if id != 1 {
+            return Err(Error::NotFound(format!(
+                "Category with id {} not found",
+                id
+            )));
         }
         Ok(())
     }

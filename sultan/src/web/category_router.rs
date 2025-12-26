@@ -184,8 +184,8 @@ async fn get_all(
 pub fn category_router() -> Router<AppState> {
     Router::new()
         .route("/", post(create))
-        .route("/:id", put(update))
-        .route("/:id", delete(delete_category))
-        .route("/:id", get(get_by_id))
+        .route("/{id}", put(update))
+        .route("/{id}", delete(delete_category))
+        .route("/{id}", get(get_by_id))
         .route("/", get(get_all))
 }
