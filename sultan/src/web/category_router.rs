@@ -24,8 +24,14 @@ use crate::web::AppState;
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(create),
-    components(schemas(CategoryCreateRequest, CategoryCreateResponse, ErrorResponse)),
+    paths(create, update, delete_category, get_by_id, get_all),
+    components(schemas(
+        CategoryCreateRequest,
+        CategoryCreateResponse,
+        CategoryUpdateRequest,
+        CategoryResponse,
+        ErrorResponse
+    )),
     tags(
         (name = "category", description = "Category management endpoints")
     ),
@@ -81,6 +87,28 @@ async fn create(
     Ok((StatusCode::CREATED, Json(CategoryCreateResponse { id })))
 }
 
+/// Update an existing category
+///
+/// Updates a category's information. All fields in the request body are optional.
+/// Requires authentication.
+#[utoipa::path(
+    put,
+    path = "/api/category/{id}",
+    tag = "category",
+    request_body = CategoryUpdateRequest,
+    params(
+        ("id" = i64, Path, description = "Category ID to update")
+    ),
+    responses(
+        (status = 204, description = "Category updated successfully"),
+        (status = 400, description = "Bad request - validation error", body = ErrorResponse),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse),
+        (status = 404, description = "Category not found", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 #[instrument(skip(category_service, payload, ctx))]
 async fn update(
     State(category_service): State<Arc<dyn CategoryServiceTrait<BranchContext>>>,
@@ -108,6 +136,25 @@ async fn update(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Delete a category
+///
+/// Soft deletes a category by marking it as deleted. Requires authentication.
+#[utoipa::path(
+    delete,
+    path = "/api/category/{id}",
+    tag = "category",
+    params(
+        ("id" = i64, Path, description = "Category ID to delete")
+    ),
+    responses(
+        (status = 204, description = "Category deleted successfully"),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse),
+        (status = 404, description = "Category not found", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 #[instrument(skip(category_service, ctx))]
 async fn delete_category(
     State(category_service): State<Arc<dyn CategoryServiceTrait<BranchContext>>>,
@@ -118,6 +165,26 @@ async fn delete_category(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Get a category by ID
+///
+/// Retrieves detailed information about a specific category, including its children.
+/// Requires authentication.
+#[utoipa::path(
+    get,
+    path = "/api/category/{id}",
+    tag = "category",
+    params(
+        ("id" = i64, Path, description = "Category ID to retrieve")
+    ),
+    responses(
+        (status = 200, description = "Category retrieved successfully", body = CategoryResponse),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse),
+        (status = 404, description = "Category not found", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 #[instrument(skip(category_service, ctx))]
 async fn get_by_id(
     State(category_service): State<Arc<dyn CategoryServiceTrait<BranchContext>>>,
@@ -147,6 +214,22 @@ async fn get_by_id(
     }
 }
 
+/// Get all categories
+///
+/// Retrieves a list of all categories with their hierarchical structure.
+/// Each category includes its immediate children. Requires authentication.
+#[utoipa::path(
+    get,
+    path = "/api/category",
+    tag = "category",
+    responses(
+        (status = 200, description = "Categories retrieved successfully", body = Vec<CategoryResponse>),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 #[instrument(skip(category_service, ctx))]
 async fn get_all(
     State(category_service): State<Arc<dyn CategoryServiceTrait<BranchContext>>>,

@@ -54,9 +54,17 @@ pub struct CategoryUpdateRequest {
     pub parent_id: Update<i64>,
 }
 
+/// Category response with hierarchical structure
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CategoryResponse {
+    /// Category name
+    #[schema(example = "Electronics")]
     pub name: String,
+
+    /// Category description
+    #[schema(example = "Electronic devices and accessories")]
     pub description: Option<String>,
+
+    /// Child categories (one level deep)
     pub children: Option<Vec<CategoryResponse>>,
 }
