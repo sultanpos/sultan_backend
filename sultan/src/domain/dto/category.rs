@@ -46,11 +46,11 @@ pub struct CategoryUpdateRequest {
     pub name: String,
 
     /// Category description (optional)
-    #[schema(example = "Electronic devices and accessories")]
+    #[schema(example = "Electronic devices and accessories", value_type = Option<String>)]
     pub description: Update<String>,
 
     /// Parent category ID (optional, for subcategories)
-    #[schema(example = 1)]
+    #[schema(example = 1, value_type = Option<i64>)]
     pub parent_id: Update<i64>,
 }
 
