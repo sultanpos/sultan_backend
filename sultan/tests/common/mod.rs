@@ -1,4 +1,5 @@
 pub mod mock_auth_service;
+pub mod mock_category_service;
 
 use anyhow::Result;
 use axum::Router;
@@ -8,14 +9,17 @@ use serde_json::Value;
 use std::sync::Arc;
 use sultan::config::AppConfig;
 use sultan::web::AppState;
-use sultan_core::application::AuthServiceTrait;
+use sultan_core::application::{AuthServiceTrait, CategoryServiceTrait};
 use sultan_core::crypto::{DefaultJwtManager, JwtConfig};
 use sultan_core::domain::context::BranchContext;
 use time::Duration;
 use tower::ServiceExt;
 
 /// Create a test app state with a mock auth service
-pub fn create_mock_app_state(auth_service: Arc<dyn AuthServiceTrait<BranchContext>>) -> AppState {
+pub fn create_mock_app_state(
+    auth_service: Arc<dyn AuthServiceTrait<BranchContext>>,
+    category_service: Arc<dyn CategoryServiceTrait<BranchContext>>,
+) -> AppState {
     let config = AppConfig {
         database_url: "sqlite://test.db".to_string(),
         jwt_secret: "test_secret".to_string(),
@@ -34,6 +38,7 @@ pub fn create_mock_app_state(auth_service: Arc<dyn AuthServiceTrait<BranchContex
         config: Arc::new(config),
         auth_service,
         jwt_manager: Arc::new(jwt_manager),
+        category_service,
     }
 }
 

@@ -12,7 +12,6 @@ use crate::domain::dto::{
     ErrorResponse, LoginRequest, LoginResponse, LogoutRequest, RefreshTokenRequest,
 };
 use crate::web::AppState;
-use crate::with_branch_context;
 
 // ============================================================================
 // OpenAPI Documentation
@@ -54,20 +53,18 @@ async fn login(
     payload
         .validate()
         .map_err(|e| Error::ValidationError(format!("{}", e)))?;
+    let ctx = BranchContext::new();
+    let tokens = auth_service
+        .login(&ctx, &payload.username, &payload.password)
+        .await?;
 
-    with_branch_context!(ctx => {
-        let tokens = auth_service
-            .login(&ctx, &payload.username, &payload.password)
-            .await?;
-
-        Ok((
-            StatusCode::OK,
-            Json(LoginResponse {
-                access_token: tokens.access_token,
-                refresh_token: tokens.refresh_token,
-            }),
-        ))
-    })
+    Ok((
+        StatusCode::OK,
+        Json(LoginResponse {
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token,
+        }),
+    ))
 }
 
 /// Refresh access token
@@ -92,20 +89,16 @@ async fn refresh(
     payload
         .validate()
         .map_err(|e| Error::ValidationError(format!("{}", e)))?;
+    let ctx = BranchContext::new();
+    let tokens = auth_service.refresh(&ctx, &payload.refresh_token).await?;
 
-    with_branch_context!(ctx => {
-        let tokens = auth_service
-            .refresh(&ctx, &payload.refresh_token)
-            .await?;
-
-        Ok((
-            StatusCode::OK,
-            Json(LoginResponse {
-                access_token: tokens.access_token,
-                refresh_token: tokens.refresh_token,
-            }),
-        ))
-    })
+    Ok((
+        StatusCode::OK,
+        Json(LoginResponse {
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token,
+        }),
+    ))
 }
 
 /// Logout user
@@ -130,14 +123,10 @@ async fn logout(
     payload
         .validate()
         .map_err(|e| Error::ValidationError(format!("{}", e)))?;
+    let ctx = BranchContext::new();
+    auth_service.logout(&ctx, &payload.refresh_token).await?;
 
-    with_branch_context!(ctx => {
-        auth_service
-            .logout(&ctx, &payload.refresh_token)
-            .await?;
-
-        Ok(StatusCode::NO_CONTENT)
-    })
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ============================================================================
