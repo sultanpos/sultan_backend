@@ -8,12 +8,14 @@ use sultan_core::domain::{
 
 pub struct MockCategoryService {
     pub should_succeed: bool,
+    pub id: i64,
 }
 
 impl MockCategoryService {
     pub fn new_success() -> Self {
         Self {
             should_succeed: true,
+            id: 1,
         }
     }
 
@@ -21,17 +23,18 @@ impl MockCategoryService {
     pub fn new_failure() -> Self {
         Self {
             should_succeed: false,
+            id: 1,
         }
     }
 }
 
 #[async_trait]
 impl CategoryServiceTrait<BranchContext> for MockCategoryService {
-    async fn create(&self, _ctx: &BranchContext, _category: &CategoryCreate) -> DomainResult<()> {
+    async fn create(&self, _ctx: &BranchContext, _category: &CategoryCreate) -> DomainResult<i64> {
         if !self.should_succeed {
             return Err(Error::Internal("Failed to create category".to_string()));
         }
-        Ok(())
+        Ok(self.id)
     }
 
     async fn update(

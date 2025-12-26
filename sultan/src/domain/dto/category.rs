@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
+use sultan_core::domain::model::Update;
 use utoipa::ToSchema;
 use validator::Validate;
 
 /// Request to create a new category
 #[derive(Debug, Deserialize, Validate, ToSchema)]
-pub struct CreateCategoryRequest {
+pub struct CategoryCreateRequest {
     /// Category name
     #[validate(length(
         min = 1,
@@ -26,24 +27,36 @@ pub struct CreateCategoryRequest {
 
 /// Response after creating a category
 #[derive(Debug, Serialize, ToSchema)]
-pub struct CategoryResponse {
+pub struct CategoryCreateResponse {
     /// Category ID
     #[schema(example = 1)]
     pub id: i64,
+}
 
+/// Request to update a new category
+#[derive(Debug, Deserialize, Validate, ToSchema)]
+pub struct CategoryUpdateRequest {
     /// Category name
+    #[validate(length(
+        min = 1,
+        max = 100,
+        message = "Name must be between 1 and 100 characters"
+    ))]
     #[schema(example = "Electronics")]
     pub name: String,
 
-    /// Category description
+    /// Category description (optional)
     #[schema(example = "Electronic devices and accessories")]
-    pub description: Option<String>,
+    pub description: Update<String>,
 
-    /// Parent category ID
+    /// Parent category ID (optional, for subcategories)
     #[schema(example = 1)]
-    pub parent_id: Option<i64>,
+    pub parent_id: Update<i64>,
+}
 
-    /// Creation timestamp
-    #[schema(example = "2025-12-21T10:30:00Z")]
-    pub created_at: String,
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CategoryResponse {
+    pub name: String,
+    pub description: Option<String>,
+    pub children: Option<Vec<CategoryResponse>>,
 }

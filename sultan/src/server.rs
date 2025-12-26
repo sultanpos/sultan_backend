@@ -11,6 +11,7 @@ use sultan_core::{
     application::{AuthService, AuthServiceTrait, CategoryService, CategoryServiceTrait},
     crypto::{Argon2PasswordHasher, DefaultJwtManager, JwtConfig, JwtManager},
     domain::BranchContext,
+    snowflake::SnowflakeGenerator,
     storage::{
         SqliteUserRepository,
         sqlite::{SqliteCategoryRepository, SqliteTokenRepository},
@@ -75,7 +76,8 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
         password_hasher,
         jwt_manager.clone(),
     );
-    let category_servicxe = CategoryService::new(category_repository);
+    let snowflake_generator = SnowflakeGenerator::new(1)?;
+    let category_servicxe = CategoryService::new(category_repository, snowflake_generator);
 
     Ok(AppState {
         config: Arc::new(config.clone()),
