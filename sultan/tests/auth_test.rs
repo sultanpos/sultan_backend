@@ -5,18 +5,15 @@ use axum::http::StatusCode;
 use serde_json::json;
 use std::sync::Arc;
 
-use common::{
-    create_mock_app_state, make_request, mock_auth_service::MockAuthService,
-    mock_category_service::MockCategoryService,
-};
+use common::{MockAppStateBuilder, make_request, mock_auth_service::MockAuthService};
 use sultan::web::auth_router::auth_router;
 
 #[tokio::test]
 async fn test_login_success() {
     // Setup - use mock auth service
-    let mock_auth = Arc::new(MockAuthService::new_success());
-    let mock_category = Arc::new(MockCategoryService::new_success());
-    let app_state = create_mock_app_state(mock_auth, mock_category);
+    let app_state = MockAppStateBuilder::new()
+        .with_auth_service(Arc::new(MockAuthService::new_success()))
+        .build();
 
     // Build router
     let app = Router::new()
@@ -50,8 +47,9 @@ async fn test_login_success() {
 #[tokio::test]
 async fn test_login_validation_error() {
     // Setup - use mock auth service
-    let mock_auth = Arc::new(MockAuthService::new_success());
-    let app_state = create_mock_app_state(mock_auth, Arc::new(MockCategoryService::new_success()));
+    let app_state = MockAppStateBuilder::new()
+        .with_auth_service(Arc::new(MockAuthService::new_success()))
+        .build();
 
     // Build router
     let app = Router::new()
@@ -81,8 +79,9 @@ async fn test_login_validation_error() {
 #[tokio::test]
 async fn test_login_validation_password_error() {
     // Setup - use mock auth service
-    let mock_auth = Arc::new(MockAuthService::new_success());
-    let app_state = create_mock_app_state(mock_auth, Arc::new(MockCategoryService::new_success()));
+    let app_state = MockAppStateBuilder::new()
+        .with_auth_service(Arc::new(MockAuthService::new_success()))
+        .build();
 
     // Build router
     let app = Router::new()
@@ -112,8 +111,9 @@ async fn test_login_validation_password_error() {
 #[tokio::test]
 async fn test_login_invalid_credentials() {
     // Setup - use mock auth service
-    let mock_auth = Arc::new(MockAuthService::new_success());
-    let app_state = create_mock_app_state(mock_auth, Arc::new(MockCategoryService::new_success()));
+    let app_state = MockAppStateBuilder::new()
+        .with_auth_service(Arc::new(MockAuthService::new_success()))
+        .build();
 
     // Build router
     let app = Router::new()
@@ -143,8 +143,9 @@ async fn test_login_invalid_credentials() {
 #[tokio::test]
 async fn test_refresh_token_validation_error() {
     // Setup - use mock auth service
-    let mock_auth = Arc::new(MockAuthService::new_success());
-    let app_state = create_mock_app_state(mock_auth, Arc::new(MockCategoryService::new_success()));
+    let app_state = MockAppStateBuilder::new()
+        .with_auth_service(Arc::new(MockAuthService::new_success()))
+        .build();
 
     // Build router
     let app = Router::new()
@@ -173,8 +174,9 @@ async fn test_refresh_token_validation_error() {
 #[tokio::test]
 async fn test_refresh_token_service_error() {
     // Setup - use mock auth service that returns error
-    let mock_auth = Arc::new(MockAuthService::new_failure());
-    let app_state = create_mock_app_state(mock_auth, Arc::new(MockCategoryService::new_success()));
+    let app_state = MockAppStateBuilder::new()
+        .with_auth_service(Arc::new(MockAuthService::new_failure()))
+        .build();
 
     // Build router
     let app = Router::new()
@@ -203,8 +205,9 @@ async fn test_refresh_token_service_error() {
 #[tokio::test]
 async fn test_refresh_token_success() {
     // Setup - use mock auth service
-    let mock_auth = Arc::new(MockAuthService::new_success());
-    let app_state = create_mock_app_state(mock_auth, Arc::new(MockCategoryService::new_success()));
+    let app_state = MockAppStateBuilder::new()
+        .with_auth_service(Arc::new(MockAuthService::new_success()))
+        .build();
 
     // Build router
     let app = Router::new()
@@ -237,8 +240,9 @@ async fn test_refresh_token_success() {
 #[tokio::test]
 async fn test_logout_validation_error() {
     // Setup - use mock auth service
-    let mock_auth = Arc::new(MockAuthService::new_success());
-    let app_state = create_mock_app_state(mock_auth, Arc::new(MockCategoryService::new_success()));
+    let app_state = MockAppStateBuilder::new()
+        .with_auth_service(Arc::new(MockAuthService::new_success()))
+        .build();
 
     // Build router
     let app = Router::new()
@@ -267,8 +271,9 @@ async fn test_logout_validation_error() {
 #[tokio::test]
 async fn test_logout_service_error() {
     // Setup - use mock auth service that returns error
-    let mock_auth = Arc::new(MockAuthService::new_failure());
-    let app_state = create_mock_app_state(mock_auth, Arc::new(MockCategoryService::new_success()));
+    let app_state = MockAppStateBuilder::new()
+        .with_auth_service(Arc::new(MockAuthService::new_failure()))
+        .build();
 
     // Build router
     let app = Router::new()
@@ -297,8 +302,9 @@ async fn test_logout_service_error() {
 #[tokio::test]
 async fn test_logout_success() {
     // Setup - use mock auth service
-    let mock_auth = Arc::new(MockAuthService::new_success());
-    let app_state = create_mock_app_state(mock_auth, Arc::new(MockCategoryService::new_success()));
+    let app_state = MockAppStateBuilder::new()
+        .with_auth_service(Arc::new(MockAuthService::new_success()))
+        .build();
 
     // Build router
     let app = Router::new()
