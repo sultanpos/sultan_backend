@@ -1,15 +1,26 @@
-use axum::{Json, Router, http, http::StatusCode, response::IntoResponse};
+use axum::{
+    Json, Router,
+    http::{self, StatusCode},
+    middleware::from_fn,
+    response::IntoResponse,
+};
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use sqlx::{Sqlite, SqlitePool, migrate::MigrateDatabase, sqlite::SqlitePoolOptions};
 use std::{fs::File, sync::Arc};
 use sultan_core::{
-    application::AuthService,
-    crypto::{Argon2PasswordHasher, DefaultJwtManager, JwtConfig},
-    storage::{SqliteUserRepository, sqlite::SqliteTokenRepository},
+    application::{AuthService, AuthServiceTrait, CategoryService, CategoryServiceTrait},
+    crypto::{Argon2PasswordHasher, DefaultJwtManager, JwtConfig, JwtManager},
+    domain::BranchContext,
+    snowflake::SnowflakeGenerator,
+    storage::{
+        SqliteUserRepository,
+        sqlite::{SqliteCategoryRepository, SqliteTokenRepository},
+    },
 };
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::OpenApi;
+use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 
@@ -18,6 +29,8 @@ use crate::{
     web::{
         AppState,
         auth_router::{AuthApiDoc, auth_router},
+        category_router::{CategoryApiDoc, category_router},
+        middleware::{context_middleware, verify_jwt},
     },
 };
 
@@ -49,7 +62,8 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
     let pool = init_sqlite_db(config).await?;
 
     let user_repository = SqliteUserRepository::new(pool.clone());
-    let token_repository = SqliteTokenRepository::new(pool);
+    let token_repository = SqliteTokenRepository::new(pool.clone());
+    let category_repository = SqliteCategoryRepository::new(pool);
 
     let password_hasher = Argon2PasswordHasher::default();
     let jwt_manager = DefaultJwtManager::new(JwtConfig::new(
@@ -62,15 +76,15 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
         password_hasher,
         jwt_manager.clone(),
     );
+    let snowflake_generator = SnowflakeGenerator::new(1)?;
+    let category_servicxe = CategoryService::new(category_repository, snowflake_generator);
 
     Ok(AppState {
         config: Arc::new(config.clone()),
-        auth_service: Arc::new(auth_service)
-            as Arc<
-                dyn sultan_core::application::AuthServiceTrait<
-                        sultan_core::domain::context::BranchContext,
-                    >,
-            >,
+        auth_service: Arc::new(auth_service) as Arc<dyn AuthServiceTrait<BranchContext>>,
+        jwt_manager: Arc::new(jwt_manager) as Arc<dyn JwtManager>,
+        category_service: Arc::new(category_servicxe)
+            as Arc<dyn CategoryServiceTrait<BranchContext>>,
     })
 }
 
@@ -126,10 +140,37 @@ pub async fn create_app() -> anyhow::Result<Router> {
         .allow_headers([CONTENT_TYPE, AUTHORIZATION])
         .allow_credentials(true);
 
+    let protected_router = Router::new()
+        .nest("/category", category_router())
+        //.nest("/product", product_router())
+        .route_layer(axum::middleware::from_fn_with_state(
+            app_state.clone(),
+            verify_jwt,
+        ));
+
+    // Merge OpenAPI specs
+    let mut openapi = AuthApiDoc::openapi();
+    openapi.merge(CategoryApiDoc::openapi());
+
+    // Add Bearer token security scheme
+    if let Some(components) = openapi.components.as_mut() {
+        components.add_security_scheme(
+            "bearer_auth",
+            SecurityScheme::Http(
+                HttpBuilder::new()
+                    .scheme(HttpAuthScheme::Bearer)
+                    .bearer_format("JWT")
+                    .build(),
+            ),
+        );
+    }
+
     let router = Router::new()
         .nest("/api/auth", auth_router())
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", AuthApiDoc::openapi()))
+        .nest("/api/", protected_router)
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", openapi))
         .fallback(handle_404)
+        .layer(from_fn(context_middleware))
         .with_state(app_state)
         .layer(cors)
         .layer(
