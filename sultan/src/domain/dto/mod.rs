@@ -1,7 +1,9 @@
 pub mod category;
+pub mod customer;
 pub mod login;
 
 pub use category::{CategoryCreateRequest, CategoryCreateResponse};
+pub use customer::{CustomerCreateRequest, CustomerCreateResponse};
 pub use login::{LoginRequest, LoginResponse, LogoutRequest, RefreshTokenRequest};
 
 use serde::Serialize;

@@ -1,6 +1,6 @@
 use axum::extract::FromRef;
 use std::sync::Arc;
-use sultan_core::application::{AuthServiceTrait, CategoryServiceTrait};
+use sultan_core::application::{AuthServiceTrait, CategoryServiceTrait, CustomerServiceTrait};
 use sultan_core::crypto::JwtManager;
 use sultan_core::domain::context::BranchContext;
 
@@ -12,6 +12,7 @@ pub struct AppState {
     pub auth_service: Arc<dyn AuthServiceTrait<BranchContext>>,
     pub jwt_manager: Arc<dyn JwtManager>,
     pub category_service: Arc<dyn CategoryServiceTrait<BranchContext>>,
+    pub customer_service: Arc<dyn CustomerServiceTrait<BranchContext>>,
 }
 
 impl FromRef<AppState> for Arc<dyn AuthServiceTrait<BranchContext>> {
@@ -23,5 +24,11 @@ impl FromRef<AppState> for Arc<dyn AuthServiceTrait<BranchContext>> {
 impl FromRef<AppState> for Arc<dyn CategoryServiceTrait<BranchContext>> {
     fn from_ref(app_state: &AppState) -> Self {
         app_state.category_service.clone()
+    }
+}
+
+impl FromRef<AppState> for Arc<dyn CustomerServiceTrait<BranchContext>> {
+    fn from_ref(app_state: &AppState) -> Self {
+        app_state.customer_service.clone()
     }
 }

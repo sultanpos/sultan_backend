@@ -8,13 +8,15 @@ use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use sqlx::{Sqlite, SqlitePool, migrate::MigrateDatabase, sqlite::SqlitePoolOptions};
 use std::{fs::File, sync::Arc};
 use sultan_core::{
-    application::{AuthService, AuthServiceTrait, CategoryService, CategoryServiceTrait},
+    application::{
+        AuthService, AuthServiceTrait, CategoryService, CategoryServiceTrait, CustomerService,
+    },
     crypto::{Argon2PasswordHasher, DefaultJwtManager, JwtConfig, JwtManager},
-    domain::BranchContext,
+    domain::{BranchContext, model::customer},
     snowflake::SnowflakeGenerator,
     storage::{
         SqliteUserRepository,
-        sqlite::{SqliteCategoryRepository, SqliteTokenRepository},
+        sqlite::{SqliteCategoryRepository, SqliteCustomerRepository, SqliteTokenRepository},
     },
 };
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -30,6 +32,7 @@ use crate::{
         AppState,
         auth_router::{AuthApiDoc, auth_router},
         category_router::{CategoryApiDoc, category_router},
+        customer_router::{CustomerApiDoc, customer_router},
         middleware::{context_middleware, verify_jwt},
     },
 };
@@ -63,7 +66,8 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
 
     let user_repository = SqliteUserRepository::new(pool.clone());
     let token_repository = SqliteTokenRepository::new(pool.clone());
-    let category_repository = SqliteCategoryRepository::new(pool);
+    let category_repository = SqliteCategoryRepository::new(pool.clone());
+    let customer_repository = SqliteCustomerRepository::new(pool);
 
     let password_hasher = Argon2PasswordHasher::default();
     let jwt_manager = DefaultJwtManager::new(JwtConfig::new(
@@ -76,15 +80,15 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
         password_hasher,
         jwt_manager.clone(),
     );
-    let snowflake_generator = SnowflakeGenerator::new(1)?;
-    let category_servicxe = CategoryService::new(category_repository, snowflake_generator);
+    let category_service = CategoryService::new(category_repository, SnowflakeGenerator::new(1)?);
+    let customer_service = CustomerService::new(customer_repository, SnowflakeGenerator::new(1)?);
 
     Ok(AppState {
         config: Arc::new(config.clone()),
         auth_service: Arc::new(auth_service) as Arc<dyn AuthServiceTrait<BranchContext>>,
         jwt_manager: Arc::new(jwt_manager) as Arc<dyn JwtManager>,
-        category_service: Arc::new(category_servicxe)
-            as Arc<dyn CategoryServiceTrait<BranchContext>>,
+        category_service: Arc::new(category_service),
+        customer_service: Arc::new(customer_service),
     })
 }
 
@@ -142,7 +146,7 @@ pub async fn create_app() -> anyhow::Result<Router> {
 
     let protected_router = Router::new()
         .nest("/category", category_router())
-        //.nest("/product", product_router())
+        .nest("/customer", customer_router())
         .route_layer(axum::middleware::from_fn_with_state(
             app_state.clone(),
             verify_jwt,
@@ -151,6 +155,7 @@ pub async fn create_app() -> anyhow::Result<Router> {
     // Merge OpenAPI specs
     let mut openapi = AuthApiDoc::openapi();
     openapi.merge(CategoryApiDoc::openapi());
+    openapi.merge(CustomerApiDoc::openapi());
 
     // Add Bearer token security scheme
     if let Some(components) = openapi.components.as_mut() {
