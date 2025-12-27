@@ -8,10 +8,8 @@ use tracing::instrument;
 use utoipa::OpenApi;
 use validator::Validate;
 
-use crate::domain::dto::{
-    ErrorResponse, LoginRequest, LoginResponse, LogoutRequest, RefreshTokenRequest,
-};
-use crate::web::AppState;
+use crate::AppState;
+use crate::dto::{ErrorResponse, LoginRequest, LoginResponse, LogoutRequest, RefreshTokenRequest};
 
 // ============================================================================
 // OpenAPI Documentation

@@ -12,12 +12,9 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::Value;
 use std::sync::Arc;
-use sultan::config::AppConfig;
-use sultan::web::AppState;
 use sultan_core::application::{AuthServiceTrait, CategoryServiceTrait, CustomerServiceTrait};
 use sultan_core::crypto::{DefaultJwtManager, JwtConfig};
-use sultan_core::domain::context::Context;
-use time::Duration;
+use sultan_web::AppState;
 use tower::ServiceExt;
 
 /// Builder for creating test AppState with optional service overrides
@@ -60,22 +57,12 @@ impl MockAppStateBuilder {
 
     /// Build the AppState with provided or default services
     pub fn build(self) -> AppState {
-        let config = AppConfig {
-            database_url: "sqlite://test.db".to_string(),
-            jwt_secret: "test_secret".to_string(),
-            access_token_ttl: Duration::minutes(30),
-            refresh_token_ttl: Duration::days(30),
-            database_max_connections: 1,
-            write_log_to_file: false,
-        };
-
         let jwt_manager = DefaultJwtManager::new(JwtConfig::new(
-            config.jwt_secret.clone(),
-            config.access_token_ttl.whole_minutes(),
+            "test_secret_key_which_is_long_enough".to_string(),
+            60,
         ));
 
         AppState {
-            config: Arc::new(config),
             auth_service: self
                 .auth_service
                 .unwrap_or_else(|| Arc::new(MockAuthService::new_success())),

@@ -3,11 +3,8 @@ use std::sync::Arc;
 use sultan_core::application::{AuthServiceTrait, CategoryServiceTrait, CustomerServiceTrait};
 use sultan_core::crypto::JwtManager;
 
-use crate::config::AppConfig;
-
 #[derive(Clone)]
 pub struct AppState {
-    pub config: Arc<AppConfig>,
     pub auth_service: Arc<dyn AuthServiceTrait>,
     pub jwt_manager: Arc<dyn JwtManager>,
     pub category_service: Arc<dyn CategoryServiceTrait>,

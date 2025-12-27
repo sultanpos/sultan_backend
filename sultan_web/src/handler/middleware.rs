@@ -8,7 +8,7 @@ use axum::{
 use serde_json::json;
 use sultan_core::domain::Context;
 
-use crate::web::AppState;
+use crate::AppState;
 
 /// Middleware to verify JWT Bearer token
 pub async fn verify_jwt(

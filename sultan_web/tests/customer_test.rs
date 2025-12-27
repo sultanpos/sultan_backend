@@ -7,8 +7,8 @@ use serde_json::json;
 use std::sync::Arc;
 
 use common::{MockAppStateBuilder, make_request, mock_customer_service::MockCustomerService};
-use sultan::web::customer_router::customer_router;
-use sultan::web::middleware::context_middleware;
+use sultan_web::handler::customer_router::customer_router;
+use sultan_web::handler::middleware::context_middleware;
 
 // ============================================================================
 // Helper Functions

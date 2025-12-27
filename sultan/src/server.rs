@@ -23,15 +23,13 @@ use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 
-use crate::{
-    config::AppConfig,
-    web::{
-        AppState,
-        auth_router::{AuthApiDoc, auth_router},
-        category_router::{CategoryApiDoc, category_router},
-        customer_router::{CustomerApiDoc, customer_router},
-        middleware::{context_middleware, verify_jwt},
-    },
+use crate::config::AppConfig;
+use sultan_web::AppState;
+use sultan_web::handler::{
+    auth_router::{AuthApiDoc, auth_router},
+    category_router::{CategoryApiDoc, category_router},
+    customer_router::{CustomerApiDoc, customer_router},
+    middleware::{context_middleware, verify_jwt},
 };
 
 async fn init_sqlite_db(config: &AppConfig) -> anyhow::Result<SqlitePool> {
@@ -81,7 +79,6 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
     let customer_service = CustomerService::new(customer_repository, SnowflakeGenerator::new(1)?);
 
     Ok(AppState {
-        config: Arc::new(config.clone()),
         auth_service: Arc::new(auth_service) as Arc<dyn AuthServiceTrait>,
         jwt_manager: Arc::new(jwt_manager) as Arc<dyn JwtManager>,
         category_service: Arc::new(category_service),

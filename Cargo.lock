@@ -2051,6 +2051,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "sultan_core",
+ "sultan_web",
  "time",
  "tokio",
  "tokio-util",
@@ -2092,6 +2093,36 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "utoipa",
+ "uuid",
+ "validator",
+]
+
+[[package]]
+name = "sultan_web"
+version = "25.0.1"
+dependencies = [
+ "anyhow",
+ "argon2",
+ "async-trait",
+ "axum",
+ "chrono",
+ "dotenvy",
+ "http-body-util",
+ "once_cell",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "sultan_core",
+ "time",
+ "tokio",
+ "tokio-util",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "utoipa",
+ "utoipa-axum",
+ "utoipa-swagger-ui",
  "uuid",
  "validator",
 ]

@@ -14,11 +14,9 @@ use tracing::instrument;
 use utoipa::OpenApi;
 use validator::Validate;
 
-use crate::domain::dto::category::{
-    CategoryChildResponse, CategoryResponse, CategoryUpdateRequest,
-};
-use crate::domain::dto::{CategoryCreateRequest, CategoryCreateResponse, ErrorResponse};
-use crate::web::AppState;
+use crate::AppState;
+use crate::dto::category::{CategoryChildResponse, CategoryResponse, CategoryUpdateRequest};
+use crate::dto::{CategoryCreateRequest, CategoryCreateResponse, ErrorResponse};
 
 // ============================================================================
 // OpenAPI Documentation
