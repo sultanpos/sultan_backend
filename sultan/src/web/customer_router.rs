@@ -7,7 +7,7 @@ use axum::{
 };
 use std::sync::Arc;
 use sultan_core::application::CustomerServiceTrait;
-use sultan_core::domain::context::BranchContext;
+use sultan_core::domain::context::Context;
 use sultan_core::domain::model::customer::{CustomerCreate, CustomerUpdate};
 use sultan_core::domain::{DomainResult, Error};
 use tracing::instrument;
@@ -60,8 +60,8 @@ pub struct CustomerApiDoc;
 )]
 #[instrument(skip(customer_service, payload, ctx))]
 async fn create(
-    State(customer_service): State<Arc<dyn CustomerServiceTrait<BranchContext>>>,
-    Extension(ctx): Extension<BranchContext>,
+    State(customer_service): State<Arc<dyn CustomerServiceTrait>>,
+    Extension(ctx): Extension<Context>,
     Json(payload): Json<CustomerCreateRequest>,
 ) -> DomainResult<impl IntoResponse> {
     // Validate input
@@ -107,8 +107,8 @@ async fn create(
 )]
 #[instrument(skip(customer_service, payload, ctx))]
 async fn update(
-    State(customer_service): State<Arc<dyn CustomerServiceTrait<BranchContext>>>,
-    Extension(ctx): Extension<BranchContext>,
+    State(customer_service): State<Arc<dyn CustomerServiceTrait>>,
+    Extension(ctx): Extension<Context>,
     Path(id): Path<i64>,
     Json(payload): Json<CustomerUpdateRequest>,
 ) -> DomainResult<impl IntoResponse> {
@@ -154,8 +154,8 @@ async fn update(
 )]
 #[instrument(skip(customer_service, ctx))]
 async fn delete_customer(
-    State(customer_service): State<Arc<dyn CustomerServiceTrait<BranchContext>>>,
-    Extension(ctx): Extension<BranchContext>,
+    State(customer_service): State<Arc<dyn CustomerServiceTrait>>,
+    Extension(ctx): Extension<Context>,
     Path(id): Path<i64>,
 ) -> DomainResult<impl IntoResponse> {
     customer_service.delete(&ctx, id).await?;
@@ -180,8 +180,8 @@ async fn delete_customer(
 )]
 #[instrument(skip(customer_service, ctx))]
 async fn get_by_id(
-    State(customer_service): State<Arc<dyn CustomerServiceTrait<BranchContext>>>,
-    Extension(ctx): Extension<BranchContext>,
+    State(customer_service): State<Arc<dyn CustomerServiceTrait>>,
+    Extension(ctx): Extension<Context>,
     Path(id): Path<i64>,
 ) -> DomainResult<impl IntoResponse> {
     let customer = customer_service
@@ -219,8 +219,8 @@ async fn get_by_id(
 )]
 #[instrument(skip(customer_service, ctx))]
 async fn get_all(
-    State(customer_service): State<Arc<dyn CustomerServiceTrait<BranchContext>>>,
-    Extension(ctx): Extension<BranchContext>,
+    State(customer_service): State<Arc<dyn CustomerServiceTrait>>,
+    Extension(ctx): Extension<Context>,
     Query(query): Query<CustomerQueryParams>,
 ) -> DomainResult<impl IntoResponse> {
     let filter = query.to_filter();

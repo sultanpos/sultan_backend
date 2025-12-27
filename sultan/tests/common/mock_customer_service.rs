@@ -3,7 +3,7 @@ use sultan_core::application::CustomerServiceTrait;
 use sultan_core::domain::model::pagination::PaginationOptions;
 use sultan_core::domain::{
     DomainResult, Error,
-    context::BranchContext,
+    context::Context,
     model::customer::{Customer, CustomerCreate, CustomerFilter, CustomerUpdate},
 };
 
@@ -42,8 +42,8 @@ impl MockCustomerService {
 }
 
 #[async_trait]
-impl CustomerServiceTrait<BranchContext> for MockCustomerService {
-    async fn create(&self, _ctx: &BranchContext, _customer: &CustomerCreate) -> DomainResult<i64> {
+impl CustomerServiceTrait for MockCustomerService {
+    async fn create(&self, _ctx: &Context, _customer: &CustomerCreate) -> DomainResult<i64> {
         if !self.should_succeed {
             return Err(Error::Internal("Failed to create customer".to_string()));
         }
@@ -52,7 +52,7 @@ impl CustomerServiceTrait<BranchContext> for MockCustomerService {
 
     async fn update(
         &self,
-        _ctx: &BranchContext,
+        _ctx: &Context,
         id: i64,
         _customer: &CustomerUpdate,
     ) -> DomainResult<()> {
@@ -68,7 +68,7 @@ impl CustomerServiceTrait<BranchContext> for MockCustomerService {
         Ok(())
     }
 
-    async fn delete(&self, _ctx: &BranchContext, id: i64) -> DomainResult<()> {
+    async fn delete(&self, _ctx: &Context, id: i64) -> DomainResult<()> {
         if !self.should_succeed {
             return Err(Error::Internal("Failed to delete customer".to_string()));
         }
@@ -81,11 +81,7 @@ impl CustomerServiceTrait<BranchContext> for MockCustomerService {
         Ok(())
     }
 
-    async fn get_by_number(
-        &self,
-        _ctx: &BranchContext,
-        number: &str,
-    ) -> DomainResult<Option<Customer>> {
+    async fn get_by_number(&self, _ctx: &Context, number: &str) -> DomainResult<Option<Customer>> {
         if !self.should_succeed {
             return Err(Error::Internal("Failed to get customer".to_string()));
         }
@@ -96,7 +92,7 @@ impl CustomerServiceTrait<BranchContext> for MockCustomerService {
         }
     }
 
-    async fn get_by_id(&self, _ctx: &BranchContext, id: i64) -> DomainResult<Option<Customer>> {
+    async fn get_by_id(&self, _ctx: &Context, id: i64) -> DomainResult<Option<Customer>> {
         if !self.should_succeed {
             return Err(Error::Internal("Failed to get customer".to_string()));
         }
@@ -109,7 +105,7 @@ impl CustomerServiceTrait<BranchContext> for MockCustomerService {
 
     async fn get_all(
         &self,
-        _ctx: &BranchContext,
+        _ctx: &Context,
         _filter: &CustomerFilter,
         _pagination: &PaginationOptions,
     ) -> DomainResult<Vec<Customer>> {

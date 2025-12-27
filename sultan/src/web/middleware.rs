@@ -6,7 +6,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde_json::json;
-use sultan_core::domain::BranchContext;
+use sultan_core::domain::Context;
 
 use crate::web::AppState;
 
@@ -36,7 +36,7 @@ pub async fn verify_jwt(
     // Verify token
     match state.jwt_manager.validate_token(token) {
         Ok(claims) => {
-            let ctx = BranchContext::new();
+            let ctx = Context::new();
             req.extensions_mut()
                 .insert(ctx.with_user_id(claims.user_id));
             Ok(next.run(req).await)
@@ -51,7 +51,7 @@ pub async fn verify_jwt(
 
 /// Middleware to verify JWT Bearer token
 pub async fn context_middleware(mut req: Request, next: Next) -> Result<Response, StatusCode> {
-    let ctx = BranchContext::new();
+    let ctx = Context::new();
     req.extensions_mut().insert(ctx);
     Ok(next.run(req).await)
 }

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use sultan_core::application::{AuthServiceTrait, AuthTokens};
-use sultan_core::domain::{DomainResult, Error, context::BranchContext};
+use sultan_core::domain::{DomainResult, Error, context::Context};
 
 pub struct MockAuthService {
     pub should_succeed: bool,
@@ -28,10 +28,10 @@ impl MockAuthService {
 }
 
 #[async_trait]
-impl AuthServiceTrait<BranchContext> for MockAuthService {
+impl AuthServiceTrait for MockAuthService {
     async fn login(
         &self,
-        _ctx: &BranchContext,
+        _ctx: &Context,
         username: &str,
         password: &str,
     ) -> DomainResult<AuthTokens> {
@@ -50,11 +50,7 @@ impl AuthServiceTrait<BranchContext> for MockAuthService {
         }
     }
 
-    async fn refresh(
-        &self,
-        _ctx: &BranchContext,
-        _refresh_token: &str,
-    ) -> DomainResult<AuthTokens> {
+    async fn refresh(&self, _ctx: &Context, _refresh_token: &str) -> DomainResult<AuthTokens> {
         if !self.should_succeed {
             return Err(Error::Unauthorized("Invalid refresh token".to_string()));
         }
@@ -65,7 +61,7 @@ impl AuthServiceTrait<BranchContext> for MockAuthService {
         })
     }
 
-    async fn logout(&self, _ctx: &BranchContext, _refresh_token: &str) -> DomainResult<()> {
+    async fn logout(&self, _ctx: &Context, _refresh_token: &str) -> DomainResult<()> {
         if !self.should_succeed {
             return Err(Error::Unauthorized("Invalid refresh token".to_string()));
         }

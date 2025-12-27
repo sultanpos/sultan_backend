@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use sultan_core::application::CategoryServiceTrait;
 use sultan_core::domain::{
     DomainResult, Error,
-    context::BranchContext,
+    context::Context,
     model::category::{Category, CategoryCreate, CategoryUpdate},
 };
 
@@ -29,8 +29,8 @@ impl MockCategoryService {
 }
 
 #[async_trait]
-impl CategoryServiceTrait<BranchContext> for MockCategoryService {
-    async fn create(&self, _ctx: &BranchContext, _category: &CategoryCreate) -> DomainResult<i64> {
+impl CategoryServiceTrait for MockCategoryService {
+    async fn create(&self, _ctx: &Context, _category: &CategoryCreate) -> DomainResult<i64> {
         if !self.should_succeed {
             return Err(Error::Internal("Failed to create category".to_string()));
         }
@@ -39,7 +39,7 @@ impl CategoryServiceTrait<BranchContext> for MockCategoryService {
 
     async fn update(
         &self,
-        _ctx: &BranchContext,
+        _ctx: &Context,
         id: i64,
         _category: &CategoryUpdate,
     ) -> DomainResult<()> {
@@ -56,7 +56,7 @@ impl CategoryServiceTrait<BranchContext> for MockCategoryService {
         Ok(())
     }
 
-    async fn delete(&self, _ctx: &BranchContext, id: i64) -> DomainResult<()> {
+    async fn delete(&self, _ctx: &Context, id: i64) -> DomainResult<()> {
         if !self.should_succeed {
             return Err(Error::Internal("Failed to delete category".to_string()));
         }
@@ -70,7 +70,7 @@ impl CategoryServiceTrait<BranchContext> for MockCategoryService {
         Ok(())
     }
 
-    async fn get_all(&self, _ctx: &BranchContext) -> DomainResult<Vec<Category>> {
+    async fn get_all(&self, _ctx: &Context) -> DomainResult<Vec<Category>> {
         if !self.should_succeed {
             return Err(Error::Internal("Failed to get categories".to_string()));
         }
@@ -100,7 +100,7 @@ impl CategoryServiceTrait<BranchContext> for MockCategoryService {
         ])
     }
 
-    async fn get_by_id(&self, _ctx: &BranchContext, id: i64) -> DomainResult<Option<Category>> {
+    async fn get_by_id(&self, _ctx: &Context, id: i64) -> DomainResult<Option<Category>> {
         if !self.should_succeed {
             return Err(Error::Internal("Failed to get category".to_string()));
         }
