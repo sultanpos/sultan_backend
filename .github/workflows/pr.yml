@@ -43,7 +43,7 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
       - name: Run tests
-        run: cargo llvm-cov --verbose --all-features --package sultan --lcov --output-path coverage.lcov
+        run: cargo llvm-cov --verbose --all-features --package sultan --package sultan_web --lcov --output-path coverage.lcov
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
