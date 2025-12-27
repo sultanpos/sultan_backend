@@ -8,11 +8,9 @@ use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use sqlx::{Sqlite, SqlitePool, migrate::MigrateDatabase, sqlite::SqlitePoolOptions};
 use std::{fs::File, sync::Arc};
 use sultan_core::{
-    application::{
-        AuthService, AuthServiceTrait, CategoryService, CategoryServiceTrait, CustomerService,
-    },
+    application::{AuthService, AuthServiceTrait, CategoryService, CustomerService},
     crypto::{Argon2PasswordHasher, DefaultJwtManager, JwtConfig, JwtManager},
-    domain::{BranchContext, model::customer},
+    domain::BranchContext,
     snowflake::SnowflakeGenerator,
     storage::{
         SqliteUserRepository,

@@ -38,6 +38,7 @@ impl MockAppStateBuilder {
     }
 
     /// Override the auth service
+    #[allow(dead_code)]
     pub fn with_auth_service(mut self, service: Arc<dyn AuthServiceTrait<BranchContext>>) -> Self {
         self.auth_service = Some(service);
         self
@@ -88,7 +89,9 @@ impl MockAppStateBuilder {
             category_service: self
                 .category_service
                 .unwrap_or_else(|| Arc::new(MockCategoryService::new_success())),
-            customer_service: self.customer_service.unwrap_or_else(|| Arc::new(data)),
+            customer_service: self
+                .customer_service
+                .unwrap_or_else(|| Arc::new(MockCustomerService::new_success())),
         }
     }
 }

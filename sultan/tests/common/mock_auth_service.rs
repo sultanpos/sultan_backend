@@ -17,6 +17,7 @@ impl MockAuthService {
         }
     }
 
+    #[allow(dead_code)]
     pub fn new_failure() -> Self {
         Self {
             should_succeed: false,
