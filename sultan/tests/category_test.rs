@@ -464,12 +464,10 @@ async fn test_get_all_categories_empty() {
     struct EmptyMockCategoryService;
 
     #[async_trait::async_trait]
-    impl sultan_core::application::CategoryServiceTrait<sultan_core::domain::context::BranchContext>
-        for EmptyMockCategoryService
-    {
+    impl sultan_core::application::CategoryServiceTrait for EmptyMockCategoryService {
         async fn create(
             &self,
-            _ctx: &sultan_core::domain::context::BranchContext,
+            _ctx: &sultan_core::domain::context::Context,
             _category: &sultan_core::domain::model::category::CategoryCreate,
         ) -> sultan_core::domain::DomainResult<i64> {
             Ok(1)
@@ -477,7 +475,7 @@ async fn test_get_all_categories_empty() {
 
         async fn update(
             &self,
-            _ctx: &sultan_core::domain::context::BranchContext,
+            _ctx: &sultan_core::domain::context::Context,
             _id: i64,
             _category: &sultan_core::domain::model::category::CategoryUpdate,
         ) -> sultan_core::domain::DomainResult<()> {
@@ -486,7 +484,7 @@ async fn test_get_all_categories_empty() {
 
         async fn delete(
             &self,
-            _ctx: &sultan_core::domain::context::BranchContext,
+            _ctx: &sultan_core::domain::context::Context,
             _id: i64,
         ) -> sultan_core::domain::DomainResult<()> {
             Ok(())
@@ -494,7 +492,7 @@ async fn test_get_all_categories_empty() {
 
         async fn get_all(
             &self,
-            _ctx: &sultan_core::domain::context::BranchContext,
+            _ctx: &sultan_core::domain::context::Context,
         ) -> sultan_core::domain::DomainResult<Vec<sultan_core::domain::model::category::Category>>
         {
             Ok(vec![])
@@ -502,7 +500,7 @@ async fn test_get_all_categories_empty() {
 
         async fn get_by_id(
             &self,
-            _ctx: &sultan_core::domain::context::BranchContext,
+            _ctx: &sultan_core::domain::context::Context,
             _id: i64,
         ) -> sultan_core::domain::DomainResult<Option<sultan_core::domain::model::category::Category>>
         {

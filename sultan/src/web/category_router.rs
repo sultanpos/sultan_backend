@@ -7,7 +7,7 @@ use axum::{
 };
 use std::sync::Arc;
 use sultan_core::application::CategoryServiceTrait;
-use sultan_core::domain::context::BranchContext;
+use sultan_core::domain::context::Context;
 use sultan_core::domain::model::category::{CategoryCreate, CategoryUpdate};
 use sultan_core::domain::{DomainResult, Error};
 use tracing::instrument;
@@ -67,8 +67,8 @@ pub struct CategoryApiDoc;
 )]
 #[instrument(skip(category_service, payload, ctx))]
 async fn create(
-    State(category_service): State<Arc<dyn CategoryServiceTrait<BranchContext>>>,
-    Extension(ctx): Extension<BranchContext>,
+    State(category_service): State<Arc<dyn CategoryServiceTrait>>,
+    Extension(ctx): Extension<Context>,
     Json(payload): Json<CategoryCreateRequest>,
 ) -> DomainResult<impl IntoResponse> {
     // Validate input
@@ -114,8 +114,8 @@ async fn create(
 )]
 #[instrument(skip(category_service, payload, ctx))]
 async fn update(
-    State(category_service): State<Arc<dyn CategoryServiceTrait<BranchContext>>>,
-    Extension(ctx): Extension<BranchContext>,
+    State(category_service): State<Arc<dyn CategoryServiceTrait>>,
+    Extension(ctx): Extension<Context>,
     Path(id): Path<i64>,
     Json(payload): Json<CategoryUpdateRequest>,
 ) -> DomainResult<impl IntoResponse> {
@@ -160,8 +160,8 @@ async fn update(
 )]
 #[instrument(skip(category_service, ctx))]
 async fn delete_category(
-    State(category_service): State<Arc<dyn CategoryServiceTrait<BranchContext>>>,
-    Extension(ctx): Extension<BranchContext>,
+    State(category_service): State<Arc<dyn CategoryServiceTrait>>,
+    Extension(ctx): Extension<Context>,
     Path(id): Path<i64>,
 ) -> DomainResult<impl IntoResponse> {
     category_service.delete(&ctx, id).await?;
@@ -190,8 +190,8 @@ async fn delete_category(
 )]
 #[instrument(skip(category_service, ctx))]
 async fn get_by_id(
-    State(category_service): State<Arc<dyn CategoryServiceTrait<BranchContext>>>,
-    Extension(ctx): Extension<BranchContext>,
+    State(category_service): State<Arc<dyn CategoryServiceTrait>>,
+    Extension(ctx): Extension<Context>,
     Path(id): Path<i64>,
 ) -> DomainResult<impl IntoResponse> {
     let result = category_service.get_by_id(&ctx, id).await?;
@@ -236,8 +236,8 @@ async fn get_by_id(
 )]
 #[instrument(skip(category_service, ctx))]
 async fn get_all(
-    State(category_service): State<Arc<dyn CategoryServiceTrait<BranchContext>>>,
-    Extension(ctx): Extension<BranchContext>,
+    State(category_service): State<Arc<dyn CategoryServiceTrait>>,
+    Extension(ctx): Extension<Context>,
 ) -> DomainResult<impl IntoResponse> {
     let result = category_service.get_all(&ctx).await?;
     Ok((

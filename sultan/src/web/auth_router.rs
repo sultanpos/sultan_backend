@@ -3,7 +3,7 @@ use axum::{Json, Router, extract::State, http::StatusCode, response::IntoRespons
 use std::sync::Arc;
 use sultan_core::application::AuthServiceTrait;
 use sultan_core::domain::Error;
-use sultan_core::domain::{DomainResult, context::BranchContext};
+use sultan_core::domain::{DomainResult, context::Context};
 use tracing::instrument;
 use utoipa::OpenApi;
 use validator::Validate;
@@ -47,13 +47,13 @@ pub struct AuthApiDoc;
 )]
 #[instrument(skip(auth_service, payload))]
 async fn login(
-    State(auth_service): State<Arc<dyn AuthServiceTrait<BranchContext>>>,
+    State(auth_service): State<Arc<dyn AuthServiceTrait>>,
     Json(payload): Json<LoginRequest>,
 ) -> DomainResult<impl IntoResponse> {
     payload
         .validate()
         .map_err(|e| Error::ValidationError(format!("{}", e)))?;
-    let ctx = BranchContext::new();
+    let ctx = Context::new();
     let tokens = auth_service
         .login(&ctx, &payload.username, &payload.password)
         .await?;
@@ -83,13 +83,13 @@ async fn login(
 )]
 #[instrument(skip(auth_service, payload))]
 async fn refresh(
-    State(auth_service): State<Arc<dyn AuthServiceTrait<BranchContext>>>,
+    State(auth_service): State<Arc<dyn AuthServiceTrait>>,
     Json(payload): Json<RefreshTokenRequest>,
 ) -> DomainResult<impl IntoResponse> {
     payload
         .validate()
         .map_err(|e| Error::ValidationError(format!("{}", e)))?;
-    let ctx = BranchContext::new();
+    let ctx = Context::new();
     let tokens = auth_service.refresh(&ctx, &payload.refresh_token).await?;
 
     Ok((
@@ -117,13 +117,13 @@ async fn refresh(
 )]
 #[instrument(skip(auth_service, payload))]
 async fn logout(
-    State(auth_service): State<Arc<dyn AuthServiceTrait<BranchContext>>>,
+    State(auth_service): State<Arc<dyn AuthServiceTrait>>,
     Json(payload): Json<LogoutRequest>,
 ) -> DomainResult<impl IntoResponse> {
     payload
         .validate()
         .map_err(|e| Error::ValidationError(format!("{}", e)))?;
-    let ctx = BranchContext::new();
+    let ctx = Context::new();
     auth_service.logout(&ctx, &payload.refresh_token).await?;
 
     Ok(StatusCode::NO_CONTENT)

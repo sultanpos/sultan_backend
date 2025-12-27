@@ -10,7 +10,6 @@ use std::{fs::File, sync::Arc};
 use sultan_core::{
     application::{AuthService, AuthServiceTrait, CategoryService, CustomerService},
     crypto::{Argon2PasswordHasher, DefaultJwtManager, JwtConfig, JwtManager},
-    domain::BranchContext,
     snowflake::SnowflakeGenerator,
     storage::{
         SqliteUserRepository,
@@ -83,7 +82,7 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
 
     Ok(AppState {
         config: Arc::new(config.clone()),
-        auth_service: Arc::new(auth_service) as Arc<dyn AuthServiceTrait<BranchContext>>,
+        auth_service: Arc::new(auth_service) as Arc<dyn AuthServiceTrait>,
         jwt_manager: Arc::new(jwt_manager) as Arc<dyn JwtManager>,
         category_service: Arc::new(category_service),
         customer_service: Arc::new(customer_service),

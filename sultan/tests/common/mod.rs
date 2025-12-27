@@ -16,15 +16,15 @@ use sultan::config::AppConfig;
 use sultan::web::AppState;
 use sultan_core::application::{AuthServiceTrait, CategoryServiceTrait, CustomerServiceTrait};
 use sultan_core::crypto::{DefaultJwtManager, JwtConfig};
-use sultan_core::domain::context::BranchContext;
+use sultan_core::domain::context::Context;
 use time::Duration;
 use tower::ServiceExt;
 
 /// Builder for creating test AppState with optional service overrides
 pub struct MockAppStateBuilder {
-    auth_service: Option<Arc<dyn AuthServiceTrait<BranchContext>>>,
-    category_service: Option<Arc<dyn CategoryServiceTrait<BranchContext>>>,
-    customer_service: Option<Arc<dyn CustomerServiceTrait<BranchContext>>>,
+    auth_service: Option<Arc<dyn AuthServiceTrait>>,
+    category_service: Option<Arc<dyn CategoryServiceTrait>>,
+    customer_service: Option<Arc<dyn CustomerServiceTrait>>,
 }
 
 impl MockAppStateBuilder {
@@ -39,27 +39,21 @@ impl MockAppStateBuilder {
 
     /// Override the auth service
     #[allow(dead_code)]
-    pub fn with_auth_service(mut self, service: Arc<dyn AuthServiceTrait<BranchContext>>) -> Self {
+    pub fn with_auth_service(mut self, service: Arc<dyn AuthServiceTrait>) -> Self {
         self.auth_service = Some(service);
         self
     }
 
     /// Override the category service
     #[allow(dead_code)]
-    pub fn with_category_service(
-        mut self,
-        service: Arc<dyn CategoryServiceTrait<BranchContext>>,
-    ) -> Self {
+    pub fn with_category_service(mut self, service: Arc<dyn CategoryServiceTrait>) -> Self {
         self.category_service = Some(service);
         self
     }
 
     /// Override the category service
     #[allow(dead_code)]
-    pub fn with_customer_service(
-        mut self,
-        service: Arc<dyn CustomerServiceTrait<BranchContext>>,
-    ) -> Self {
+    pub fn with_customer_service(mut self, service: Arc<dyn CustomerServiceTrait>) -> Self {
         self.customer_service = Some(service);
         self
     }
