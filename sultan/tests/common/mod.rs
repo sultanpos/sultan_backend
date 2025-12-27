@@ -1,5 +1,10 @@
 pub mod mock_auth_service;
 pub mod mock_category_service;
+pub mod mock_customer_service;
+
+pub use mock_auth_service::MockAuthService;
+pub use mock_category_service::MockCategoryService;
+pub use mock_customer_service::MockCustomerService;
 
 use anyhow::Result;
 use axum::Router;
@@ -9,19 +14,17 @@ use serde_json::Value;
 use std::sync::Arc;
 use sultan::config::AppConfig;
 use sultan::web::AppState;
-use sultan_core::application::{AuthServiceTrait, CategoryServiceTrait};
+use sultan_core::application::{AuthServiceTrait, CategoryServiceTrait, CustomerServiceTrait};
 use sultan_core::crypto::{DefaultJwtManager, JwtConfig};
 use sultan_core::domain::context::BranchContext;
 use time::Duration;
 use tower::ServiceExt;
 
-use mock_auth_service::MockAuthService;
-use mock_category_service::MockCategoryService;
-
 /// Builder for creating test AppState with optional service overrides
 pub struct MockAppStateBuilder {
     auth_service: Option<Arc<dyn AuthServiceTrait<BranchContext>>>,
     category_service: Option<Arc<dyn CategoryServiceTrait<BranchContext>>>,
+    customer_service: Option<Arc<dyn CustomerServiceTrait<BranchContext>>>,
 }
 
 impl MockAppStateBuilder {
@@ -30,10 +33,12 @@ impl MockAppStateBuilder {
         Self {
             auth_service: None,
             category_service: None,
+            customer_service: None,
         }
     }
 
     /// Override the auth service
+    #[allow(dead_code)]
     pub fn with_auth_service(mut self, service: Arc<dyn AuthServiceTrait<BranchContext>>) -> Self {
         self.auth_service = Some(service);
         self
@@ -46,6 +51,16 @@ impl MockAppStateBuilder {
         service: Arc<dyn CategoryServiceTrait<BranchContext>>,
     ) -> Self {
         self.category_service = Some(service);
+        self
+    }
+
+    /// Override the category service
+    #[allow(dead_code)]
+    pub fn with_customer_service(
+        mut self,
+        service: Arc<dyn CustomerServiceTrait<BranchContext>>,
+    ) -> Self {
+        self.customer_service = Some(service);
         self
     }
 
@@ -74,6 +89,9 @@ impl MockAppStateBuilder {
             category_service: self
                 .category_service
                 .unwrap_or_else(|| Arc::new(MockCategoryService::new_success())),
+            customer_service: self
+                .customer_service
+                .unwrap_or_else(|| Arc::new(MockCustomerService::new_success())),
         }
     }
 }
