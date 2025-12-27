@@ -14,11 +14,11 @@ use tracing::instrument;
 use utoipa::OpenApi;
 use validator::Validate;
 
-use crate::domain::dto::customer::{
+use crate::AppState;
+use crate::dto::customer::{
     CustomerListResponse, CustomerQueryParams, CustomerResponse, CustomerUpdateRequest,
 };
-use crate::domain::dto::{CustomerCreateRequest, CustomerCreateResponse, ErrorResponse};
-use crate::web::AppState;
+use crate::dto::{CustomerCreateRequest, CustomerCreateResponse, ErrorResponse};
 
 // ============================================================================
 // OpenAPI Documentation

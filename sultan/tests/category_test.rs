@@ -7,8 +7,7 @@ use serde_json::json;
 use std::sync::Arc;
 
 use common::{MockAppStateBuilder, make_request, mock_category_service::MockCategoryService};
-use sultan::web::category_router::category_router;
-use sultan::web::middleware::context_middleware;
+use sultan_web::{handler::category_router::category_router, middleware::context_middleware};
 
 // ============================================================================
 // POST /api/category - Create Category Tests

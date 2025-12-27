@@ -1,11 +1,11 @@
 [package]
-name = "sultan"
-version = "0.1.0"
+name = "sultan_web"
+version = "25.0.1"
 edition = "2024"
+license = "AGPL-3.0-only"
 
 [dependencies]
 sultan_core = { path = "../sultan_core" }
-sultan_web = { path = "../sultan_web" }
 time = "0.3"
 argon2 = "0.5.3"
 tracing = "0.1"

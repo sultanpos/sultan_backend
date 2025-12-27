@@ -13,10 +13,9 @@ use axum::http::{Request, StatusCode};
 use serde_json::Value;
 use std::sync::Arc;
 use sultan::config::AppConfig;
-use sultan::web::AppState;
 use sultan_core::application::{AuthServiceTrait, CategoryServiceTrait, CustomerServiceTrait};
 use sultan_core::crypto::{DefaultJwtManager, JwtConfig};
-use sultan_core::domain::context::Context;
+use sultan_web::AppState;
 use time::Duration;
 use tower::ServiceExt;
 
@@ -75,7 +74,6 @@ impl MockAppStateBuilder {
         ));
 
         AppState {
-            config: Arc::new(config),
             auth_service: self
                 .auth_service
                 .unwrap_or_else(|| Arc::new(MockAuthService::new_success())),

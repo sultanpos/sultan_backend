@@ -6,7 +6,7 @@ use serde_json::json;
 use std::sync::Arc;
 
 use common::{MockAppStateBuilder, make_request, mock_auth_service::MockAuthService};
-use sultan::web::auth_router::auth_router;
+use sultan_web::handler::auth_router::auth_router;
 
 #[tokio::test]
 async fn test_login_success() {
