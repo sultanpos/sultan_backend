@@ -8,17 +8,23 @@ A modern, production-ready Point of Sale (POS) backend system built with Rust, f
 
 Sultan Backend is built using Clean Architecture principles with clear separation of concerns:
 
-- **sultan_core**: Domain layer containing business logic, entities, and use cases
-  - Domain models and context
+- **sultan_core**: Domain layer (git submodule)
+  - Domain models, entities, and context
   - Application services (auth, branch, category, customer, product, supplier, user)
   - Storage abstractions (repositories)
   - Cryptography utilities (JWT, password hashing)
+  - Database migrations
   
-- **sultan**: Web layer providing HTTP API
-  - Axum web framework
-  - REST API endpoints
+- **sultan_web**: Presentation layer
+  - HTTP handlers and routing
   - Request/response DTOs
-  - Middleware and error handling
+  - Middleware (JWT verification, context)
+  - Mock services for testing
+  
+- **sultan**: Main application
+  - Configuration management
+  - Application bootstrapping
+  - Server setup and initialization
 
 ## 🚀 Features
 
@@ -111,37 +117,67 @@ The Swagger UI provides:
 
 ## 🧪 Testing
 
-### Run all tests
+Sultan Backend has comprehensive test coverage across all layers:
+
+### Test Suites
+
+**Web Layer Tests** (`sultan_web/tests/`):
+- `auth_test.rs` - Authentication endpoint tests (10 tests)
+- `category_test.rs` - Category CRUD operations (25 tests)
+- `customer_test.rs` - Customer management (22 tests)
+- `middleware_test.rs` - JWT verification & context middleware (8 tests)
+
+**Configuration Tests** (`sultan/tests/`):
+- `config_test.rs` - Environment configuration validation (12 tests)
+
+**Domain Layer Tests** (`sultan_core/tests/`):
+- Repository tests for all entities (branch, category, customer, product, supplier, user)
+- Transaction handling tests
+- Business logic validation
+
+**Total**: 77+ integration and unit tests
+
+### Running Tests
 
 ```bash
+# Run all tests
 cargo test
-```
 
-### Run specific test suites
-
-```bash
-# Authentication tests
-cargo test --package sultan --test auth_test
-
-# Repository tests
+# Run specific package tests
+cargo test --package sultan
+cargo test --package sultan_web
 cargo test --package sultan_core
-```
 
-### Run with coverage
+# Run specific test file
+cargo test --test auth_test
+cargo test --test config_test
+cargo test --test middleware_test
 
-```bash
+# Run with coverage report
 cargo install cargo-llvm-cov
-cargo llvm-cov --html
+cargo llvm-cov --html --open
 ```
 
-### Linting
+### Test Features
+
+- **Mock Services**: Trait-based mocking for isolated testing
+- **Serial Tests**: Config tests use `serial_test` to avoid environment variable conflicts
+- **Integration Tests**: Full HTTP request/response testing with Axum test utilities
+- **Coverage Tracking**: SonarCloud integration for quality gates
+
+### Linting & Quality Checks
 
 ```bash
+# Format code
+cargo fmt --package sultan
+cargo fmt --package sultan_web
+
+# Run clippy (zero warnings enforced)
+cargo clippy --package sultan --all-targets -- -D warnings
+cargo clippy --package sultan_web --all-targets -- -D warnings
+
 # Check formatting
 cargo fmt --all -- --check
-
-# Run clippy
-cargo clippy -- -D warnings
 ```
 
 ## 📁 Project Structure
@@ -153,15 +189,28 @@ sultan_backend/
 │       └── pr.yml              # CI/CD pipeline
 ├── sultan/                     # Web layer
 │   ├── src/
-│   │   ├── domain/            # DTOs
-│   │   ├── web/               # HTTP handlers & routing
-│   │   ├── config.rs          # Configuration
+│   │   ├── config.rs          # Configuration management
 │   │   ├── server.rs          # Application setup
 │   │   ├── main.rs            # Entry point
 │   │   └── lib.rs
 │   └── tests/                 # Integration tests
-│       ├── auth_test.rs
-│       └── common/            # Test utilities
+│       └── config_test.rs     # Configuration tests (12 tests)
+├── sultan_web/                 # Web handlers layer
+│   ├── src/
+│   │   ├── dto/               # Data Transfer Objects
+│   │   ├── handler/           # HTTP handlers & routing
+│   │   │   ├── auth_router.rs
+│   │   │   ├── category_router.rs
+│   │   │   ├── customer_router.rs
+│   │   │   └── middleware.rs  # JWT & context middleware
+│   │   ├── app_state.rs       # Application state
+│   │   └── lib.rs
+│   └── tests/                 # Integration tests
+│       ├── auth_test.rs       # Auth endpoint tests (10 tests)
+│       ├── category_test.rs   # Category tests (25 tests)
+│       ├── customer_test.rs   # Customer tests (22 tests)
+│       ├── middleware_test.rs # Middleware tests (8 tests)
+│       └── common/            # Test utilities & mocks
 ├── sultan_core/               # Domain layer (submodule)
 │   ├── src/
 │   │   ├── application/       # Business logic services
@@ -170,7 +219,7 @@ sultan_backend/
 │   │   ├── crypto/            # JWT & password utilities
 │   │   └── snowflake/         # ID generation
 │   ├── migrations/            # Database migrations
-│   └── tests/                 # Unit tests
+│   └── tests/                 # Unit & repository tests
 ├── Cargo.toml                 # Workspace configuration
 └── README.md
 ```
@@ -214,10 +263,13 @@ For detailed request/response schemas and to test the endpoints interactively, v
 
 ### Testing Strategy
 
-- **Unit Tests**: In `sultan_core/tests/` for business logic
-- **Integration Tests**: In `sultan/tests/` for API endpoints
-- **Mock Services**: Trait-based mocking for isolated testing
-- **Coverage**: Tracked with cargo-llvm-cov
+- **Unit Tests**: In `sultan_core/tests/` for business logic and repositories
+- **Integration Tests**: In `sultan_web/tests/` for API endpoints and middleware
+- **Configuration Tests**: In `sultan/tests/` for environment handling
+- **Mock Services**: Trait-based mocking with dependency injection for isolated testing
+- **Serial Tests**: Environment-dependent tests use `serial_test` crate to prevent race conditions
+- **Coverage**: Tracked with cargo-llvm-cov and SonarCloud for quality gates
+- **CI/CD**: Automated testing on every pull request with GitHub Actions
 
 ### Code Quality
 
@@ -230,7 +282,19 @@ For detailed request/response schemas and to test the endpoints interactively, v
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Make your changes
-4. Run tests and linting (`cargo test && cargo clippy`)
+4. Run tests and linting:
+   ```bash
+   # Format code
+   cargo fmt --package sultan
+   cargo fmt --package sultan_web
+   
+   # Run linting
+   cargo clippy --package sultan --all-targets -- -D warnings
+   cargo clippy --package sultan_web --all-targets -- -D warnings
+   
+   # Run all tests
+   cargo test
+   ```
 5. Commit your changes (`git commit -m 'Add amazing feature'`)
 6. Push to the branch (`git push origin feature/amazing-feature`)
 7. Open a Pull Request

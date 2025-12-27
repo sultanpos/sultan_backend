@@ -1,0 +1,35 @@
+[package]
+name = "sultan_core"
+version = "25.0.1"
+edition = "2024"
+license = "AGPL-3.0-only"
+exclude = ["migrations/"]
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+argon2 = "0.5.3"
+serde = { version = "1.0", features = ["derive"] }
+chrono = { version = "0.4.41", features = ["serde"] }
+thiserror = "2.0"
+uuid = { version = "1.18.0", features = ["serde", "v4"] }
+secrecy = { version = "0.10", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt", "std", "json"] }
+tower-http = { version = "0.6", features = ["trace", "cors"] }
+async-trait = "0.1.89"
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "macros", "uuid", "chrono", "migrate"], default-features = false }
+tokio-util = { version = "0.7", features = ["rt"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+jsonwebtoken = "9"
+md5 = "0.7"
+hex = "0.4"
+rand = "0.8"
+serde_json = "1.0"
+axum = "0.8"
+utoipa = { version = "5", features = ["chrono"] }
+validator = { version = "0.18", features = ["derive"] }
+
+[dev-dependencies]
+once_cell = "1.18"
+mockall = "0.13"
+http-body-util = "0.1"

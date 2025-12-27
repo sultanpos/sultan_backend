@@ -32,3 +32,4 @@ once_cell = "1.21"
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 async-trait = "0.1"
+serial_test = "3.2"
