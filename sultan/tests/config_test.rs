@@ -1,3 +1,4 @@
+use serial_test::serial;
 use std::env;
 use sultan::config::AppConfig;
 
@@ -30,6 +31,7 @@ impl Drop for EnvGuard {
 }
 
 #[test]
+#[serial]
 fn test_from_env_with_defaults() {
     let mut guard = EnvGuard::new();
     guard.set("JWT_SECRET", "test_secret_key_123");
@@ -49,6 +51,7 @@ fn test_from_env_with_defaults() {
 }
 
 #[test]
+#[serial]
 fn test_from_env_with_custom_values() {
     let mut guard = EnvGuard::new();
     guard.set("JWT_SECRET", "custom_secret");
@@ -72,6 +75,7 @@ fn test_from_env_with_custom_values() {
 }
 
 #[test]
+#[serial]
 fn test_from_env_write_log_to_file_true() {
     let mut guard = EnvGuard::new();
     guard.set("JWT_SECRET", "test_secret");
@@ -83,6 +87,7 @@ fn test_from_env_write_log_to_file_true() {
 }
 
 #[test]
+#[serial]
 fn test_from_env_write_log_to_file_yes() {
     let mut guard = EnvGuard::new();
     guard.set("JWT_SECRET", "test_secret");
@@ -94,6 +99,7 @@ fn test_from_env_write_log_to_file_yes() {
 }
 
 #[test]
+#[serial]
 fn test_from_env_write_log_to_file_uppercase() {
     let mut guard = EnvGuard::new();
     guard.set("JWT_SECRET", "test_secret");
@@ -105,6 +111,7 @@ fn test_from_env_write_log_to_file_uppercase() {
 }
 
 #[test]
+#[serial]
 fn test_from_env_write_log_to_file_zero() {
     let mut guard = EnvGuard::new();
     guard.set("JWT_SECRET", "test_secret");
@@ -116,6 +123,7 @@ fn test_from_env_write_log_to_file_zero() {
 }
 
 #[test]
+#[serial]
 fn test_from_env_write_log_to_file_false() {
     let mut guard = EnvGuard::new();
     guard.set("JWT_SECRET", "test_secret");
@@ -127,6 +135,7 @@ fn test_from_env_write_log_to_file_false() {
 }
 
 #[test]
+#[serial]
 #[should_panic(expected = "JWT_SECRET must be set")]
 fn test_from_env_missing_jwt_secret() {
     let mut guard = EnvGuard::new();
@@ -142,6 +151,7 @@ fn test_from_env_missing_jwt_secret() {
 }
 
 #[test]
+#[serial]
 #[should_panic(expected = "DATABASE_URL must be set")]
 fn test_from_env_missing_database_url() {
     let mut guard = EnvGuard::new();
@@ -157,6 +167,7 @@ fn test_from_env_missing_database_url() {
 }
 
 #[test]
+#[serial]
 #[should_panic(expected = "REFRESH_TOKEN_TTL_DAYS must be a valid number")]
 fn test_from_env_invalid_refresh_ttl() {
     let mut guard = EnvGuard::new();
@@ -168,6 +179,7 @@ fn test_from_env_invalid_refresh_ttl() {
 }
 
 #[test]
+#[serial]
 #[should_panic(expected = "ACCESS_TOKEN_TTL_SECS must be a valid number")]
 fn test_from_env_invalid_access_ttl() {
     let mut guard = EnvGuard::new();
@@ -179,6 +191,7 @@ fn test_from_env_invalid_access_ttl() {
 }
 
 #[test]
+#[serial]
 #[should_panic(expected = "DATABASE_MAX_CONNECTIONS must be a valid number")]
 fn test_from_env_invalid_max_connections() {
     let mut guard = EnvGuard::new();
