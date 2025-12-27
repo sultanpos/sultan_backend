@@ -2,6 +2,10 @@ pub mod mock_auth_service;
 pub mod mock_category_service;
 pub mod mock_customer_service;
 
+pub use mock_auth_service::MockAuthService;
+pub use mock_category_service::MockCategoryService;
+pub use mock_customer_service::MockCustomerService;
+
 use anyhow::Result;
 use axum::Router;
 use axum::body::Body;
@@ -15,10 +19,6 @@ use sultan_core::crypto::{DefaultJwtManager, JwtConfig};
 use sultan_core::domain::context::BranchContext;
 use time::Duration;
 use tower::ServiceExt;
-
-use mock_auth_service::MockAuthService;
-use mock_category_service::MockCategoryService;
-use mock_customer_service::MockCustomerService;
 
 /// Builder for creating test AppState with optional service overrides
 pub struct MockAppStateBuilder {

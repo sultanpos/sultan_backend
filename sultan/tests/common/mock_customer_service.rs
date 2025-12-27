@@ -10,6 +10,7 @@ use sultan_core::domain::{
 pub struct MockCustomerService {
     pub should_succeed: bool,
     pub id: i64,
+    pub return_empty: bool,
 }
 
 impl MockCustomerService {
@@ -17,6 +18,7 @@ impl MockCustomerService {
         Self {
             should_succeed: true,
             id: 1,
+            return_empty: false,
         }
     }
 
@@ -25,6 +27,16 @@ impl MockCustomerService {
         Self {
             should_succeed: false,
             id: 1,
+            return_empty: false,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn new_empty() -> Self {
+        Self {
+            should_succeed: true,
+            id: 1,
+            return_empty: true,
         }
     }
 }
@@ -78,7 +90,7 @@ impl CustomerServiceTrait<BranchContext> for MockCustomerService {
             return Err(Error::Internal("Failed to get customer".to_string()));
         }
         if number == "CUST001" {
-            Ok(Some(create_mock_customer(self.id, "CUST001")))
+            Ok(Some(create_mock_customer(self.id, "CUST001", "John Doe")))
         } else {
             Ok(None)
         }
@@ -89,7 +101,7 @@ impl CustomerServiceTrait<BranchContext> for MockCustomerService {
             return Err(Error::Internal("Failed to get customer".to_string()));
         }
         if id == 1 {
-            Ok(Some(create_mock_customer(self.id, "CUST001")))
+            Ok(Some(create_mock_customer(self.id, "CUST001", "John Doe")))
         } else {
             Ok(None)
         }
@@ -104,11 +116,17 @@ impl CustomerServiceTrait<BranchContext> for MockCustomerService {
         if !self.should_succeed {
             return Err(Error::Internal("Failed to get customers".to_string()));
         }
-        Ok(vec![create_mock_customer(1, "CUST001")])
+        if self.return_empty {
+            return Ok(vec![]);
+        }
+        Ok(vec![
+            create_mock_customer(1, "CUST001", "John Doe"),
+            create_mock_customer(2, "CUST002", "Jane Smith"),
+        ])
     }
 }
 
-fn create_mock_customer(id: i64, number: &str) -> Customer {
+fn create_mock_customer(id: i64, number: &str, name: &str) -> Customer {
     Customer {
         id,
         created_at: chrono::Utc::now(),
@@ -116,7 +134,7 @@ fn create_mock_customer(id: i64, number: &str) -> Customer {
         deleted_at: None,
         is_deleted: false,
         number: number.to_string(),
-        name: "Test Customer".to_string(),
+        name: name.to_string(),
         address: Some("123 Test St".to_string()),
         email: Some("test@customer.com".to_string()),
         phone: Some("555-1234".to_string()),
