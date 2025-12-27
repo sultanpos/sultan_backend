@@ -84,6 +84,7 @@ impl Default for MockAppStateBuilder {
 }
 
 /// Make an HTTP request to the test app
+#[allow(dead_code)]
 pub async fn make_request(
     app: Router,
     method: &str,

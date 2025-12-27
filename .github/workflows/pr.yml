@@ -43,7 +43,7 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
       - name: Run tests
-        run: cargo llvm-cov --verbose --all-features --package sultan --lcov --output-path coverage.lcov
+        run: cargo llvm-cov --verbose --all-features --package sultan --package sultan_web --lcov --output-path coverage.lcov
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
@@ -65,6 +65,16 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: coverage-report
+      - name: Verify coverage file
+        run: |
+          if [ -f coverage.lcov ]; then
+            echo "✅ Coverage file found"
+            echo "Coverage file size: $(wc -c < coverage.lcov) bytes"
+            echo "Coverage file lines: $(wc -l < coverage.lcov) lines"
+          else
+            echo "❌ Coverage file not found!"
+            exit 1
+          fi
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v6
         env:

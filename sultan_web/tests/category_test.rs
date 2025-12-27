@@ -523,3 +523,227 @@ async fn test_get_all_categories_empty() {
     let categories = response.as_array().unwrap();
     assert_eq!(categories.len(), 0);
 }
+
+// ============================================================================
+// Additional Coverage Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_category_with_children() {
+    // Setup - use mock category service that includes children
+    let app_state = MockAppStateBuilder::new()
+        .with_category_service(Arc::new(MockCategoryService::new_success()));
+
+    // Build router
+    let app = build_test_router(app_state);
+
+    // Get category with ID 1
+    let (status, response) = make_request(app, "GET", "/api/category/1", None)
+        .await
+        .expect("Request failed");
+
+    // Assert
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(response["name"].as_str().unwrap(), "Electronics");
+
+    // Verify children field exists (even if null/empty in the mock)
+    assert!(response.get("children").is_some());
+}
+
+#[tokio::test]
+async fn test_create_category_with_parent() {
+    // Setup - use mock category service
+    let app_state = MockAppStateBuilder::new()
+        .with_category_service(Arc::new(MockCategoryService::new_success()));
+
+    // Build router
+    let app = build_test_router(app_state);
+
+    // Make create request with parent_id
+    let body = json!({
+        "name": "Laptops",
+        "description": "Laptop computers",
+        "parent_id": 1
+    });
+
+    let (status, response) = make_request(app, "POST", "/api/category", Some(body))
+        .await
+        .expect("Request failed");
+
+    // Assert
+    assert_eq!(status, StatusCode::CREATED);
+    assert!(response.get("id").is_some());
+}
+
+#[tokio::test]
+async fn test_update_category_with_parent() {
+    // Setup - use mock category service
+    let app_state = MockAppStateBuilder::new()
+        .with_category_service(Arc::new(MockCategoryService::new_success()));
+
+    // Build router
+    let app = build_test_router(app_state);
+
+    // Make update request with parent_id
+    let body = json!({
+        "name": "Updated Electronics",
+        "description": "Updated description",
+        "parent_id": 2
+    });
+
+    let (status, response) = make_request(app, "PUT", "/api/category/1", Some(body))
+        .await
+        .expect("Request failed");
+
+    // Assert
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(response.is_null() || response.as_object().is_none_or(|o| o.is_empty()));
+}
+
+#[tokio::test]
+async fn test_create_category_without_description() {
+    // Setup - use mock category service
+    let app_state = MockAppStateBuilder::new()
+        .with_category_service(Arc::new(MockCategoryService::new_success()));
+
+    // Build router
+    let app = build_test_router(app_state);
+
+    // Make create request without description (optional field)
+    let body = json!({
+        "name": "Electronics",
+        "parent_id": null
+    });
+
+    let (status, response) = make_request(app, "POST", "/api/category", Some(body))
+        .await
+        .expect("Request failed");
+
+    // Assert
+    assert_eq!(status, StatusCode::CREATED);
+    assert!(response.get("id").is_some());
+}
+
+#[tokio::test]
+async fn test_update_category_without_description() {
+    // Setup - use mock category service
+    let app_state = MockAppStateBuilder::new()
+        .with_category_service(Arc::new(MockCategoryService::new_success()));
+
+    // Build router
+    let app = build_test_router(app_state);
+
+    // Make update request without description (optional field)
+    let body = json!({
+        "name": "Updated Electronics",
+        "parent_id": null
+    });
+
+    let (status, response) = make_request(app, "PUT", "/api/category/1", Some(body))
+        .await
+        .expect("Request failed");
+
+    // Assert
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(response.is_null() || response.as_object().is_none_or(|o| o.is_empty()));
+}
+
+#[tokio::test]
+async fn test_get_all_categories_with_children_structure() {
+    // Setup - use mock category service
+    let app_state = MockAppStateBuilder::new()
+        .with_category_service(Arc::new(MockCategoryService::new_success()));
+
+    // Build router
+    let app = build_test_router(app_state);
+
+    // Make get all request
+    let (status, response) = make_request(app, "GET", "/api/category", None)
+        .await
+        .expect("Request failed");
+
+    // Assert
+    assert_eq!(status, StatusCode::OK);
+    let categories = response.as_array().unwrap();
+    assert!(!categories.is_empty());
+
+    // Verify structure includes children arrays (even if empty)
+    for category in categories {
+        assert!(category.get("id").is_some());
+        assert!(category.get("name").is_some());
+        // children field should be present in the response
+        assert!(category.get("children").is_some());
+    }
+}
+
+#[tokio::test]
+async fn test_delete_category_service_error() {
+    // Setup - use mock category service that returns error
+    let app_state = MockAppStateBuilder::new()
+        .with_category_service(Arc::new(MockCategoryService::new_failure()));
+
+    // Build router
+    let app = build_test_router(app_state);
+
+    // Make delete request
+    let (status, response) = make_request(app, "DELETE", "/api/category/1", None)
+        .await
+        .expect("Request failed");
+
+    // Assert
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    let error_msg = response["error"].as_str().unwrap();
+    assert!(
+        error_msg.contains("Internal error"),
+        "Expected internal error, got: {}",
+        error_msg
+    );
+}
+
+#[tokio::test]
+async fn test_get_category_by_id_service_error() {
+    // Setup - use mock category service that returns error
+    let app_state = MockAppStateBuilder::new()
+        .with_category_service(Arc::new(MockCategoryService::new_failure()));
+
+    // Build router
+    let app = build_test_router(app_state);
+
+    // Make get request
+    let (status, response) = make_request(app, "GET", "/api/category/1", None)
+        .await
+        .expect("Request failed");
+
+    // Assert
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    let error_msg = response["error"].as_str().unwrap();
+    assert!(
+        error_msg.contains("Internal error"),
+        "Expected internal error, got: {}",
+        error_msg
+    );
+}
+
+#[tokio::test]
+async fn test_get_all_categories_service_error() {
+    // Setup - use mock category service that returns error
+    let app_state = MockAppStateBuilder::new()
+        .with_category_service(Arc::new(MockCategoryService::new_failure()));
+
+    // Build router
+    let app = build_test_router(app_state);
+
+    // Make get all request
+    let (status, response) = make_request(app, "GET", "/api/category", None)
+        .await
+        .expect("Request failed");
+
+    // Assert
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    let error_msg = response["error"].as_str().unwrap();
+    assert!(
+        error_msg.contains("Internal error"),
+        "Expected internal error, got: {}",
+        error_msg
+    );
+}
