@@ -13,6 +13,8 @@ use axum::Router;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::Value;
+use std::any::{Any, TypeId};
+use std::collections::HashMap;
 use std::sync::Arc;
 use sultan_core::application::{
     AuthServiceTrait, CategoryServiceTrait, CustomerServiceTrait, SupplierServiceTrait,
@@ -27,6 +29,7 @@ pub struct MockAppStateBuilder {
     category_service: Option<Arc<dyn CategoryServiceTrait>>,
     customer_service: Option<Arc<dyn CustomerServiceTrait>>,
     supplier_service: Option<Arc<dyn SupplierServiceTrait>>,
+    extensions: HashMap<TypeId, Arc<dyn Any + Send + Sync>>,
 }
 
 impl MockAppStateBuilder {
@@ -37,6 +40,7 @@ impl MockAppStateBuilder {
             category_service: None,
             customer_service: None,
             supplier_service: None,
+            extensions: HashMap::new(),
         }
     }
 
@@ -68,6 +72,13 @@ impl MockAppStateBuilder {
         self
     }
 
+    /// Add an extension to the AppState
+    #[allow(dead_code)]
+    pub fn add_extension<T: Send + Sync + 'static>(mut self, value: Arc<T>) -> Self {
+        self.extensions.insert(TypeId::of::<T>(), value);
+        self
+    }
+
     /// Build the AppState with provided or default services
     pub fn build(self) -> AppState {
         let jwt_manager = DefaultJwtManager::new(JwtConfig::new(
@@ -89,6 +100,7 @@ impl MockAppStateBuilder {
             supplier_service: self
                 .supplier_service
                 .unwrap_or_else(|| Arc::new(MockSupplierService::new_success())),
+            extensions: Arc::new(self.extensions),
         }
     }
 }

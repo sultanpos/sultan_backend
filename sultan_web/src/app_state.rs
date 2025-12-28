@@ -1,5 +1,9 @@
 use axum::extract::FromRef;
 use std::sync::Arc;
+use std::{
+    any::{Any, TypeId},
+    collections::HashMap,
+};
 use sultan_core::application::{
     AuthServiceTrait, CategoryServiceTrait, CustomerServiceTrait, SupplierServiceTrait,
 };
@@ -12,6 +16,15 @@ pub struct AppState {
     pub category_service: Arc<dyn CategoryServiceTrait>,
     pub customer_service: Arc<dyn CustomerServiceTrait>,
     pub supplier_service: Arc<dyn SupplierServiceTrait>,
+    pub extensions: Arc<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>,
+}
+
+impl AppState {
+    pub fn get<T: Send + Sync + 'static>(&self) -> Option<Arc<T>> {
+        self.extensions
+            .get(&TypeId::of::<T>())
+            .and_then(|val| val.clone().downcast::<T>().ok())
+    }
 }
 
 impl FromRef<AppState> for Arc<dyn AuthServiceTrait> {
