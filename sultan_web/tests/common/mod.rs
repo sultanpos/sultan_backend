@@ -2,11 +2,13 @@ pub mod mock_auth_service;
 pub mod mock_category_service;
 pub mod mock_customer_service;
 pub mod mock_supplier_service;
+pub mod mock_user_service;
 
 pub use mock_auth_service::MockAuthService;
 pub use mock_category_service::MockCategoryService;
 pub use mock_customer_service::MockCustomerService;
 pub use mock_supplier_service::MockSupplierService;
+pub use mock_user_service::MockUserService;
 
 use anyhow::Result;
 use axum::Router;
@@ -18,6 +20,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use sultan_core::application::{
     AuthServiceTrait, CategoryServiceTrait, CustomerServiceTrait, SupplierServiceTrait,
+    UserServiceTrait,
 };
 use sultan_core::crypto::{DefaultJwtManager, JwtConfig};
 use sultan_web::AppState;
@@ -29,6 +32,7 @@ pub struct MockAppStateBuilder {
     category_service: Option<Arc<dyn CategoryServiceTrait>>,
     customer_service: Option<Arc<dyn CustomerServiceTrait>>,
     supplier_service: Option<Arc<dyn SupplierServiceTrait>>,
+    user_service: Option<Arc<dyn UserServiceTrait>>,
     extensions: HashMap<TypeId, Arc<dyn Any + Send + Sync>>,
 }
 
@@ -40,6 +44,7 @@ impl MockAppStateBuilder {
             category_service: None,
             customer_service: None,
             supplier_service: None,
+            user_service: None,
             extensions: HashMap::new(),
         }
     }
@@ -72,6 +77,13 @@ impl MockAppStateBuilder {
         self
     }
 
+    /// Override the user service
+    #[allow(dead_code)]
+    pub fn with_user_service(mut self, service: Arc<dyn UserServiceTrait>) -> Self {
+        self.user_service = Some(service);
+        self
+    }
+
     /// Add an extension to the AppState
     #[allow(dead_code)]
     pub fn add_extension<T: Send + Sync + 'static>(mut self, value: Arc<T>) -> Self {
@@ -100,6 +112,9 @@ impl MockAppStateBuilder {
             supplier_service: self
                 .supplier_service
                 .unwrap_or_else(|| Arc::new(MockSupplierService::new_success())),
+            user_service: self
+                .user_service
+                .unwrap_or_else(|| Arc::new(MockUserService::new_success())),
             extensions: Arc::new(self.extensions),
         }
     }
