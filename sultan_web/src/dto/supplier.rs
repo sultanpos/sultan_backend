@@ -3,7 +3,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sultan_core::domain::model::{Update, supplier::Supplier};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
 
 #[derive(Debug, Deserialize, Validate, ToSchema)]
@@ -82,22 +82,31 @@ impl From<Supplier> for SupplierResponse {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct SupplierQueryParams {
+    #[schema(example = "CV. Sultan")]
     pub name: Option<String>,
+    #[schema(example = "SUP001")]
     pub code: Option<String>,
+    #[schema(example = "081234567890")]
     pub phone: Option<String>,
+    #[schema(example = "12.345.678.9-012.345")]
     pub npwp: Option<String>,
+    #[schema(example = "supplier@example.com")]
     pub email: Option<String>,
     /// Page number (default: 1)
     #[serde(default = "default_page")]
+    #[schema(example = 1, default = 1)]
     pub page: u32,
     /// Page size (default: 20, max: 100)
     #[serde(default = "default_page_size")]
+    #[schema(example = 20, default = 20)]
     pub page_size: u32,
     /// Order by field
+    #[schema(example = "name")]
     pub order_by: Option<String>,
     /// Order direction (asc/desc)
+    #[schema(example = "asc")]
     pub order_direction: Option<String>,
 }
 

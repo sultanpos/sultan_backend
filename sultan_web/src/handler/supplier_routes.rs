@@ -24,10 +24,14 @@ use crate::dto::{ErrorResponse, ListResponse, SupplierCreateRequest, SupplierCre
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(create),
+    paths(create, update, delete_supplier, get_one, get_many),
     components(schemas(
         SupplierCreateRequest,
         SupplierCreateResponse,
+        SupplierUpdateRequest,
+        SupplierResponse,
+        SupplierQueryParams,
+        ListResponse<SupplierResponse>,
         ErrorResponse,
     )),
     tags(
@@ -43,16 +47,16 @@ pub struct SupplierApiDoc;
 // HTTP Handlers
 // ============================================================================
 
-/// Create a new category
+/// Create a new supplier
 ///
-/// Creates a new category with the provided information. Requires authentication.
+/// Creates a new supplier with the provided information. Requires authentication.
 #[utoipa::path(
     post,
     path = "/api/supplier",
     tag = "supplier",
     request_body = SupplierCreateRequest,
     responses(
-        (status = 200, description = "Supplier created successfully", body = SupplierCreateResponse),
+        (status = 201, description = "Supplier created successfully", body = SupplierCreateResponse),
         (status = 400, description = "Bad request - validation error", body = ErrorResponse),
         (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse)
     ),
@@ -90,6 +94,27 @@ async fn create(
     Ok((StatusCode::CREATED, Json(SupplierCreateResponse { id })))
 }
 
+/// Update an existing supplier
+///
+/// Updates a supplier's information by ID. Requires authentication.
+#[utoipa::path(
+    put,
+    path = "/api/supplier/{id}",
+    tag = "supplier",
+    params(
+        ("id" = i64, Path, description = "Supplier ID")
+    ),
+    request_body = SupplierUpdateRequest,
+    responses(
+        (status = 204, description = "Supplier updated successfully"),
+        (status = 400, description = "Bad request - validation error", body = ErrorResponse),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse),
+        (status = 404, description = "Supplier not found", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 async fn update(
     State(supplier_service): State<Arc<dyn SupplierServiceTrait>>,
     Extension(ctx): Extension<Context>,
@@ -121,6 +146,25 @@ async fn update(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Delete a supplier
+///
+/// Deletes a supplier by ID. Requires authentication.
+#[utoipa::path(
+    delete,
+    path = "/api/supplier/{id}",
+    tag = "supplier",
+    params(
+        ("id" = i64, Path, description = "Supplier ID")
+    ),
+    responses(
+        (status = 204, description = "Supplier deleted successfully"),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse),
+        (status = 404, description = "Supplier not found", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 async fn delete_supplier(
     State(supplier_service): State<Arc<dyn SupplierServiceTrait>>,
     Extension(ctx): Extension<Context>,
@@ -130,6 +174,25 @@ async fn delete_supplier(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Get a supplier by ID
+///
+/// Retrieves a single supplier by its ID. Requires authentication.
+#[utoipa::path(
+    get,
+    path = "/api/supplier/{id}",
+    tag = "supplier",
+    params(
+        ("id" = i64, Path, description = "Supplier ID")
+    ),
+    responses(
+        (status = 200, description = "Supplier retrieved successfully", body = SupplierResponse),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse),
+        (status = 404, description = "Supplier not found", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 async fn get_one(
     State(supplier_service): State<Arc<dyn SupplierServiceTrait>>,
     Extension(ctx): Extension<Context>,
@@ -146,6 +209,22 @@ async fn get_one(
     Ok((StatusCode::OK, Json(SupplierResponse::from(supplier))))
 }
 
+/// Get all suppliers
+///
+/// Retrieves a list of suppliers with optional filtering and pagination. Requires authentication.
+#[utoipa::path(
+    get,
+    path = "/api/supplier",
+    tag = "supplier",
+    params(SupplierQueryParams),
+    responses(
+        (status = 200, description = "Suppliers retrieved successfully", body = ListResponse<SupplierResponse>),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 async fn get_many(
     State(supplier_service): State<Arc<dyn SupplierServiceTrait>>,
     Extension(ctx): Extension<Context>,
