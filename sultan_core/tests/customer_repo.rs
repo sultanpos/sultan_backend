@@ -765,7 +765,7 @@ async fn test_get_all_customers() {
             address: None,
             email: None,
             phone: None,
-            level: i as i32,
+            level: i,
             metadata: None,
         };
         repo.create(&ctx, id, &customer)

@@ -38,7 +38,16 @@ pub async fn verify_jwt(
     // Verify token
     match state.jwt_manager.validate_token(token) {
         Ok(claims) => {
-            let ctx = Context::new_with_all(Some(claims.user_id), HashMap::new(), HashMap::new());
+            let permission = state
+                .user_service
+                .get_user_permission(&Context::new_internal(), claims.user_id)
+                .await
+                .unwrap_or_default();
+            let permission_hash: HashMap<(i32, Option<i64>), i32> = permission
+                .into_iter()
+                .map(|p| ((p.permission, p.branch_id), p.action))
+                .collect();
+            let ctx = Context::new_with_all(Some(claims.user_id), permission_hash, HashMap::new());
             req.extensions_mut().insert(ctx);
             Ok(next.run(req).await)
         }

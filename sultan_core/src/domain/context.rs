@@ -35,6 +35,7 @@ pub struct Context {
     permission: HashMap<(i32, Option<i64>), i32>,
     // Type-erased storage for arbitrary values using Arc for cheap cloning
     extensions: HashMap<TypeId, Arc<dyn Any + Send + Sync>>,
+    internal: bool,
 }
 
 impl Context {
@@ -43,6 +44,7 @@ impl Context {
             user_id: None,
             permission: HashMap::new(),
             extensions: HashMap::new(),
+            internal: false,
         }
     }
 
@@ -55,6 +57,16 @@ impl Context {
             user_id,
             permission,
             extensions,
+            internal: false,
+        }
+    }
+
+    pub fn new_internal() -> Self {
+        Self {
+            user_id: None,
+            permission: HashMap::new(),
+            extensions: HashMap::new(),
+            internal: true,
         }
     }
 
@@ -76,6 +88,9 @@ impl Context {
         resource: i32,
         action: i32,
     ) -> Result<(), crate::domain::Error> {
+        if self.internal {
+            return Ok(());
+        }
         if self.has_access(branch_id, resource, action) {
             Ok(())
         } else {

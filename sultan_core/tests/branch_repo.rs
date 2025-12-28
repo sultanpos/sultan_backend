@@ -124,7 +124,7 @@ async fn test_partial_update_branch() {
     assert_eq!(fetched.name, "Updated Name");
     // Other fields should remain unchanged
     assert_eq!(fetched.code, "ORIG");
-    assert_eq!(fetched.is_main, false);
+    assert!(!fetched.is_main);
     assert_eq!(fetched.address, Some("456 Elm St".to_string()));
     assert_eq!(fetched.phone, Some("555-5678".to_string()));
     assert_eq!(fetched.npwp, Some("98765432109876".to_string()));
