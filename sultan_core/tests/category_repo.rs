@@ -625,7 +625,7 @@ async fn test_create_at_max_depth() {
             },
         )
         .await
-        .expect(&format!("Failed to create level {}", i));
+        .unwrap_or_else(|_| panic!("Failed to create level {}", i));
         parent_id = Some(id);
     }
 
@@ -664,7 +664,7 @@ async fn test_create_exceeds_max_depth() {
             },
         )
         .await
-        .expect(&format!("Failed to create level {}", i));
+        .unwrap_or_else(|_| panic!("Failed to create level {}", i));
         parent_id = Some(id);
     }
 

@@ -1,5 +1,6 @@
 pub mod auth_service;
 pub mod branch_service;
+pub mod cache;
 pub mod category_service;
 pub mod customer_service;
 pub mod product_service;
@@ -8,6 +9,7 @@ pub mod user_service;
 
 pub use auth_service::{AuthService, AuthServiceTrait, AuthTokens};
 pub use branch_service::{BranchService, BranchServiceTrait};
+pub use cache::{CacheService, InMemoryCache};
 pub use category_service::{CategoryService, CategoryServiceTrait};
 pub use customer_service::{CustomerService, CustomerServiceTrait};
 pub use product_service::{ProductService, ProductServiceTrait};

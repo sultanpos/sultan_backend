@@ -6,6 +6,7 @@ use std::{
 };
 use sultan_core::application::{
     AuthServiceTrait, CategoryServiceTrait, CustomerServiceTrait, SupplierServiceTrait,
+    UserServiceTrait,
 };
 use sultan_core::crypto::JwtManager;
 
@@ -16,6 +17,7 @@ pub struct AppState {
     pub category_service: Arc<dyn CategoryServiceTrait>,
     pub customer_service: Arc<dyn CustomerServiceTrait>,
     pub supplier_service: Arc<dyn SupplierServiceTrait>,
+    pub user_service: Arc<dyn UserServiceTrait>,
     pub extensions: Arc<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>,
 }
 
@@ -48,5 +50,11 @@ impl FromRef<AppState> for Arc<dyn CustomerServiceTrait> {
 impl FromRef<AppState> for Arc<dyn SupplierServiceTrait> {
     fn from_ref(app_state: &AppState) -> Self {
         app_state.supplier_service.clone()
+    }
+}
+
+impl FromRef<AppState> for Arc<dyn UserServiceTrait> {
+    fn from_ref(app_state: &AppState) -> Self {
+        app_state.user_service.clone()
     }
 }

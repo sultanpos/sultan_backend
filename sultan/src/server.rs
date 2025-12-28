@@ -9,7 +9,8 @@ use sqlx::{Sqlite, SqlitePool, migrate::MigrateDatabase, sqlite::SqlitePoolOptio
 use std::{fs::File, sync::Arc};
 use sultan_core::{
     application::{
-        AuthService, AuthServiceTrait, CategoryService, CustomerService, SupplierService,
+        AuthService, AuthServiceTrait, CategoryService, CustomerService, InMemoryCache,
+        SupplierService, UserService,
     },
     crypto::{Argon2PasswordHasher, DefaultJwtManager, JwtConfig, JwtManager},
     snowflake::SnowflakeGenerator,
@@ -76,15 +77,23 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
         config.jwt_secret.clone(),
         config.access_token_ttl.whole_minutes(),
     ));
+    let permission_cache = InMemoryCache::<i64>::new();
     let auth_service = AuthService::new(
-        user_repository,
+        user_repository.clone(),
         token_repository,
         password_hasher,
         jwt_manager.clone(),
     );
+
     let category_service = CategoryService::new(category_repository, SnowflakeGenerator::new(1)?);
     let customer_service = CustomerService::new(customer_repository, SnowflakeGenerator::new(1)?);
     let supplier_service = SupplierService::new(supplier_repository, SnowflakeGenerator::new(1)?);
+    let user_service = UserService::new(
+        user_repository,
+        Arc::new(Argon2PasswordHasher::default()),
+        SnowflakeGenerator::new(1)?,
+        Arc::new(permission_cache),
+    );
 
     Ok(AppState {
         auth_service: Arc::new(auth_service) as Arc<dyn AuthServiceTrait>,
@@ -92,6 +101,7 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
         category_service: Arc::new(category_service),
         customer_service: Arc::new(customer_service),
         supplier_service: Arc::new(supplier_service),
+        user_service: Arc::new(user_service),
         extensions: Arc::new(std::collections::HashMap::new()),
     })
 }

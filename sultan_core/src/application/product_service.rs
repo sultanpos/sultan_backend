@@ -476,7 +476,7 @@ mod tests {
 
         let service = create_service(mock_repo, mock_tx, create_mock_id_gen(1));
         let product = create_test_product_create();
-        let result = service.create_product(&ctx, &product, &vec![]).await;
+        let result = service.create_product(&ctx, &product, &[]).await;
 
         assert!(result.is_ok());
     }
@@ -524,7 +524,7 @@ mod tests {
 
         let service = create_service(mock_repo, mock_tx, create_mock_id_gen(1));
         let product = create_test_product_create();
-        let result = service.create_product(&ctx, &product, &vec![]).await;
+        let result = service.create_product(&ctx, &product, &[]).await;
 
         assert!(matches!(result, Err(Error::Forbidden(_))));
     }
@@ -545,7 +545,7 @@ mod tests {
 
         let service = create_service(mock_repo, mock_tx, create_mock_id_gen(1));
         let product = create_test_product_create();
-        let result = service.create_product(&ctx, &product, &vec![]).await;
+        let result = service.create_product(&ctx, &product, &[]).await;
 
         assert!(matches!(result, Err(Error::Database(_))));
     }
