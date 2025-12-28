@@ -1,10 +1,12 @@
 pub mod mock_auth_service;
 pub mod mock_category_service;
 pub mod mock_customer_service;
+pub mod mock_supplier_service;
 
 pub use mock_auth_service::MockAuthService;
 pub use mock_category_service::MockCategoryService;
 pub use mock_customer_service::MockCustomerService;
+pub use mock_supplier_service::MockSupplierService;
 
 use anyhow::Result;
 use axum::Router;
@@ -12,7 +14,9 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::Value;
 use std::sync::Arc;
-use sultan_core::application::{AuthServiceTrait, CategoryServiceTrait, CustomerServiceTrait};
+use sultan_core::application::{
+    AuthServiceTrait, CategoryServiceTrait, CustomerServiceTrait, SupplierServiceTrait,
+};
 use sultan_core::crypto::{DefaultJwtManager, JwtConfig};
 use sultan_web::AppState;
 use tower::ServiceExt;
@@ -22,6 +26,7 @@ pub struct MockAppStateBuilder {
     auth_service: Option<Arc<dyn AuthServiceTrait>>,
     category_service: Option<Arc<dyn CategoryServiceTrait>>,
     customer_service: Option<Arc<dyn CustomerServiceTrait>>,
+    supplier_service: Option<Arc<dyn SupplierServiceTrait>>,
 }
 
 impl MockAppStateBuilder {
@@ -31,6 +36,7 @@ impl MockAppStateBuilder {
             auth_service: None,
             category_service: None,
             customer_service: None,
+            supplier_service: None,
         }
     }
 
@@ -48,10 +54,17 @@ impl MockAppStateBuilder {
         self
     }
 
-    /// Override the category service
+    /// Override the customer service
     #[allow(dead_code)]
     pub fn with_customer_service(mut self, service: Arc<dyn CustomerServiceTrait>) -> Self {
         self.customer_service = Some(service);
+        self
+    }
+
+    /// Override the supplier service
+    #[allow(dead_code)]
+    pub fn with_supplier_service(mut self, service: Arc<dyn SupplierServiceTrait>) -> Self {
+        self.supplier_service = Some(service);
         self
     }
 
@@ -73,6 +86,9 @@ impl MockAppStateBuilder {
             customer_service: self
                 .customer_service
                 .unwrap_or_else(|| Arc::new(MockCustomerService::new_success())),
+            supplier_service: self
+                .supplier_service
+                .unwrap_or_else(|| Arc::new(MockSupplierService::new_success())),
         }
     }
 }
