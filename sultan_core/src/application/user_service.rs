@@ -36,7 +36,9 @@ pub struct UserService<R, P, I, C> {
     cache: Arc<C>,
 }
 
-impl<R: UserRepository, P: PasswordHash, I: IdGenerator, C: CacheService<i64>> UserService<R, P, I, C> {
+impl<R: UserRepository, P: PasswordHash, I: IdGenerator, C: CacheService<i64>>
+    UserService<R, P, I, C>
+{
     pub fn new(repository: R, password_hasher: Arc<P>, id_generator: I, cache: Arc<C>) -> Self {
         Self {
             repository,
@@ -64,20 +66,20 @@ where
         self.repository
             .create_user(ctx, id, &user_with_password)
             .await?;
-        
+
         // Invalidate cache for new user
         let _ = self.cache.delete(&id).await;
-        
+
         Ok(())
     }
 
     async fn update(&self, ctx: &Context, id: i64, user: &UserUpdate) -> DomainResult<()> {
         ctx.require_access(None, resource::USER, action::UPDATE)?;
         self.repository.update_user(ctx, id, user).await?;
-        
+
         // Invalidate cache when user is updated
         let _ = self.cache.delete(&id).await;
-        
+
         Ok(())
     }
 
@@ -97,20 +99,20 @@ where
         self.repository
             .update_password(ctx, user_id, &password_hash)
             .await?;
-        
+
         // Invalidate cache when password is reset
         let _ = self.cache.delete(&user_id).await;
-        
+
         Ok(())
     }
 
     async fn delete(&self, ctx: &Context, user_id: i64) -> DomainResult<()> {
         ctx.require_access(None, resource::USER, action::DELETE)?;
         self.repository.delete_user(ctx, user_id).await?;
-        
+
         // Invalidate cache when user is deleted
         let _ = self.cache.delete(&user_id).await;
-        
+
         Ok(())
     }
 
@@ -120,18 +122,21 @@ where
         user_id: i64,
     ) -> DomainResult<Vec<Permission>> {
         ctx.require_access(None, resource::USER, action::READ)?;
-        
+
         // Try to get from cache first
         if let Some(cached_permissions) = self.cache.get::<Vec<Permission>>(&user_id).await {
             return Ok(cached_permissions);
         }
-        
+
         // Cache miss - fetch from repository
         let permissions = self.repository.get_user_permission(ctx, user_id).await?;
-        
+
         // Store in cache with 5 minute TTL
-        let _ = self.cache.set(&user_id, permissions.clone(), Duration::from_secs(300)).await;
-        
+        let _ = self
+            .cache
+            .set(&user_id, permissions.clone(), Duration::from_secs(300))
+            .await;
+
         Ok(permissions)
     }
 }
@@ -661,11 +666,7 @@ mod tests {
             action: action::READ,
         }];
         cache
-            .set(
-                &1i64,
-                permissions.clone(),
-                Duration::from_secs(300),
-            )
+            .set(&1i64, permissions.clone(), Duration::from_secs(300))
             .await
             .unwrap();
 
@@ -710,11 +711,7 @@ mod tests {
             action: action::READ,
         }];
         cache
-            .set(
-                &1i64,
-                permissions.clone(),
-                Duration::from_secs(300),
-            )
+            .set(&1i64, permissions.clone(), Duration::from_secs(300))
             .await
             .unwrap();
 
@@ -754,11 +751,7 @@ mod tests {
             action: action::READ,
         }];
         cache
-            .set(
-                &1i64,
-                permissions.clone(),
-                Duration::from_secs(300),
-            )
+            .set(&1i64, permissions.clone(), Duration::from_secs(300))
             .await
             .unwrap();
 
@@ -780,9 +773,7 @@ mod tests {
         );
 
         // Reset password - should invalidate cache
-        let result = service
-            .reset_password(&ctx, 1, "newpass".to_string())
-            .await;
+        let result = service.reset_password(&ctx, 1, "newpass".to_string()).await;
         assert!(result.is_ok());
 
         // Cache should be cleared
