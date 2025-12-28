@@ -110,8 +110,7 @@ mod tests {
     fn create_test_context() -> Context {
         let mut permissions = HashMap::new();
         permissions.insert((resource::SUPPLIER, None), 0b1111);
-        let ctx = Context::new().with_permission(permissions);
-        ctx
+        Context::new_with_all(None, permissions, HashMap::new())
     }
 
     /// Creates a test context with no permissions

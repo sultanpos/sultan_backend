@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use axum::{
     Json,
     extract::{Request, State},
@@ -36,9 +38,8 @@ pub async fn verify_jwt(
     // Verify token
     match state.jwt_manager.validate_token(token) {
         Ok(claims) => {
-            let ctx = Context::new();
-            req.extensions_mut()
-                .insert(ctx.with_user_id(claims.user_id));
+            let ctx = Context::new_with_all(Some(claims.user_id), HashMap::new(), HashMap::new());
+            req.extensions_mut().insert(ctx);
             Ok(next.run(req).await)
         }
         Err(_) => Ok((

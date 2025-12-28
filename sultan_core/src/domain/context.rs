@@ -7,22 +7,26 @@ use std::sync::Arc;
 /// It stores:
 /// - User ID (optional)
 /// - Permissions (resource + branch access)
-/// - Arbitrary typed extensions via `set`/`get`
+/// - Arbitrary typed extensions via `get`
 ///
 /// # Examples
 ///
 /// ```rust
 /// use sultan_core::domain::Context;
+/// use std::sync::Arc;
+/// use std::any::{Any, TypeId};
+/// use std::collections::HashMap;
 ///
-/// let mut ctx = Context::new().with_user_id(123);
-///
-/// // Store custom data
-/// ctx.set("request-id".to_string());
-/// ctx.set(42i64);
+/// // Create context with user_id and extensions
+/// let mut extensions = HashMap::new();
+/// extensions.insert(
+///     TypeId::of::<String>(),
+///     Arc::new("request-123".to_string()) as Arc<dyn Any + Send + Sync>
+/// );
+/// let ctx = Context::new_with_all(Some(123), HashMap::new(), extensions);
 ///
 /// // Retrieve typed data
 /// let request_id: &String = ctx.get::<String>().unwrap();
-/// let count: &i64 = ctx.get::<i64>().unwrap();
 /// ```
 #[derive(Clone)]
 pub struct Context {
@@ -42,23 +46,16 @@ impl Context {
         }
     }
 
-    pub fn with_user_id(mut self, user_id: i64) -> Self {
-        self.user_id = Some(user_id);
-        self
-    }
-
-    pub fn with_permission(&self, permission: HashMap<(i32, Option<i64>), i32>) -> Self {
+    pub fn new_with_all(
+        user_id: Option<i64>,
+        permission: HashMap<(i32, Option<i64>), i32>,
+        extensions: HashMap<TypeId, Arc<dyn Any + Send + Sync>>,
+    ) -> Self {
         Self {
-            user_id: self.user_id,
+            user_id,
             permission,
-            extensions: self.extensions.clone(),
+            extensions,
         }
-    }
-
-    /// Set a value of any type in the context.
-    /// The value must implement Clone + Send + Sync + 'static.
-    pub fn set<T: Clone + Send + Sync + 'static>(&mut self, value: T) {
-        self.extensions.insert(TypeId::of::<T>(), Arc::new(value));
     }
 
     /// Get a reference to a value of type T from the context.
@@ -135,7 +132,7 @@ mod tests {
         let mut permissions = std::collections::HashMap::new();
         permissions.insert((1, None), 0b0011); // READ | CREATE
 
-        let ctx = Context::new().with_permission(permissions);
+        let ctx = Context::new_with_all(None, permissions, HashMap::new());
 
         // Should have access for any branch
         assert!(ctx.has_access(Some(1), 1, 0b0001)); // CREATE on branch 1
@@ -153,7 +150,7 @@ mod tests {
         let mut permissions = std::collections::HashMap::new();
         permissions.insert((1, Some(5)), 0b0011); // READ | CREATE for branch 5
 
-        let ctx = Context::new().with_permission(permissions);
+        let ctx = Context::new_with_all(None, permissions, HashMap::new());
 
         // Should have access only for branch 5
         assert!(ctx.has_access(Some(5), 1, 0b0001)); // CREATE on branch 5
@@ -172,7 +169,7 @@ mod tests {
         permissions.insert((1, None), 0b0010); // Global READ
         permissions.insert((1, Some(5)), 0b0001); // CREATE for branch 5
 
-        let ctx = Context::new().with_permission(permissions);
+        let ctx = Context::new_with_all(None, permissions, HashMap::new());
 
         // Global READ should work for any branch
         assert!(ctx.has_access(Some(1), 1, 0b0010)); // READ on branch 1
@@ -197,7 +194,7 @@ mod tests {
         let mut permissions = std::collections::HashMap::new();
         permissions.insert((1, None), 0b0010); // Only READ
 
-        let ctx = Context::new().with_permission(permissions);
+        let ctx = Context::new_with_all(None, permissions, HashMap::new());
 
         // Requesting READ | CREATE should fail because CREATE is missing
         assert!(!ctx.has_access(Some(1), 1, 0b0011)); // READ | CREATE
@@ -214,7 +211,7 @@ mod tests {
         let mut permissions = std::collections::HashMap::new();
         permissions.insert((resource::ADMIN, None), 0b0001); // any value, just needs to exist
 
-        let ctx = Context::new().with_permission(permissions);
+        let ctx = Context::new_with_all(None, permissions, HashMap::new());
 
         // Should have access to any resource, any action, any branch
         assert!(ctx.has_access(Some(1), resource::BRANCH, 0b0001)); // CREATE on branch 1
@@ -230,7 +227,7 @@ mod tests {
         let mut permissions = std::collections::HashMap::new();
         permissions.insert((resource::ADMIN, Some(5)), 0b0001); // ADMIN for branch 5
 
-        let ctx = Context::new().with_permission(permissions);
+        let ctx = Context::new_with_all(None, permissions, HashMap::new());
 
         // Should have access to any resource, any action, but only for branch 5
         assert!(ctx.has_access(Some(5), resource::BRANCH, 0b0001)); // CREATE on branch 5
@@ -248,15 +245,10 @@ mod tests {
     }
 
     #[test]
-    fn test_user_id_preserved_with_permissions() {
-        let mut ctx = Context::new();
-        ctx.user_id = Some(123);
-
-        let mut permissions = std::collections::HashMap::new();
-        permissions.insert((1, None), 0b1111);
-
-        let child = ctx.with_permission(permissions);
-        assert_eq!(child.user_id(), Some(123));
+    fn test_user_id_preserved_when_cloned() {
+        let ctx = Context::new_with_all(Some(123), HashMap::new(), HashMap::new());
+        let cloned = ctx.clone();
+        assert_eq!(cloned.user_id(), Some(123));
     }
 
     #[test]
@@ -273,28 +265,26 @@ mod tests {
     }
 
     #[test]
-    fn test_with_user_id_builder() {
-        let ctx = Context::new().with_user_id(999);
+    fn test_new_with_user_id() {
+        let ctx = Context::new_with_all(Some(999), HashMap::new(), HashMap::new());
         assert_eq!(ctx.user_id(), Some(999));
     }
 
     #[test]
-    fn test_with_user_id_chain_with_permissions() {
-        let ctx = Context::new().with_user_id(777);
-
+    fn test_context_with_user_id_and_permissions() {
         let mut permissions = std::collections::HashMap::new();
         permissions.insert((1, None), 0b0011);
 
-        let child = ctx.with_permission(permissions);
+        let ctx = Context::new_with_all(Some(777), permissions, HashMap::new());
 
-        assert_eq!(child.user_id(), Some(777));
-        assert!(child.has_access(None, 1, 0b0001));
+        assert_eq!(ctx.user_id(), Some(777));
+        assert!(ctx.has_access(None, 1, 0b0001));
     }
 
     #[test]
-    fn test_with_user_id_multiple_contexts() {
-        let ctx1 = Context::new().with_user_id(111);
-        let ctx2 = Context::new().with_user_id(222);
+    fn test_multiple_contexts_with_different_user_ids() {
+        let ctx1 = Context::new_with_all(Some(111), HashMap::new(), HashMap::new());
+        let ctx2 = Context::new_with_all(Some(222), HashMap::new(), HashMap::new());
         let ctx3 = Context::new(); // No user_id set
 
         assert_eq!(ctx1.user_id(), Some(111));
@@ -304,8 +294,12 @@ mod tests {
 
     #[test]
     fn test_set_and_get_string() {
-        let mut ctx = Context::new();
-        ctx.set("Hello, World!".to_string());
+        let mut extensions = HashMap::new();
+        extensions.insert(
+            TypeId::of::<String>(),
+            Arc::new("Hello, World!".to_string()) as Arc<dyn Any + Send + Sync>,
+        );
+        let ctx = Context::new_with_all(None, HashMap::new(), extensions);
 
         let value = ctx.get::<String>();
         assert!(value.is_some());
@@ -314,8 +308,12 @@ mod tests {
 
     #[test]
     fn test_set_and_get_integer() {
-        let mut ctx = Context::new();
-        ctx.set(42i64);
+        let mut extensions = HashMap::new();
+        extensions.insert(
+            TypeId::of::<i64>(),
+            Arc::new(42i64) as Arc<dyn Any + Send + Sync>,
+        );
+        let ctx = Context::new_with_all(None, HashMap::new(), extensions);
 
         let value = ctx.get::<i64>();
         assert!(value.is_some());
@@ -330,31 +328,51 @@ mod tests {
     }
 
     #[test]
-    fn test_set_overwrites_existing_value() {
-        let mut ctx = Context::new();
-        ctx.set("First".to_string());
-        ctx.set("Second".to_string());
+    fn test_extensions_are_immutable() {
+        let mut extensions = HashMap::new();
+        extensions.insert(
+            TypeId::of::<String>(),
+            Arc::new("Original".to_string()) as Arc<dyn Any + Send + Sync>,
+        );
+        let ctx = Context::new_with_all(None, HashMap::new(), extensions);
 
         let value = ctx.get::<String>();
-        assert_eq!(value.unwrap(), "Second");
+        assert_eq!(value.unwrap(), "Original");
+
+        // Extensions are immutable - cannot be modified after creation
+        // This is by design to prevent accidental mutations
     }
 
     #[test]
-    fn test_set_different_types() {
-        let mut ctx = Context::new();
-        ctx.set("String value".to_string());
-        ctx.set(123i32);
-        ctx.set(true);
+    fn test_get_different_types() {
+        let mut extensions = HashMap::new();
+        extensions.insert(
+            TypeId::of::<String>(),
+            Arc::new("String value".to_string()) as Arc<dyn Any + Send + Sync>,
+        );
+        extensions.insert(
+            TypeId::of::<i32>(),
+            Arc::new(123i32) as Arc<dyn Any + Send + Sync>,
+        );
+        extensions.insert(
+            TypeId::of::<bool>(),
+            Arc::new(true) as Arc<dyn Any + Send + Sync>,
+        );
+        let ctx = Context::new_with_all(None, HashMap::new(), extensions);
 
         assert_eq!(ctx.get::<String>().unwrap(), "String value");
         assert_eq!(*ctx.get::<i32>().unwrap(), 123);
-        assert_eq!(*ctx.get::<bool>().unwrap(), true);
+        assert!(*ctx.get::<bool>().unwrap());
     }
 
     #[test]
     fn test_get_wrong_type_returns_none() {
-        let mut ctx = Context::new();
-        ctx.set(42i64);
+        let mut extensions = HashMap::new();
+        extensions.insert(
+            TypeId::of::<i64>(),
+            Arc::new(42i64) as Arc<dyn Any + Send + Sync>,
+        );
+        let ctx = Context::new_with_all(None, HashMap::new(), extensions);
 
         // Try to get as different type
         let value = ctx.get::<String>();
@@ -362,19 +380,24 @@ mod tests {
     }
 
     #[test]
-    fn test_set_custom_struct() {
+    fn test_get_custom_struct() {
         #[derive(Clone, Debug, PartialEq)]
         struct CustomData {
             name: String,
             count: i32,
         }
 
-        let mut ctx = Context::new();
         let data = CustomData {
             name: "Test".to_string(),
             count: 100,
         };
-        ctx.set(data.clone());
+
+        let mut extensions = HashMap::new();
+        extensions.insert(
+            TypeId::of::<CustomData>(),
+            Arc::new(data.clone()) as Arc<dyn Any + Send + Sync>,
+        );
+        let ctx = Context::new_with_all(None, HashMap::new(), extensions);
 
         let retrieved = ctx.get::<CustomData>();
         assert!(retrieved.is_some());
@@ -382,33 +405,40 @@ mod tests {
     }
 
     #[test]
-    fn test_extensions_preserved_with_permission() {
-        let mut ctx = Context::new();
-        ctx.set("Extension value".to_string());
+    fn test_extensions_preserved_when_cloned() {
+        let mut extensions = HashMap::new();
+        extensions.insert(
+            TypeId::of::<String>(),
+            Arc::new("Extension value".to_string()) as Arc<dyn Any + Send + Sync>,
+        );
+        let ctx = Context::new_with_all(None, HashMap::new(), extensions);
 
-        let mut permissions = HashMap::new();
-        permissions.insert((1, None), 0b1111);
-
-        let child = ctx.with_permission(permissions);
+        let cloned = ctx.clone();
 
         // Extension should be preserved
-        assert_eq!(child.get::<String>().unwrap(), "Extension value");
+        assert_eq!(cloned.get::<String>().unwrap(), "Extension value");
     }
 
     #[test]
-    fn test_extensions_with_user_id_and_permissions() {
-        let mut ctx = Context::new().with_user_id(999);
-        ctx.set("Test data".to_string());
-        ctx.set(42i64);
+    fn test_complete_context_with_all_fields() {
+        let mut extensions = HashMap::new();
+        extensions.insert(
+            TypeId::of::<String>(),
+            Arc::new("Test data".to_string()) as Arc<dyn Any + Send + Sync>,
+        );
+        extensions.insert(
+            TypeId::of::<i64>(),
+            Arc::new(42i64) as Arc<dyn Any + Send + Sync>,
+        );
 
         let mut permissions = HashMap::new();
         permissions.insert((1, None), 0b0011);
 
-        let child = ctx.with_permission(permissions);
+        let ctx = Context::new_with_all(Some(999), permissions, extensions);
 
-        assert_eq!(child.user_id(), Some(999));
-        assert_eq!(child.get::<String>().unwrap(), "Test data");
-        assert_eq!(*child.get::<i64>().unwrap(), 42);
-        assert!(child.has_access(None, 1, 0b0001));
+        assert_eq!(ctx.user_id(), Some(999));
+        assert_eq!(ctx.get::<String>().unwrap(), "Test data");
+        assert_eq!(*ctx.get::<i64>().unwrap(), 42);
+        assert!(ctx.has_access(None, 1, 0b0001));
     }
 }

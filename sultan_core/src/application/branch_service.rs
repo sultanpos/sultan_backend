@@ -89,8 +89,7 @@ mod tests {
         // Grant all actions for BRANCH resource globally (branch_id = None)
         // Using 0b1111 to cover all action values 1-4
         permissions.insert((resource::BRANCH, None), 0b1111);
-        let ctx = Context::new().with_permission(permissions);
-        ctx
+        Context::new_with_all(None, permissions, HashMap::new())
     }
 
     #[tokio::test]

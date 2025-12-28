@@ -92,6 +92,7 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
         category_service: Arc::new(category_service),
         customer_service: Arc::new(customer_service),
         supplier_service: Arc::new(supplier_service),
+        extensions: Arc::new(std::collections::HashMap::new()),
     })
 }
 
