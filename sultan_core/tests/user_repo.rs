@@ -552,7 +552,7 @@ async fn test_save_user_permission_with_branch() {
     assert_eq!(permissions.len(), 1);
     assert_eq!(permissions[0].user_id, saved_user.id);
     assert_eq!(permissions[0].branch_id, None);
-    assert_eq!(permissions[0].permission, 2);
+    assert_eq!(permissions[0].resource, 2);
     assert_eq!(permissions[0].action, 3);
 }
 
@@ -594,7 +594,7 @@ async fn test_save_user_permission_without_branch() {
     assert_eq!(permissions.len(), 1);
     assert_eq!(permissions[0].user_id, saved_user.id);
     assert_eq!(permissions[0].branch_id, None);
-    assert_eq!(permissions[0].permission, 2);
+    assert_eq!(permissions[0].resource, 2);
     assert_eq!(permissions[0].action, 3);
 }
 
@@ -787,7 +787,7 @@ async fn test_delete_specific_permission_keeps_others() {
         .await
         .expect("Failed to get permissions");
     assert_eq!(permissions.len(), 1);
-    assert_eq!(permissions[0].permission, 3);
+    assert_eq!(permissions[0].resource, 3);
 }
 
 #[tokio::test]
@@ -979,5 +979,5 @@ async fn test_delete_permission_null_vs_non_null_branch() {
         .await
         .expect("Failed to get permissions");
     assert_eq!(permissions.len(), 1);
-    assert_eq!(permissions[0].permission, 8);
+    assert_eq!(permissions[0].resource, 8);
 }

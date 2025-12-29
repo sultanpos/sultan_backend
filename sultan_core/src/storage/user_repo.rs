@@ -34,7 +34,7 @@ pub trait UserRepository: Send + Sync {
         ctx: &Context,
         user_id: i64,
         branch_id: Option<i64>,
-        permission: i32,
+        resource: i32,
         action: i32,
     ) -> DomainResult<()>;
     async fn delete_user_permission(

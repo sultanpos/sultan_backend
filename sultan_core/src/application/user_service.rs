@@ -614,13 +614,13 @@ mod tests {
             Permission {
                 user_id: 1,
                 branch_id: None,
-                permission: resource::USER,
+                resource: resource::USER,
                 action: action::READ,
             },
             Permission {
                 user_id: 1,
                 branch_id: None,
-                permission: resource::USER,
+                resource: resource::USER,
                 action: action::CREATE,
             },
         ];
@@ -662,7 +662,7 @@ mod tests {
         let permissions = vec![Permission {
             user_id: 1,
             branch_id: None,
-            permission: resource::USER,
+            resource: resource::USER,
             action: action::READ,
         }];
         cache
@@ -707,7 +707,7 @@ mod tests {
         let permissions = vec![Permission {
             user_id: 1,
             branch_id: None,
-            permission: resource::USER,
+            resource: resource::USER,
             action: action::READ,
         }];
         cache
@@ -747,7 +747,7 @@ mod tests {
         let permissions = vec![Permission {
             user_id: 1,
             branch_id: None,
-            permission: resource::USER,
+            resource: resource::USER,
             action: action::READ,
         }];
         cache
