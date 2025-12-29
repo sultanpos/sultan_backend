@@ -62,7 +62,7 @@ async fn test_user_service_get_user_permission_success() {
     // Assert
     assert_eq!(permissions.len(), 1);
     assert_eq!(permissions[0].user_id, 1);
-    assert_eq!(permissions[0].permission, resource::USER);
+    assert_eq!(permissions[0].resource, resource::USER);
     assert_eq!(permissions[0].action, action::READ | action::CREATE);
     assert_eq!(permissions[0].branch_id, None);
 }

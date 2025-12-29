@@ -1,5 +1,7 @@
 use chrono::Utc;
 
+use crate::domain::model::permission::Permission;
+
 #[derive(Debug, Clone)]
 pub struct User {
     pub id: i64,
@@ -15,7 +17,7 @@ pub struct User {
     pub pin: Option<String>,
     pub address: Option<String>,
     pub phone: Option<String>,
-    pub permissions: Option<Vec<crate::domain::model::permission::Permission>>,
+    pub permissions: Option<Vec<Permission>>,
 }
 
 #[derive(Debug, Clone)]

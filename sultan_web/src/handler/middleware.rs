@@ -45,7 +45,7 @@ pub async fn verify_jwt(
                 .unwrap_or_default();
             let permission_hash: HashMap<(i32, Option<i64>), i32> = permission
                 .into_iter()
-                .map(|p| ((p.permission, p.branch_id), p.action))
+                .map(|p| ((p.resource, p.branch_id), p.action))
                 .collect();
             let ctx = Context::new_with_all(Some(claims.user_id), permission_hash, HashMap::new());
             req.extensions_mut().insert(ctx);

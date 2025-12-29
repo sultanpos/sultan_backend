@@ -91,7 +91,7 @@ pub struct PermissionDbSqlite {
     pub id: i64,
     pub user_id: i64,
     pub branch_id: Option<i64>,
-    pub permission: i32,
+    pub resource: i32,
     pub action: i32,
 }
 
@@ -100,7 +100,7 @@ impl From<PermissionDbSqlite> for Permission {
         Permission {
             user_id: permission_db.user_id,
             branch_id: permission_db.branch_id,
-            permission: permission_db.permission,
+            resource: permission_db.resource,
             action: permission_db.action,
         }
     }
@@ -281,7 +281,7 @@ impl UserRepository for SqliteUserRepository {
         _: &Context,
         user_id: i64,
         branch_id: Option<i64>,
-        permission: i32,
+        resource: i32,
         action: i32,
     ) -> DomainResult<()> {
         // First, try to delete existing permission
@@ -289,14 +289,14 @@ impl UserRepository for SqliteUserRepository {
         let delete_query = sqlx::query(
             r#"
             DELETE FROM permissions
-            WHERE user_id = ? AND permission = ? AND (
+            WHERE user_id = ? AND resource = ? AND (
                 (branch_id IS NULL AND ? IS NULL) OR
                 (branch_id = ? AND ? IS NOT NULL)
             )
             "#,
         )
         .bind(user_id)
-        .bind(permission)
+        .bind(resource)
         .bind(branch_id)
         .bind(branch_id)
         .bind(branch_id)
@@ -306,13 +306,13 @@ impl UserRepository for SqliteUserRepository {
 
         let insert_query = sqlx::query(
             r#"
-            INSERT INTO permissions (user_id, branch_id, permission, action)
+            INSERT INTO permissions (user_id, branch_id, resource, action)
             VALUES (?, ?, ?, ?)
             "#,
         )
         .bind(user_id)
         .bind(branch_id)
-        .bind(permission)
+        .bind(resource)
         .bind(action)
         .execute(&self.pool);
 
@@ -325,19 +325,19 @@ impl UserRepository for SqliteUserRepository {
         _: &Context,
         user_id: i64,
         branch_id: Option<i64>,
-        permission: i32,
+        resource: i32,
     ) -> DomainResult<()> {
         let query = sqlx::query(
             r#"
             DELETE FROM permissions
-            WHERE user_id = ? AND permission = ? AND (
+            WHERE user_id = ? AND resource = ? AND (
                 (branch_id IS NULL AND ? IS NULL) OR
                 (branch_id = ? AND ? IS NOT NULL)
             )
             "#,
         )
         .bind(user_id)
-        .bind(permission)
+        .bind(resource)
         .bind(branch_id)
         .bind(branch_id)
         .bind(branch_id)
@@ -348,8 +348,8 @@ impl UserRepository for SqliteUserRepository {
             result.rows_affected(),
             "Permission",
             format!(
-                "user_id: {}, permission: {}, branch_id: {:?}",
-                user_id, permission, branch_id
+                "user_id: {}, resource: {}, branch_id: {:?}",
+                user_id, resource, branch_id
             ),
         )
     }

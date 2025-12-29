@@ -107,7 +107,7 @@ impl UserServiceTrait for MockUserService {
             Ok(vec![Permission {
                 user_id: 1,
                 branch_id: None,
-                permission: resource::USER,
+                resource: resource::USER,
                 action: action::READ | action::CREATE, // Combined actions using bitwise OR
             }])
         } else {

@@ -21,6 +21,6 @@ pub mod action {
 pub struct Permission {
     pub user_id: i64,
     pub branch_id: Option<i64>,
-    pub permission: i32,
+    pub resource: i32,
     pub action: i32,
 }
