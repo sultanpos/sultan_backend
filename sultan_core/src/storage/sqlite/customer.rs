@@ -88,12 +88,7 @@ impl CustomerRepository for SqliteCustomerRepository {
         .bind(&metadata_json)
         .execute(&self.pool);
 
-        let result = query.await?;
-
-        if result.rows_affected() == 0 {
-            return Err(Error::Database("Failed to insert customer".to_string()));
-        }
-
+        query.await?;
         Ok(())
     }
 
@@ -172,9 +167,7 @@ impl CustomerRepository for SqliteCustomerRepository {
         .bind(id)
         .fetch_optional(&self.pool);
 
-        let customer = query.await?;
-
-        Ok(customer.map(|c| c.into()))
+        Ok(query.await?.map(Customer::from))
     }
 
     async fn get_all(

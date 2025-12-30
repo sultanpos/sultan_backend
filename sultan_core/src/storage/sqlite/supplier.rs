@@ -92,11 +92,6 @@ impl SupplierRepository for SqliteSupplierRepository {
         .execute(&self.pool);
 
         let result = query.await?;
-
-        if result.rows_affected() == 0 {
-            return Err(Error::Database("Failed to insert supplier".to_string()));
-        }
-
         Ok(())
     }
 
@@ -197,8 +192,6 @@ impl SupplierRepository for SqliteSupplierRepository {
         .bind(id)
         .fetch_optional(&self.pool);
 
-        let supplier = query.await?;
-
-        Ok(supplier.map(|s| s.into()))
+        Ok(query.await?.map(Supplier::from))
     }
 }

@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use axum::middleware::map_request;
 use serde::Serialize;
 use sqlx::{QueryBuilder, Sqlite, SqlitePool, Transaction};
 
@@ -65,7 +66,7 @@ impl SqliteProductRepository {
         let sql = format!("{} WHERE id = ? AND is_deleted = 0", PRODUCT_SELECT_COLUMNS);
         let query = sqlx::query_as::<_, ProductDbSqlite>(&sql).bind(id);
         let product = query.fetch_optional(&self.pool).await?;
-        Ok(product.map(|p| p.into()))
+        Ok(product.map(Product::from))
     }
 }
 
@@ -184,11 +185,7 @@ impl<'a> ProductRepository<Transaction<'a, Sqlite>> for SqliteProductRepository 
         .bind(product.has_variant)
         .bind(&metadata_json);
 
-        let result = query.execute(&mut **tx).await?;
-
-        if result.rows_affected() == 0 {
-            return Err(Error::Database("Failed to insert product".to_string()));
-        }
+        query.execute(&mut **tx).await?;
 
         // Insert product categories
         if !product.category_ids.is_empty() {
@@ -311,8 +308,7 @@ impl<'a> ProductRepository<Transaction<'a, Sqlite>> for SqliteProductRepository 
         let query = sqlx::query_as::<_, ProductDbSqlite>(&sql).bind(id);
 
         let product = query.fetch_optional(&self.pool).await?;
-
-        Ok(product.map(|p| p.into()))
+        Ok(product.map(Product::from))
     }
 
     async fn create_variant(
@@ -337,14 +333,7 @@ impl<'a> ProductRepository<Transaction<'a, Sqlite>> for SqliteProductRepository 
         .bind(&variant.name)
         .bind(&metadata_json);
 
-        let result = query.execute(&mut **tx).await?;
-
-        if result.rows_affected() == 0 {
-            return Err(Error::Database(
-                "Failed to insert product variant".to_string(),
-            ));
-        }
-
+        query.execute(&mut **tx).await?;
         Ok(())
     }
 
@@ -411,7 +400,6 @@ impl<'a> ProductRepository<Transaction<'a, Sqlite>> for SqliteProductRepository 
         .bind(product_id);
 
         query.execute(&mut **tx).await?;
-
         Ok(())
     }
 

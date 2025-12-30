@@ -8,7 +8,7 @@ use crate::{
         Context, DomainResult, Error,
         model::branch::{Branch, BranchCreate, BranchUpdate},
     },
-    storage::branch_repo::BranchRepository,
+    storage::{branch_repo::BranchRepository, sqlite::map_results},
 };
 
 #[derive(Clone)]
@@ -78,12 +78,7 @@ impl BranchRepository for SqliteBranchRepository {
         .bind(branch.is_main)
         .execute(&self.pool);
 
-        let result = query.await?;
-
-        if result.rows_affected() == 0 {
-            return Err(Error::Database("Failed to insert branch".to_string()));
-        }
-
+        query.await?;
         Ok(())
     }
 
@@ -165,8 +160,7 @@ impl BranchRepository for SqliteBranchRepository {
         .fetch_all(&self.pool);
 
         let branches = query.await?;
-
-        Ok(branches.into_iter().map(|b| b.into()).collect())
+        Ok(map_results(branches))
     }
 
     async fn get_by_id(&self, _: &Context, id: i64) -> DomainResult<Option<Branch>> {
@@ -178,8 +172,6 @@ impl BranchRepository for SqliteBranchRepository {
         .bind(id)
         .fetch_optional(&self.pool);
 
-        let branch = query.await?;
-
-        Ok(branch.map(|b| b.into()))
+        Ok(query.await?.map(Branch::from))
     }
 }

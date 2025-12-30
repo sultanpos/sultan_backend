@@ -65,14 +65,7 @@ impl UnitOfMeasureRepository for SqliteUnitOfMeasureRepository {
         .bind(&uom.description)
         .execute(&self.pool);
 
-        let result = query.await?;
-
-        if result.rows_affected() == 0 {
-            return Err(Error::Database(
-                "Failed to insert unit of measure".to_string(),
-            ));
-        }
-
+        query.await?;
         Ok(())
     }
 
@@ -132,8 +125,6 @@ impl UnitOfMeasureRepository for SqliteUnitOfMeasureRepository {
         .bind(id)
         .fetch_optional(&self.pool);
 
-        let unit = query.await?;
-
-        Ok(unit.map(|u| u.into()))
+        Ok(query.await?.map(UnitOfMeasure::from))
     }
 }
