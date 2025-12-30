@@ -261,7 +261,7 @@ impl UserRepository for SqliteUserRepository {
         let query = query.fetch_all(&self.pool);
 
         let users = query.await?;
-        Ok(users.into_iter().map(User::from).collect())
+        Ok(super::map_results(users))
     }
 
     async fn get_by_id(&self, _: &Context, user_id: i64) -> DomainResult<Option<User>> {
@@ -365,6 +365,6 @@ impl UserRepository for SqliteUserRepository {
             .fetch_all(&self.pool);
 
         let permissions_db = query.await?;
-        Ok(permissions_db.into_iter().map(Permission::from).collect())
+        Ok(super::map_results(permissions_db))
     }
 }

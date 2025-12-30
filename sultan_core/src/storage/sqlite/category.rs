@@ -245,12 +245,7 @@ impl CategoryRepository for SqliteCategoryRepository {
         .bind(category.parent_id)
         .execute(&self.pool);
 
-        let result = query.await?;
-
-        if result.rows_affected() == 0 {
-            return Err(Error::Database("Failed to insert category".to_string()));
-        }
-
+        query.await?;
         Ok(())
     }
 

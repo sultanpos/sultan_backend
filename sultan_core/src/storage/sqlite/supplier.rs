@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{
     domain::{
-        Context, DomainResult, Error,
+        Context, DomainResult,
         model::{
             pagination::PaginationOptions,
             supplier::{Supplier, SupplierCreate, SupplierFilter, SupplierUpdate},
@@ -91,12 +91,7 @@ impl SupplierRepository for SqliteSupplierRepository {
         .bind(&metadata_json)
         .execute(&self.pool);
 
-        let result = query.await?;
-
-        if result.rows_affected() == 0 {
-            return Err(Error::Database("Failed to insert supplier".to_string()));
-        }
-
+        query.await?;
         Ok(())
     }
 
@@ -197,8 +192,6 @@ impl SupplierRepository for SqliteSupplierRepository {
         .bind(id)
         .fetch_optional(&self.pool);
 
-        let supplier = query.await?;
-
-        Ok(supplier.map(|s| s.into()))
+        Ok(query.await?.map(Supplier::from))
     }
 }
