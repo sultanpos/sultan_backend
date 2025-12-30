@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{
     domain::{
-        Context, DomainResult, Error,
+        Context, DomainResult,
         model::{
             customer::{Customer, CustomerCreate, CustomerFilter, CustomerUpdate},
             pagination::PaginationOptions,

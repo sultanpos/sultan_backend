@@ -4,7 +4,7 @@ use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
 use crate::{
     domain::{
-        Context, DomainResult, Error,
+        Context, DomainResult,
         model::product::{UnitOfMeasure, UnitOfMeasureCreate, UnitOfMeasureUpdate},
     },
     storage::{

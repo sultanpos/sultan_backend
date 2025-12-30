@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{
     domain::{
-        Context, DomainResult, Error,
+        Context, DomainResult,
         model::{
             pagination::PaginationOptions,
             supplier::{Supplier, SupplierCreate, SupplierFilter, SupplierUpdate},
@@ -91,7 +91,7 @@ impl SupplierRepository for SqliteSupplierRepository {
         .bind(&metadata_json)
         .execute(&self.pool);
 
-        let result = query.await?;
+        query.await?;
         Ok(())
     }
 

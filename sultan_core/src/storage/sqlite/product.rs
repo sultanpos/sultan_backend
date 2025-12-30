@@ -1,12 +1,11 @@
 use async_trait::async_trait;
-use axum::middleware::map_request;
 use serde::Serialize;
 use sqlx::{QueryBuilder, Sqlite, SqlitePool, Transaction};
 
 use super::{TableName, check_rows_affected, serialize_metadata, serialize_metadata_update};
 use crate::{
     domain::{
-        Context, DomainResult, Error,
+        Context, DomainResult,
         model::product::{
             Product, ProductCreate, ProductUpdate, ProductVariant, ProductVariantCreate,
             ProductVariantUpdate,
