@@ -1,9 +1,15 @@
 #![allow(dead_code)]
 pub mod branch_share;
+pub mod category_share;
+pub mod customer_share;
+pub mod supplier_share;
+pub mod token_share;
+pub mod unit_share;
+pub mod user_share;
 
 use once_cell::sync::Lazy;
 use sqlx::SqlitePool;
-use sultan_core::snowflake::SnowflakeGenerator;
+use sultan_core::{domain::model::pagination::PaginationOptions, snowflake::SnowflakeGenerator};
 use tokio::sync::Mutex;
 
 pub static ID_GENERATOR: Lazy<Mutex<SnowflakeGenerator>> =
@@ -12,6 +18,10 @@ pub static ID_GENERATOR: Lazy<Mutex<SnowflakeGenerator>> =
 pub async fn generate_test_id() -> i64 {
     let generator = ID_GENERATOR.lock().await;
     generator.generate().unwrap()
+}
+
+pub fn default_pagination() -> PaginationOptions {
+    PaginationOptions::new(1, 100, None)
 }
 
 pub async fn init_sqlite_pool() -> SqlitePool {
