@@ -3,6 +3,7 @@ pub mod branch_share;
 pub mod category_share;
 pub mod customer_share;
 pub mod supplier_share;
+pub mod token_share;
 pub mod unit_share;
 pub mod user_share;
 
