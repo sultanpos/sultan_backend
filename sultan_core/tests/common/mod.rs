@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 pub mod branch_share;
+pub mod category_share;
 
 use once_cell::sync::Lazy;
 use sqlx::SqlitePool;
