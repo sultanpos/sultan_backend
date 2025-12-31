@@ -1,4 +1,18 @@
+#![allow(dead_code)]
+pub mod branch_share;
+
+use once_cell::sync::Lazy;
 use sqlx::SqlitePool;
+use sultan_core::snowflake::SnowflakeGenerator;
+use tokio::sync::Mutex;
+
+pub static ID_GENERATOR: Lazy<Mutex<SnowflakeGenerator>> =
+    Lazy::new(|| Mutex::new(SnowflakeGenerator::new(1).unwrap()));
+
+pub async fn generate_test_id() -> i64 {
+    let generator = ID_GENERATOR.lock().await;
+    generator.generate().unwrap()
+}
 
 pub async fn init_sqlite_pool() -> SqlitePool {
     // Create an isolated in-memory database for each test to avoid schema conflicts
