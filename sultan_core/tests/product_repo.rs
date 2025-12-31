@@ -13,6 +13,8 @@ use sultan_core::storage::sqlite::product::SqliteProductRepository;
 use sultan_core::storage::sqlite::transaction::SqliteTransactionManager;
 use sultan_core::storage::transaction::TransactionManager;
 
+use crate::common::product_share::create_sqlite_product_repo;
+
 fn generate_test_id() -> i64 {
     thread_local! {
         static GENERATOR: SnowflakeGenerator = SnowflakeGenerator::new(1).unwrap();
@@ -50,42 +52,8 @@ fn create_test_variant(product_id: i64) -> ProductVariantCreate {
 
 #[tokio::test]
 async fn test_create_product_success() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool.clone());
-    let tx_manager = SqliteTransactionManager::new(pool);
-    let ctx = Context::new();
-
-    let product_id = generate_test_id();
-    let product = create_test_product();
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id, &product, &mut tx)
-        .await
-        .expect("Failed to create product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    let saved = repo
-        .get_by_id(&ctx, product_id)
-        .await
-        .expect("Failed to get product")
-        .expect("Product not found");
-
-    assert_eq!(saved.id, product_id);
-    assert_eq!(saved.name, "Test Product");
-    assert_eq!(
-        saved.description,
-        Some("A test product description".to_string())
-    );
-    assert_eq!(saved.product_type, "product");
-    assert_eq!(
-        saved.main_image,
-        Some("https://example.com/image.jpg".to_string())
-    );
-    assert!(saved.sellable);
-    assert!(saved.buyable);
-    assert!(!saved.editable_price);
-    assert!(!saved.has_variant);
-    assert!(!saved.is_deleted);
+    let (ctx, tx_manager, repo) = create_sqlite_product_repo().await;
+    common::product_share::product_test_create_success(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
