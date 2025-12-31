@@ -2,6 +2,7 @@
 pub mod branch_share;
 pub mod category_share;
 pub mod customer_share;
+pub mod supplier_share;
 
 use once_cell::sync::Lazy;
 use sqlx::SqlitePool;
