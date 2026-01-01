@@ -417,3 +417,127 @@ pub async fn test_update_product_categories<'a, T, P>(
     assert!(categories.contains(&cat_id3));
     assert!(!categories.contains(&cat_id1));
 }
+
+pub async fn test_update_product_not_found<'a, T, P>(ctx: &Context, tx_manager: &'a T, repo: &'a P)
+where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
+{
+    let update = ProductUpdate {
+        name: Some("Updated".to_string()),
+        description: Update::Unchanged,
+        product_type: None,
+        main_image: Update::Unchanged,
+        sellable: None,
+        buyable: None,
+        editable_price: None,
+        has_variant: None,
+        metadata: Update::Unchanged,
+        category_ids: None,
+    };
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    let result = repo.update_product(&ctx, 999999, &update, &mut tx).await;
+    tx_manager
+        .rollback(tx)
+        .await
+        .expect("Failed to rollback tx");
+
+    assert!(matches!(
+        result,
+        Err(sultan_core::domain::Error::NotFound(_))
+    ));
+}
+
+pub async fn test_delete_product_success<'a, T, P>(ctx: &Context, tx_manager: &'a T, repo: &'a P)
+where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
+{
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_product(&ctx, product_id, &product, &mut tx)
+        .await
+        .expect("Failed to create product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.delete_product(&ctx, product_id, &mut tx)
+        .await
+        .expect("Failed to delete product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let saved = repo
+        .get_by_id(&ctx, product_id)
+        .await
+        .expect("Failed to get product");
+
+    assert!(saved.is_none());
+}
+
+pub async fn test_delete_product_not_found<'a, T, P>(ctx: &Context, tx_manager: &'a T, repo: &'a P)
+where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
+{
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    let result = repo.delete_product(&ctx, 999999, &mut tx).await;
+    tx_manager
+        .rollback(tx)
+        .await
+        .expect("Failed to rollback tx");
+
+    assert!(matches!(
+        result,
+        Err(sultan_core::domain::Error::NotFound(_))
+    ));
+}
+
+pub async fn test_get_product_by_id_not_found<'a, P>(ctx: &Context, repo: &'a P)
+where
+    P: ProductRepository<sqlx::Transaction<'a, Sqlite>>,
+{
+    let result = repo.get_by_id(&ctx, 999999).await.expect("Failed to query");
+
+    assert!(result.is_none());
+}
+
+pub async fn test_create_variant_success<'a, T, P>(ctx: &Context, tx_manager: &'a T, repo: &'a P)
+where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
+{
+    // Create product first
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_product(&ctx, product_id, &product, &mut tx)
+        .await
+        .expect("Failed to create product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    // Create variant
+    let variant_id = super::generate_test_id().await;
+    let variant = create_test_variant(product_id);
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_variant(&ctx, variant_id, &variant, &mut tx)
+        .await
+        .expect("Failed to create variant");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let saved = repo
+        .get_variant_by_id(&ctx, variant_id)
+        .await
+        .expect("Failed to get variant")
+        .expect("Variant not found");
+
+    assert_eq!(saved.id, variant_id);
+    assert_eq!(saved.product.id, product_id);
+    assert_eq!(saved.barcode, Some("1234567890".to_string()));
+    assert_eq!(saved.name, Some("Default Variant".to_string()));
+    assert_eq!(saved.metadata, Some(json!({"sku": "SKU001"})));
+}
