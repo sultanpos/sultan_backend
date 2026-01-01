@@ -1785,3 +1785,308 @@ pub async fn test_update_variant_clear_metadata<'a, T, P>(
 
     assert_eq!(saved.metadata, None);
 }
+
+pub async fn test_update_variant_clear_barcode<'a, T, P>(
+    ctx: &Context,
+    tx_manager: &'a T,
+    repo: &'a P,
+) where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
+{
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_product(ctx, product_id, &product, &mut tx)
+        .await
+        .expect("Failed to create product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let variant_id = super::generate_test_id().await;
+    let variant = create_test_variant(product_id);
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_variant(ctx, variant_id, &variant, &mut tx)
+        .await
+        .expect("Failed to create variant");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    // Clear barcode
+    let update = ProductVariantUpdate {
+        barcode: Update::Clear,
+        name: Update::Unchanged,
+        metadata: Update::Unchanged,
+    };
+
+    repo.update_variant(ctx, variant_id, &update)
+        .await
+        .expect("Failed to update variant");
+
+    let saved = repo
+        .get_variant_by_id(ctx, variant_id)
+        .await
+        .expect("Failed to get variant")
+        .expect("Variant not found");
+
+    assert_eq!(saved.barcode, None);
+}
+
+pub async fn test_multiple_variants_for_single_product<'a, T, P>(
+    ctx: &Context,
+    tx_manager: &'a T,
+    repo: &'a P,
+) where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
+{
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_product(ctx, product_id, &product, &mut tx)
+        .await
+        .expect("Failed to create product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    // Create 5 variants
+    for i in 0..5 {
+        let variant_id = super::generate_test_id().await;
+        let variant = ProductVariantCreate {
+            product_id,
+            barcode: Some(format!("BARCODE{}", i)),
+            name: Some(format!("Variant {}", i)),
+            metadata: Some(json!({"index": i})),
+        };
+
+        let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+        repo.create_variant(ctx, variant_id, &variant, &mut tx)
+            .await
+            .expect("Failed to create variant");
+        tx_manager.commit(tx).await.expect("Failed to commit tx");
+    }
+
+    // Get all variants
+    let variants = repo
+        .get_variant_by_product_id(ctx, product_id)
+        .await
+        .expect("Failed to get variants");
+
+    assert_eq!(variants.len(), 5);
+
+    // Verify each variant
+    for (i, variant) in variants.iter().enumerate() {
+        assert_eq!(variant.product.id, product_id);
+        assert_eq!(variant.name, Some(format!("Variant {}", i)));
+    }
+}
+
+pub async fn test_delete_variants_by_product_id_preserves_other_products<'a, T, P>(
+    ctx: &Context,
+    tx_manager: &'a T,
+    repo: &'a P,
+) where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
+{
+    // Create two products
+    let product_id1 = super::generate_test_id().await;
+    let product1 = create_test_product();
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_product(ctx, product_id1, &product1, &mut tx)
+        .await
+        .expect("Failed to create product1");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let product_id2 = super::generate_test_id().await;
+    let product2 = create_test_product();
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_product(ctx, product_id2, &product2, &mut tx)
+        .await
+        .expect("Failed to create product2");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    // Create variants for both products
+    let variant_id1 = super::generate_test_id().await;
+    let variant1 = create_test_variant(product_id1);
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_variant(ctx, variant_id1, &variant1, &mut tx)
+        .await
+        .expect("Failed to create variant1");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let variant_id2 = super::generate_test_id().await;
+    let variant2 = create_test_variant(product_id2);
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_variant(ctx, variant_id2, &variant2, &mut tx)
+        .await
+        .expect("Failed to create variant2");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    // Delete variants for product1 only
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.delete_variants_by_product_id(ctx, product_id1, &mut tx)
+        .await
+        .expect("Failed to delete variants");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    // Verify product1 variants are deleted
+    let variants1 = repo
+        .get_variant_by_product_id(ctx, product_id1)
+        .await
+        .expect("Failed to get variants");
+    assert_eq!(variants1.len(), 0);
+
+    // Verify product2 variants still exist
+    let variants2 = repo
+        .get_variant_by_product_id(ctx, product_id2)
+        .await
+        .expect("Failed to get variants");
+    assert_eq!(variants2.len(), 1);
+    assert_eq!(variants2[0].id, variant_id2);
+}
+
+pub async fn test_update_product_boolean_flags<'a, T, P>(
+    ctx: &Context,
+    tx_manager: &'a T,
+    repo: &'a P,
+) where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
+{
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_product(ctx, product_id, &product, &mut tx)
+        .await
+        .expect("Failed to create product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    // Update all boolean flags
+    let update = ProductUpdate {
+        name: None,
+        description: Update::Unchanged,
+        product_type: None,
+        main_image: Update::Unchanged,
+        sellable: Some(false),
+        buyable: Some(false),
+        editable_price: Some(true),
+        has_variant: Some(true),
+        metadata: Update::Unchanged,
+        category_ids: None,
+    };
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.update_product(ctx, product_id, &update, &mut tx)
+        .await
+        .expect("Failed to update product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let saved = repo
+        .get_by_id(ctx, product_id)
+        .await
+        .expect("Failed to get product")
+        .expect("Product not found");
+
+    assert!(!saved.sellable);
+    assert!(!saved.buyable);
+    assert!(saved.editable_price);
+    assert!(saved.has_variant);
+}
+
+pub async fn test_update_product_main_image<'a, T, P>(ctx: &Context, tx_manager: &'a T, repo: &'a P)
+where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
+{
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_product(ctx, product_id, &product, &mut tx)
+        .await
+        .expect("Failed to create product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    // Update main_image
+    let update = ProductUpdate {
+        name: None,
+        description: Update::Unchanged,
+        product_type: None,
+        main_image: Update::Set("https://example.com/new-image.jpg".to_string()),
+        sellable: None,
+        buyable: None,
+        editable_price: None,
+        has_variant: None,
+        metadata: Update::Unchanged,
+        category_ids: None,
+    };
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.update_product(ctx, product_id, &update, &mut tx)
+        .await
+        .expect("Failed to update product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let saved = repo
+        .get_by_id(ctx, product_id)
+        .await
+        .expect("Failed to get product")
+        .expect("Product not found");
+
+    assert_eq!(
+        saved.main_image,
+        Some("https://example.com/new-image.jpg".to_string())
+    );
+}
+
+pub async fn test_update_product_clear_main_image<'a, T, P>(
+    ctx: &Context,
+    tx_manager: &'a T,
+    repo: &'a P,
+) where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
+{
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_product(ctx, product_id, &product, &mut tx)
+        .await
+        .expect("Failed to create product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    // Clear main_image
+    let update = ProductUpdate {
+        name: None,
+        description: Update::Unchanged,
+        product_type: None,
+        main_image: Update::Clear,
+        sellable: None,
+        buyable: None,
+        editable_price: None,
+        has_variant: None,
+        metadata: Update::Unchanged,
+        category_ids: None,
+    };
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.update_product(ctx, product_id, &update, &mut tx)
+        .await
+        .expect("Failed to update product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let saved = repo
+        .get_by_id(ctx, product_id)
+        .await
+        .expect("Failed to get product")
+        .expect("Product not found");
+
+    assert_eq!(saved.main_image, None);
+}

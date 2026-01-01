@@ -364,305 +364,44 @@ async fn test_update_variant_clear_metadata() {
 
 #[tokio::test]
 async fn test_update_variant_clear_barcode() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool.clone());
-    let tx_manager = SqliteTransactionManager::new(pool);
-    let ctx = Context::new();
-
-    let product_id = generate_test_id();
-    let product = create_test_product();
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id, &product, &mut tx)
-        .await
-        .expect("Failed to create product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    let variant_id = generate_test_id();
-    let variant = create_test_variant(product_id);
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_variant(&ctx, variant_id, &variant, &mut tx)
-        .await
-        .expect("Failed to create variant");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    // Clear barcode
-    let update = ProductVariantUpdate {
-        barcode: Update::Clear,
-        name: Update::Unchanged,
-        metadata: Update::Unchanged,
-    };
-
-    repo.update_variant(&ctx, variant_id, &update)
-        .await
-        .expect("Failed to update variant");
-
-    let saved = repo
-        .get_variant_by_id(&ctx, variant_id)
-        .await
-        .expect("Failed to get variant")
-        .expect("Variant not found");
-
-    assert_eq!(saved.barcode, None);
+    let (ctx, tx_manager, repo, _pool) = create_sqlite_product_repo().await;
+    common::product_share::test_update_variant_clear_barcode(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_multiple_variants_for_single_product() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool.clone());
-    let tx_manager = SqliteTransactionManager::new(pool);
-    let ctx = Context::new();
-
-    let product_id = generate_test_id();
-    let product = create_test_product();
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id, &product, &mut tx)
-        .await
-        .expect("Failed to create product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    // Create 5 variants
-    let variant_ids: Vec<i64> = (0..5).map(|_| generate_test_id()).collect();
-
-    for (i, &variant_id) in variant_ids.iter().enumerate() {
-        let variant = ProductVariantCreate {
-            product_id,
-            barcode: Some(format!("BARCODE{}", i)),
-            name: Some(format!("Variant {}", i)),
-            metadata: Some(json!({"index": i})),
-        };
-
-        let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-        repo.create_variant(&ctx, variant_id, &variant, &mut tx)
-            .await
-            .expect("Failed to create variant");
-        tx_manager.commit(tx).await.expect("Failed to commit tx");
-    }
-
-    // Get all variants
-    let variants = repo
-        .get_variant_by_product_id(&ctx, product_id)
-        .await
-        .expect("Failed to get variants");
-
-    assert_eq!(variants.len(), 5);
-
-    // Verify each variant
-    for (i, variant) in variants.iter().enumerate() {
-        assert_eq!(variant.product.id, product_id);
-        assert_eq!(variant.name, Some(format!("Variant {}", i)));
-    }
+    let (ctx, tx_manager, repo, _pool) = create_sqlite_product_repo().await;
+    common::product_share::test_multiple_variants_for_single_product(&ctx, &tx_manager, &repo)
+        .await;
 }
 
 #[tokio::test]
 async fn test_delete_variants_by_product_id_preserves_other_products() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool.clone());
-    let tx_manager = SqliteTransactionManager::new(pool);
-    let ctx = Context::new();
-
-    // Create two products
-    let product_id1 = generate_test_id();
-    let product1 = create_test_product();
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id1, &product1, &mut tx)
-        .await
-        .expect("Failed to create product1");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    let product_id2 = generate_test_id();
-    let product2 = create_test_product();
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id2, &product2, &mut tx)
-        .await
-        .expect("Failed to create product2");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    // Create variants for both products
-    let variant_id1 = generate_test_id();
-    let variant1 = create_test_variant(product_id1);
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_variant(&ctx, variant_id1, &variant1, &mut tx)
-        .await
-        .expect("Failed to create variant1");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    let variant_id2 = generate_test_id();
-    let variant2 = create_test_variant(product_id2);
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_variant(&ctx, variant_id2, &variant2, &mut tx)
-        .await
-        .expect("Failed to create variant2");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    // Delete variants for product1 only
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.delete_variants_by_product_id(&ctx, product_id1, &mut tx)
-        .await
-        .expect("Failed to delete variants");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    // Verify product1 variants are deleted
-    let variants1 = repo
-        .get_variant_by_product_id(&ctx, product_id1)
-        .await
-        .expect("Failed to get variants");
-    assert_eq!(variants1.len(), 0);
-
-    // Verify product2 variants still exist
-    let variants2 = repo
-        .get_variant_by_product_id(&ctx, product_id2)
-        .await
-        .expect("Failed to get variants");
-    assert_eq!(variants2.len(), 1);
-    assert_eq!(variants2[0].id, variant_id2);
+    let (ctx, tx_manager, repo, _pool) = create_sqlite_product_repo().await;
+    common::product_share::test_delete_variants_by_product_id_preserves_other_products(
+        &ctx,
+        &tx_manager,
+        &repo,
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn test_update_product_boolean_flags() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool.clone());
-    let tx_manager = SqliteTransactionManager::new(pool);
-    let ctx = Context::new();
-
-    let product_id = generate_test_id();
-    let product = create_test_product();
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id, &product, &mut tx)
-        .await
-        .expect("Failed to create product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    // Update all boolean flags
-    let update = ProductUpdate {
-        name: None,
-        description: Update::Unchanged,
-        product_type: None,
-        main_image: Update::Unchanged,
-        sellable: Some(false),
-        buyable: Some(false),
-        editable_price: Some(true),
-        has_variant: Some(true),
-        metadata: Update::Unchanged,
-        category_ids: None,
-    };
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.update_product(&ctx, product_id, &update, &mut tx)
-        .await
-        .expect("Failed to update product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    let saved = repo
-        .get_by_id(&ctx, product_id)
-        .await
-        .expect("Failed to get product")
-        .expect("Product not found");
-
-    assert!(!saved.sellable);
-    assert!(!saved.buyable);
-    assert!(saved.editable_price);
-    assert!(saved.has_variant);
+    let (ctx, tx_manager, repo, _pool) = create_sqlite_product_repo().await;
+    common::product_share::test_update_product_boolean_flags(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_product_main_image() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool.clone());
-    let tx_manager = SqliteTransactionManager::new(pool);
-    let ctx = Context::new();
-
-    let product_id = generate_test_id();
-    let product = create_test_product();
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id, &product, &mut tx)
-        .await
-        .expect("Failed to create product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    // Update main_image
-    let update = ProductUpdate {
-        name: None,
-        description: Update::Unchanged,
-        product_type: None,
-        main_image: Update::Set("https://example.com/new-image.jpg".to_string()),
-        sellable: None,
-        buyable: None,
-        editable_price: None,
-        has_variant: None,
-        metadata: Update::Unchanged,
-        category_ids: None,
-    };
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.update_product(&ctx, product_id, &update, &mut tx)
-        .await
-        .expect("Failed to update product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    let saved = repo
-        .get_by_id(&ctx, product_id)
-        .await
-        .expect("Failed to get product")
-        .expect("Product not found");
-
-    assert_eq!(
-        saved.main_image,
-        Some("https://example.com/new-image.jpg".to_string())
-    );
+    let (ctx, tx_manager, repo, _pool) = create_sqlite_product_repo().await;
+    common::product_share::test_update_product_main_image(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_product_clear_main_image() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool.clone());
-    let tx_manager = SqliteTransactionManager::new(pool);
-    let ctx = Context::new();
-
-    let product_id = generate_test_id();
-    let product = create_test_product();
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id, &product, &mut tx)
-        .await
-        .expect("Failed to create product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    // Clear main_image
-    let update = ProductUpdate {
-        name: None,
-        description: Update::Unchanged,
-        product_type: None,
-        main_image: Update::Clear,
-        sellable: None,
-        buyable: None,
-        editable_price: None,
-        has_variant: None,
-        metadata: Update::Unchanged,
-        category_ids: None,
-    };
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.update_product(&ctx, product_id, &update, &mut tx)
-        .await
-        .expect("Failed to update product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    let saved = repo
-        .get_by_id(&ctx, product_id)
-        .await
-        .expect("Failed to get product")
-        .expect("Product not found");
-
-    assert_eq!(saved.main_image, None);
+    let (ctx, tx_manager, repo, _pool) = create_sqlite_product_repo().await;
+    common::product_share::test_update_product_clear_main_image(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
