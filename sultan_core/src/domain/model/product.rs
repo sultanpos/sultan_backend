@@ -105,3 +105,10 @@ pub struct ProductCategory {
     pub product_id: i64,
     pub category_id: i64,
 }
+
+#[derive(Debug, Clone)]
+pub struct ProductFilter {
+    pub name: Option<String>,
+    pub product_type: Option<String>,
+    pub category_id: Option<i64>,
+}
