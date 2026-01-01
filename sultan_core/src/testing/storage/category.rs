@@ -1,4 +1,4 @@
-use sultan_core::{
+use crate::{
     domain::{
         Context,
         model::{
@@ -13,7 +13,7 @@ pub async fn create_sqlite_category_repo() -> (Context, impl CategoryRepository)
     let pool = super::init_sqlite_pool().await;
     (
         Context::new(),
-        sultan_core::storage::sqlite::category::SqliteCategoryRepository::new(pool),
+        crate::storage::sqlite::category::SqliteCategoryRepository::new(pool),
     )
 }
 
@@ -140,10 +140,7 @@ pub async fn category_test_update_non_existent<C: CategoryRepository>(ctx: &Cont
     };
     let result = repo.update(ctx, 999999, &update).await;
 
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::NotFound(_))
-    ));
+    assert!(matches!(result, Err(crate::domain::Error::NotFound(_))));
 }
 
 pub async fn category_test_delete<C: CategoryRepository>(ctx: &Context, repo: C) {
@@ -168,10 +165,7 @@ pub async fn category_test_delete<C: CategoryRepository>(ctx: &Context, repo: C)
 pub async fn category_test_delete_non_existent<C: CategoryRepository>(ctx: &Context, repo: C) {
     let result = repo.delete(ctx, 999999).await;
 
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::NotFound(_))
-    ));
+    assert!(matches!(result, Err(crate::domain::Error::NotFound(_))));
 }
 
 pub async fn category_test_get_by_id_not_found<C: CategoryRepository>(ctx: &Context, repo: C) {
@@ -602,10 +596,7 @@ pub async fn category_test_create_exceeds_max_depth<C: CategoryRepository>(ctx: 
         .await;
 
     assert!(result.is_err());
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::Database(_))
-    ));
+    assert!(matches!(result, Err(crate::domain::Error::Database(_))));
 }
 
 pub async fn category_test_move_exceeds_max_depth<C: CategoryRepository>(ctx: &Context, repo: C) {
@@ -698,10 +689,7 @@ pub async fn category_test_move_exceeds_max_depth<C: CategoryRepository>(ctx: &C
     let result = repo.update(ctx, other1, &update).await;
 
     assert!(result.is_err());
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::Database(_))
-    ));
+    assert!(matches!(result, Err(crate::domain::Error::Database(_))));
 }
 
 pub async fn category_test_move_within_depth_limit<C: CategoryRepository>(ctx: &Context, repo: C) {
@@ -919,10 +907,7 @@ pub async fn category_test_cannot_delete_already_deleted<C: CategoryRepository>(
 
     // Try to delete again
     let result = repo.delete(ctx, id).await;
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::NotFound(_))
-    ));
+    assert!(matches!(result, Err(crate::domain::Error::NotFound(_))));
 }
 
 pub async fn category_test_cannot_update_deleted<C: CategoryRepository>(ctx: &Context, repo: C) {
@@ -949,10 +934,7 @@ pub async fn category_test_cannot_update_deleted<C: CategoryRepository>(ctx: &Co
         parent_id: Update::Unchanged,
     };
     let result = repo.update(ctx, id, &update).await;
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::NotFound(_))
-    ));
+    assert!(matches!(result, Err(crate::domain::Error::NotFound(_))));
 }
 
 // =============================================================================

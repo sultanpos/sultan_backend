@@ -1,7 +1,7 @@
-use serde_json::json;
-use sultan_core::{
+use crate::{
     domain::{
         Context,
+        error::Error::NotFound,
         model::{
             Update,
             customer::{CustomerCreate, CustomerFilter, CustomerUpdate},
@@ -10,12 +10,13 @@ use sultan_core::{
     },
     storage::CustomerRepository,
 };
+use serde_json::json;
 
 pub async fn create_sqlite_customer_repo() -> (Context, impl CustomerRepository) {
     let pool = super::init_sqlite_pool().await;
     (
         Context::new(),
-        sultan_core::storage::sqlite::customer::SqliteCustomerRepository::new(pool),
+        crate::storage::sqlite::customer::SqliteCustomerRepository::new(pool),
     )
 }
 
@@ -470,10 +471,7 @@ pub async fn customer_test_update_non_existent<C: CustomerRepository>(ctx: &Cont
     };
 
     let result = repo.update(ctx, 999999, &update_data).await;
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::NotFound(_))
-    ));
+    assert!(matches!(result, Err(NotFound(_))));
 }
 
 // =============================================================================
@@ -482,10 +480,7 @@ pub async fn customer_test_update_non_existent<C: CustomerRepository>(ctx: &Cont
 
 pub async fn customer_test_delete_non_existent<C: CustomerRepository>(ctx: &Context, repo: C) {
     let result = repo.delete(ctx, 999999).await;
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::NotFound(_))
-    ));
+    assert!(matches!(result, Err(NotFound(_))));
 }
 
 pub async fn customer_test_get_deleted<C: CustomerRepository>(ctx: &Context, repo: C) {

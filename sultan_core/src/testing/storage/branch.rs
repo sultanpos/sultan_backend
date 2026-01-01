@@ -1,4 +1,4 @@
-use sultan_core::{
+use crate::{
     domain::{
         Context,
         model::{
@@ -13,7 +13,7 @@ pub async fn create_sqlite_branch_repo() -> (Context, impl BranchRepository) {
     let pool = super::init_sqlite_pool().await;
     (
         Context::new(),
-        sultan_core::storage::sqlite::branch::SqliteBranchRepository::new(pool),
+        crate::storage::sqlite::branch::SqliteBranchRepository::new(pool),
     )
 }
 
@@ -151,18 +151,12 @@ pub async fn branch_test_non_existent<B: BranchRepository>(ctx: &Context, repo: 
     };
 
     let result = repo.update(&ctx, 999, &update_data).await;
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::NotFound(_))
-    ));
+    assert!(matches!(result, Err(crate::domain::Error::NotFound(_))));
 }
 
 pub async fn branch_test_delete_non_existent<B: BranchRepository>(ctx: &Context, repo: B) {
     let result = repo.delete(&ctx, 999).await;
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::NotFound(_))
-    ));
+    assert!(matches!(result, Err(crate::domain::Error::NotFound(_))));
 }
 
 pub async fn branch_test_get_deleted<B: BranchRepository>(ctx: &Context, repo: B) {
@@ -231,10 +225,7 @@ pub async fn branch_test_update_branch_not_found<B: BranchRepository>(ctx: &Cont
     };
 
     let result = repo.update(&ctx, 9999, &update_data).await;
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::NotFound(_))
-    ));
+    assert!(matches!(result, Err(crate::domain::Error::NotFound(_))));
 }
 
 pub async fn branch_test_create_branch_with_all_fields<B: BranchRepository>(

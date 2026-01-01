@@ -1,7 +1,16 @@
 #![allow(dead_code)]
+pub mod branch;
+pub mod category;
+pub mod customer;
+pub mod product;
+pub mod supplier;
+pub mod token;
+pub mod unit;
+pub mod user;
+
+use crate::{domain::model::pagination::PaginationOptions, snowflake::SnowflakeGenerator};
 use once_cell::sync::Lazy;
 use sqlx::SqlitePool;
-use sultan_core::{domain::model::pagination::PaginationOptions, snowflake::SnowflakeGenerator};
 use tokio::sync::Mutex;
 
 pub static ID_GENERATOR: Lazy<Mutex<SnowflakeGenerator>> =

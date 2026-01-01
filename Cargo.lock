@@ -2143,6 +2143,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "sultan_core",
  "thiserror",
  "tokio",
  "tokio-util",
