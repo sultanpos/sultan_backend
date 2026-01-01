@@ -1,8 +1,7 @@
-use serde_json::json;
-use sqlx::{Pool, Sqlite};
-use sultan_core::{
+use crate::{
     domain::{
         Context,
+        error::Error,
         model::{
             Update,
             category::category_create_with_name,
@@ -18,6 +17,8 @@ use sultan_core::{
         transaction::TransactionManager,
     },
 };
+use serde_json::json;
+use sqlx::{Pool, Sqlite};
 
 pub async fn create_sqlite_product_repo() -> (
     Context,
@@ -443,10 +444,7 @@ where
         .await
         .expect("Failed to rollback tx");
 
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::NotFound(_))
-    ));
+    assert!(matches!(result, Err(Error::NotFound(_))));
 }
 
 pub async fn test_delete_product_success<'a, T, P>(ctx: &Context, tx_manager: &'a T, repo: &'a P)
@@ -489,10 +487,7 @@ where
         .await
         .expect("Failed to rollback tx");
 
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::NotFound(_))
-    ));
+    assert!(matches!(result, Err(Error::NotFound(_))));
 }
 
 pub async fn test_get_product_by_id_not_found<'a, P>(ctx: &Context, repo: &'a P)
@@ -727,10 +722,7 @@ where
 
     let result = repo.update_variant(&ctx, 999999, &update).await;
 
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::NotFound(_))
-    ));
+    assert!(matches!(result, Err(Error::NotFound(_))));
 }
 
 pub async fn test_delete_variant_success<'a, T, P>(ctx: &Context, tx_manager: &'a T, repo: &'a P)
@@ -782,10 +774,7 @@ where
         .await
         .expect("Failed to rollback tx");
 
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::NotFound(_))
-    ));
+    assert!(matches!(result, Err(Error::NotFound(_))));
 }
 
 pub async fn test_delete_variants_by_product_id<'a, T, P>(
@@ -1314,10 +1303,7 @@ pub async fn test_update_deleted_product_fails<'a, T, P>(
         .await
         .expect("Failed to rollback tx");
 
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::NotFound(_))
-    ));
+    assert!(matches!(result, Err(Error::NotFound(_))));
 }
 
 pub async fn test_update_deleted_variant_fails<'a, T, P>(
@@ -1362,10 +1348,7 @@ pub async fn test_update_deleted_variant_fails<'a, T, P>(
 
     let result = repo.update_variant(&ctx, variant_id, &update).await;
 
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::NotFound(_))
-    ));
+    assert!(matches!(result, Err(Error::NotFound(_))));
 }
 
 pub async fn test_delete_already_deleted_product_fails<'a, T, P>(
@@ -1400,10 +1383,7 @@ pub async fn test_delete_already_deleted_product_fails<'a, T, P>(
         .await
         .expect("Failed to rollback tx");
 
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::NotFound(_))
-    ));
+    assert!(matches!(result, Err(Error::NotFound(_))));
 }
 
 pub async fn test_get_variant_by_id_success<'a, T, P>(ctx: &Context, tx_manager: &'a T, repo: &'a P)

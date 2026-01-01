@@ -1,19 +1,19 @@
-use chrono::{Duration, Utc};
-use sultan_core::{
+use crate::{
     domain::{
         Context,
         model::{token::Token, user::UserCreate},
     },
     storage::{TokenRepository, UserRepository},
 };
+use chrono::{Duration, Utc};
 
 pub async fn create_sqlite_user_and_token_repo()
 -> (Context, impl TokenRepository, impl UserRepository) {
     let pool = super::init_sqlite_pool().await;
     (
         Context::new(),
-        sultan_core::storage::sqlite::token::SqliteTokenRepository::new(pool.clone()),
-        sultan_core::storage::sqlite::user::SqliteUserRepository::new(pool),
+        crate::storage::sqlite::token::SqliteTokenRepository::new(pool.clone()),
+        crate::storage::sqlite::user::SqliteUserRepository::new(pool),
     )
 }
 
@@ -144,7 +144,7 @@ pub async fn token_test_delete_token_not_found(ctx: &Context, token_repo: impl T
     assert!(result.is_err(), "Deleting non-existent token should fail");
     let err = result.unwrap_err();
     assert!(
-        matches!(err, sultan_core::domain::Error::NotFound(_)),
+        matches!(err, crate::domain::Error::NotFound(_)),
         "Error should be NotFound"
     );
 }

@@ -1,4 +1,4 @@
-use sultan_core::{
+use crate::{
     domain::{
         Context,
         model::{
@@ -14,7 +14,7 @@ pub async fn create_sqlite_user_repo() -> (Context, impl UserRepository) {
     let pool = super::init_sqlite_pool().await;
     (
         Context::new(),
-        sultan_core::storage::sqlite::user::SqliteUserRepository::new(pool),
+        crate::storage::sqlite::user::SqliteUserRepository::new(pool),
     )
 }
 
@@ -133,10 +133,7 @@ pub async fn user_test_update_not_found<U: UserRepository>(ctx: &Context, repo: 
     };
 
     let result = repo.update_user(ctx, 999, &user).await;
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::NotFound(_))
-    ));
+    assert!(matches!(result, Err(crate::domain::Error::NotFound(_))));
 }
 
 pub async fn user_test_update_password<U: UserRepository>(ctx: &Context, repo: U) {
@@ -422,18 +419,12 @@ pub async fn user_test_get_by_id_not_found<U: UserRepository>(ctx: &Context, rep
 
 pub async fn user_test_delete_not_found<U: UserRepository>(ctx: &Context, repo: U) {
     let result = repo.delete_user(ctx, 9999).await;
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::NotFound(_))
-    ));
+    assert!(matches!(result, Err(crate::domain::Error::NotFound(_))));
 }
 
 pub async fn user_test_update_password_not_found<U: UserRepository>(ctx: &Context, repo: U) {
     let result = repo.update_password(ctx, 9999, "new_pass").await;
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::NotFound(_))
-    ));
+    assert!(matches!(result, Err(crate::domain::Error::NotFound(_))));
 }
 
 pub async fn user_test_get_by_username_not_found<U: UserRepository>(ctx: &Context, repo: U) {

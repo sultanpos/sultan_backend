@@ -1,7 +1,7 @@
-use serde_json::json;
-use sultan_core::{
+use crate::{
     domain::{
         Context,
+        error::Error::NotFound,
         model::{
             Update,
             pagination::PaginationOptions,
@@ -10,12 +10,13 @@ use sultan_core::{
     },
     storage::SupplierRepository,
 };
+use serde_json::json;
 
 pub async fn create_sqlite_supplier_repo() -> (Context, impl SupplierRepository) {
     let pool = super::init_sqlite_pool().await;
     (
         Context::new(),
-        sultan_core::storage::sqlite::supplier::SqliteSupplierRepository::new(pool),
+        crate::storage::sqlite::supplier::SqliteSupplierRepository::new(pool),
     )
 }
 
@@ -445,10 +446,7 @@ pub async fn supplier_test_update_non_existent<S: SupplierRepository>(ctx: &Cont
     };
 
     let result = repo.update(ctx, 999999, &update_data).await;
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::NotFound(_))
-    ));
+    assert!(matches!(result, Err(NotFound(_))));
 }
 
 // =============================================================================
@@ -457,10 +455,7 @@ pub async fn supplier_test_update_non_existent<S: SupplierRepository>(ctx: &Cont
 
 pub async fn supplier_test_delete_non_existent<S: SupplierRepository>(ctx: &Context, repo: S) {
     let result = repo.delete(ctx, 999999).await;
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::NotFound(_))
-    ));
+    assert!(matches!(result, Err(NotFound(_))));
 }
 
 pub async fn supplier_test_get_deleted<S: SupplierRepository>(ctx: &Context, repo: S) {

@@ -1,4 +1,4 @@
-use sultan_core::{
+use crate::{
     domain::{
         Context,
         model::{
@@ -13,7 +13,7 @@ pub async fn create_sqlite_unit_repo() -> (Context, impl UnitOfMeasureRepository
     let pool = super::init_sqlite_pool().await;
     (
         Context::new(),
-        sultan_core::storage::sqlite::unit::SqliteUnitOfMeasureRepository::new(pool),
+        crate::storage::sqlite::unit::SqliteUnitOfMeasureRepository::new(pool),
     )
 }
 

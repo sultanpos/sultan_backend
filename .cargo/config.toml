@@ -1,0 +1,9 @@
+[build]
+rustflags = ["--cfg", "tokio_unstable"]
+
+# Automatically enable test-helpers feature when running tests
+[target.'cfg(all())']
+rustflags = []
+
+[env]
+# This ensures test-helpers is enabled during test builds
