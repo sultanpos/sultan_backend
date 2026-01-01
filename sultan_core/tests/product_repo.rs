@@ -72,229 +72,34 @@ async fn test_create_product_with_categories() {
 
 #[tokio::test]
 async fn test_update_product_name() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool.clone());
-    let tx_manager = SqliteTransactionManager::new(pool);
-    let ctx = Context::new();
-
-    let product_id = generate_test_id();
-    let product = create_test_product();
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id, &product, &mut tx)
-        .await
-        .expect("Failed to create product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    let update = ProductUpdate {
-        name: Some("Updated Product Name".to_string()),
-        description: Update::Unchanged,
-        product_type: None,
-        main_image: Update::Unchanged,
-        sellable: None,
-        buyable: None,
-        editable_price: None,
-        has_variant: None,
-        metadata: Update::Unchanged,
-        category_ids: None,
-    };
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.update_product(&ctx, product_id, &update, &mut tx)
-        .await
-        .expect("Failed to update product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    let saved = repo
-        .get_by_id(&ctx, product_id)
-        .await
-        .expect("Failed to get product")
-        .expect("Product not found");
-
-    assert_eq!(saved.name, "Updated Product Name");
-    // Other fields should remain unchanged
-    assert_eq!(
-        saved.description,
-        Some("A test product description".to_string())
-    );
+    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    common::product_share::test_create_product_without_optional_fields(&ctx, &tx_manager, &repo)
+        .await;
+    common::product_share::test_update_product_name(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_product_clear_description() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool.clone());
-    let tx_manager = SqliteTransactionManager::new(pool);
-    let ctx = Context::new();
-
-    let product_id = generate_test_id();
-    let product = create_test_product();
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id, &product, &mut tx)
-        .await
-        .expect("Failed to create product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    let update = ProductUpdate {
-        name: None,
-        description: Update::Clear,
-        product_type: None,
-        main_image: Update::Unchanged,
-        sellable: None,
-        buyable: None,
-        editable_price: None,
-        has_variant: None,
-        metadata: Update::Unchanged,
-        category_ids: None,
-    };
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.update_product(&ctx, product_id, &update, &mut tx)
-        .await
-        .expect("Failed to update product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    let saved = repo
-        .get_by_id(&ctx, product_id)
-        .await
-        .expect("Failed to get product")
-        .expect("Product not found");
-
-    assert_eq!(saved.description, None);
+    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    common::product_share::test_create_product_without_optional_fields(&ctx, &tx_manager, &repo)
+        .await;
+    common::product_share::test_update_product_clear_description(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_product_all_fields() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool.clone());
-    let tx_manager = SqliteTransactionManager::new(pool);
-    let ctx = Context::new();
-
-    let product_id = generate_test_id();
-    let product = create_test_product();
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id, &product, &mut tx)
-        .await
-        .expect("Failed to create product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    let update = ProductUpdate {
-        name: Some("Fully Updated Product".to_string()),
-        description: Update::Set("New description".to_string()),
-        product_type: Some("service".to_string()),
-        main_image: Update::Set("https://new-image.com/img.png".to_string()),
-        sellable: Some(false),
-        buyable: Some(false),
-        editable_price: Some(true),
-        has_variant: Some(true),
-        metadata: Update::Set(json!({"new_key": "new_value"})),
-        category_ids: None,
-    };
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.update_product(&ctx, product_id, &update, &mut tx)
-        .await
-        .expect("Failed to update product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    let saved = repo
-        .get_by_id(&ctx, product_id)
-        .await
-        .expect("Failed to get product")
-        .expect("Product not found");
-
-    assert_eq!(saved.name, "Fully Updated Product");
-    assert_eq!(saved.description, Some("New description".to_string()));
-    assert_eq!(saved.product_type, "service");
-    assert_eq!(
-        saved.main_image,
-        Some("https://new-image.com/img.png".to_string())
-    );
-    assert!(!saved.sellable);
-    assert!(!saved.buyable);
-    assert!(saved.editable_price);
-    assert!(saved.has_variant);
-    assert_eq!(saved.metadata, Some(json!({"new_key": "new_value"})));
+    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    common::product_share::test_create_product_without_optional_fields(&ctx, &tx_manager, &repo)
+        .await;
+    common::product_share::test_update_product_all_fields(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_product_categories() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool.clone());
-    let tx_manager = SqliteTransactionManager::new(pool.clone());
-    let ctx = Context::new();
-
-    // Create categories
-    let cat_id1 = generate_test_id();
-    let cat_id2 = generate_test_id();
-    let cat_id3 = generate_test_id();
-
-    sqlx::query("INSERT INTO categories (id, name) VALUES (?, ?), (?, ?), (?, ?)")
-        .bind(cat_id1)
-        .bind("Cat 1")
-        .bind(cat_id2)
-        .bind("Cat 2")
-        .bind(cat_id3)
-        .bind("Cat 3")
-        .execute(&pool)
-        .await
-        .expect("Failed to create categories");
-
-    let product_id = generate_test_id();
-    let product = ProductCreate {
-        name: "Product with categories".to_string(),
-        description: None,
-        product_type: "product".to_string(),
-        main_image: None,
-        sellable: true,
-        buyable: true,
-        editable_price: false,
-        has_variant: false,
-        metadata: None,
-        category_ids: vec![cat_id1, cat_id2],
-    };
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id, &product, &mut tx)
-        .await
-        .expect("Failed to create product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    // Update to new categories
-    let update = ProductUpdate {
-        name: None,
-        description: Update::Unchanged,
-        product_type: None,
-        main_image: Update::Unchanged,
-        sellable: None,
-        buyable: None,
-        editable_price: None,
-        has_variant: None,
-        metadata: Update::Unchanged,
-        category_ids: Some(vec![cat_id2, cat_id3]),
-    };
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.update_product(&ctx, product_id, &update, &mut tx)
-        .await
-        .expect("Failed to update product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    // Verify categories were updated
-    let categories: Vec<(i64,)> = sqlx::query_as(
-        "SELECT category_id FROM product_categories WHERE product_id = ? ORDER BY category_id",
-    )
-    .bind(product_id)
-    .fetch_all(&pool)
-    .await
-    .expect("Failed to get categories");
-
-    assert_eq!(categories.len(), 2);
-    let cat_ids: Vec<i64> = categories.into_iter().map(|c| c.0).collect();
-    assert!(cat_ids.contains(&cat_id2));
-    assert!(cat_ids.contains(&cat_id3));
-    assert!(!cat_ids.contains(&cat_id1));
+    let (ctx, tx_manager, repo, pool) = create_sqlite_product_repo().await;
+    common::product_share::test_create_product_without_optional_fields(&ctx, &tx_manager, &repo)
+        .await;
+    common::product_share::test_update_product_categories(&ctx, &tx_manager, &repo, &pool).await;
 }
 
 #[tokio::test]

@@ -4,8 +4,9 @@ use sultan_core::{
     domain::{
         Context,
         model::{
+            Update,
             category::category_create_with_name,
-            product::{ProductCreate, ProductVariantCreate},
+            product::{ProductCreate, ProductUpdate, ProductVariantCreate},
         },
     },
     storage::{
@@ -190,15 +191,229 @@ pub async fn test_create_product_with_categories<'a, T, P>(
     assert_eq!(categories.len(), 2);
     assert!(categories.contains(&category_id1));
     assert!(categories.contains(&category_id2));
+}
 
-    // Verify categories were linked
-    /*let categories: Vec<(i64, i64)> = sqlx::query_as(
-        "SELECT product_id, category_id FROM product_categories WHERE product_id = ?",
-    )
-    .bind(product_id)
-    .fetch_all(&pool)
-    .await
-    .expect("Failed to get categories");
+pub async fn test_update_product_name<'a, T, P>(ctx: &Context, tx_manager: &'a T, repo: &'a P)
+where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
+{
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
 
-    assert_eq!(categories.len(), 2);*/
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_product(&ctx, product_id, &product, &mut tx)
+        .await
+        .expect("Failed to create product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let update = ProductUpdate {
+        name: Some("Updated Product Name".to_string()),
+        description: Update::Unchanged,
+        product_type: None,
+        main_image: Update::Unchanged,
+        sellable: None,
+        buyable: None,
+        editable_price: None,
+        has_variant: None,
+        metadata: Update::Unchanged,
+        category_ids: None,
+    };
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.update_product(&ctx, product_id, &update, &mut tx)
+        .await
+        .expect("Failed to update product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let saved = repo
+        .get_by_id(&ctx, product_id)
+        .await
+        .expect("Failed to get product")
+        .expect("Product not found");
+
+    assert_eq!(saved.name, "Updated Product Name");
+    // Other fields should remain unchanged
+    assert_eq!(
+        saved.description,
+        Some("A test product description".to_string())
+    );
+}
+
+pub async fn test_update_product_clear_description<'a, T, P>(
+    ctx: &Context,
+    tx_manager: &'a T,
+    repo: &'a P,
+) where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
+{
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_product(&ctx, product_id, &product, &mut tx)
+        .await
+        .expect("Failed to create product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let update = ProductUpdate {
+        name: None,
+        description: Update::Clear,
+        product_type: None,
+        main_image: Update::Unchanged,
+        sellable: None,
+        buyable: None,
+        editable_price: None,
+        has_variant: None,
+        metadata: Update::Unchanged,
+        category_ids: None,
+    };
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.update_product(&ctx, product_id, &update, &mut tx)
+        .await
+        .expect("Failed to update product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let saved = repo
+        .get_by_id(&ctx, product_id)
+        .await
+        .expect("Failed to get product")
+        .expect("Product not found");
+
+    assert_eq!(saved.description, None);
+}
+
+pub async fn test_update_product_all_fields<'a, T, P>(ctx: &Context, tx_manager: &'a T, repo: &'a P)
+where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
+{
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_product(&ctx, product_id, &product, &mut tx)
+        .await
+        .expect("Failed to create product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let update = ProductUpdate {
+        name: Some("Fully Updated Product".to_string()),
+        description: Update::Set("New description".to_string()),
+        product_type: Some("service".to_string()),
+        main_image: Update::Set("https://new-image.com/img.png".to_string()),
+        sellable: Some(false),
+        buyable: Some(false),
+        editable_price: Some(true),
+        has_variant: Some(true),
+        metadata: Update::Set(json!({"new_key": "new_value"})),
+        category_ids: None,
+    };
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.update_product(&ctx, product_id, &update, &mut tx)
+        .await
+        .expect("Failed to update product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let saved = repo
+        .get_by_id(&ctx, product_id)
+        .await
+        .expect("Failed to get product")
+        .expect("Product not found");
+
+    assert_eq!(saved.name, "Fully Updated Product");
+    assert_eq!(saved.description, Some("New description".to_string()));
+    assert_eq!(saved.product_type, "service");
+    assert_eq!(
+        saved.main_image,
+        Some("https://new-image.com/img.png".to_string())
+    );
+    assert!(!saved.sellable);
+    assert!(!saved.buyable);
+    assert!(saved.editable_price);
+    assert!(saved.has_variant);
+    assert_eq!(saved.metadata, Some(json!({"new_key": "new_value"})));
+}
+
+pub async fn test_update_product_categories<'a, T, P>(
+    ctx: &Context,
+    tx_manager: &'a T,
+    repo: &'a P,
+    pool: &Pool<Sqlite>,
+) where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
+{
+    let category_repo = SqliteCategoryRepository::new(pool.clone());
+    // Create categories
+    let cat_id1 = super::generate_test_id().await;
+    let cat_id2 = super::generate_test_id().await;
+    let cat_id3 = super::generate_test_id().await;
+
+    category_repo
+        .create(ctx, cat_id1, &category_create_with_name("Cat 1"))
+        .await
+        .expect("Failed to create category 1");
+    category_repo
+        .create(ctx, cat_id2, &category_create_with_name("Cat 2"))
+        .await
+        .expect("Failed to create category 2");
+    category_repo
+        .create(ctx, cat_id3, &category_create_with_name("Cat 3"))
+        .await
+        .expect("Failed to create category 3");
+
+    let product_id = super::generate_test_id().await;
+    let product = ProductCreate {
+        name: "Product with categories".to_string(),
+        description: None,
+        product_type: "product".to_string(),
+        main_image: None,
+        sellable: true,
+        buyable: true,
+        editable_price: false,
+        has_variant: false,
+        metadata: None,
+        category_ids: vec![cat_id1, cat_id2],
+    };
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_product(&ctx, product_id, &product, &mut tx)
+        .await
+        .expect("Failed to create product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    // Update to new categories
+    let update = ProductUpdate {
+        name: None,
+        description: Update::Unchanged,
+        product_type: None,
+        main_image: Update::Unchanged,
+        sellable: None,
+        buyable: None,
+        editable_price: None,
+        has_variant: None,
+        metadata: Update::Unchanged,
+        category_ids: Some(vec![cat_id2, cat_id3]),
+    };
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.update_product(&ctx, product_id, &update, &mut tx)
+        .await
+        .expect("Failed to update product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    // Verify categories were updated
+    let categories = repo
+        .get_product_category(&ctx, product_id)
+        .await
+        .expect("Failed to get product categories");
+
+    assert_eq!(categories.len(), 2);
+    assert!(categories.contains(&cat_id2));
+    assert!(categories.contains(&cat_id3));
+    assert!(!categories.contains(&cat_id1));
 }
