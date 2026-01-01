@@ -183,6 +183,14 @@ pub async fn test_create_product_with_categories<'a, T, P>(
         .expect("Failed to create product");
     tx_manager.commit(tx).await.expect("Failed to commit tx");
 
+    let categories = repo
+        .get_product_category(&ctx, product_id)
+        .await
+        .expect("Failed to get product categories");
+    assert_eq!(categories.len(), 2);
+    assert!(categories.contains(&category_id1));
+    assert!(categories.contains(&category_id2));
+
     // Verify categories were linked
     /*let categories: Vec<(i64, i64)> = sqlx::query_as(
         "SELECT product_id, category_id FROM product_categories WHERE product_id = ?",

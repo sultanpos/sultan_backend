@@ -2,9 +2,12 @@ use async_trait::async_trait;
 
 use crate::domain::{
     Context, DomainResult,
-    model::product::{
-        Product, ProductCreate, ProductUpdate, ProductVariant, ProductVariantCreate,
-        ProductVariantUpdate,
+    model::{
+        category::Category,
+        product::{
+            Product, ProductCreate, ProductUpdate, ProductVariant, ProductVariantCreate,
+            ProductVariantUpdate,
+        },
     },
 };
 
@@ -62,4 +65,6 @@ pub trait ProductRepository<Tx>: Send + Sync {
         ctx: &Context,
         product_id: i64,
     ) -> DomainResult<Vec<ProductVariant>>;
+
+    async fn get_product_category(&self, ctx: &Context, product_id: i64) -> DomainResult<Vec<i64>>;
 }
