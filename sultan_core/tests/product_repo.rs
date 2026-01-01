@@ -1,50 +1,6 @@
 mod common;
 
-use common::init_sqlite_pool;
-use serde_json::json;
-use sultan_core::domain::Context;
-use sultan_core::domain::model::Update;
-use sultan_core::domain::model::product::{
-    ProductCreate, ProductVariantCreate, ProductVariantUpdate,
-};
-use sultan_core::snowflake::SnowflakeGenerator;
-use sultan_core::storage::ProductRepository;
-use sultan_core::storage::sqlite::product::SqliteProductRepository;
-use sultan_core::storage::sqlite::transaction::SqliteTransactionManager;
-use sultan_core::storage::transaction::TransactionManager;
-
 use crate::common::product_share::create_sqlite_product_repo;
-
-fn generate_test_id() -> i64 {
-    thread_local! {
-        static GENERATOR: SnowflakeGenerator = SnowflakeGenerator::new(1).unwrap();
-    }
-    GENERATOR.with(|g| g.generate().unwrap())
-}
-
-fn create_test_product() -> ProductCreate {
-    ProductCreate {
-        name: "Test Product".to_string(),
-        description: Some("A test product description".to_string()),
-        product_type: "product".to_string(),
-        main_image: Some("https://example.com/image.jpg".to_string()),
-        sellable: true,
-        buyable: true,
-        editable_price: false,
-        has_variant: false,
-        metadata: Some(json!({"key": "value"})),
-        category_ids: vec![],
-    }
-}
-
-fn create_test_variant(product_id: i64) -> ProductVariantCreate {
-    ProductVariantCreate {
-        product_id,
-        barcode: Some("1234567890".to_string()),
-        name: Some("Default Variant".to_string()),
-        metadata: Some(json!({"sku": "SKU001"})),
-    }
-}
 
 // =============================================================================
 // Product CRUD Tests
@@ -442,45 +398,6 @@ async fn test_update_variant_only_barcode() {
 
 #[tokio::test]
 async fn test_update_variant_set_metadata() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool.clone());
-    let tx_manager = SqliteTransactionManager::new(pool);
-    let ctx = Context::new();
-
-    let product_id = generate_test_id();
-    let product = create_test_product();
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id, &product, &mut tx)
-        .await
-        .expect("Failed to create product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    let variant_id = generate_test_id();
-    let variant = create_test_variant(product_id);
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_variant(&ctx, variant_id, &variant, &mut tx)
-        .await
-        .expect("Failed to create variant");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    // Set new metadata
-    let update = ProductVariantUpdate {
-        barcode: Update::Unchanged,
-        name: Update::Unchanged,
-        metadata: Update::Set(json!({"new": "data", "count": 42})),
-    };
-
-    repo.update_variant(&ctx, variant_id, &update)
-        .await
-        .expect("Failed to update variant");
-
-    let saved = repo
-        .get_variant_by_id(&ctx, variant_id)
-        .await
-        .expect("Failed to get variant")
-        .expect("Variant not found");
-
-    assert_eq!(saved.metadata, Some(json!({"new": "data", "count": 42})));
+    let (ctx, tx_manager, repo, _pool) = create_sqlite_product_repo().await;
+    common::product_share::test_update_variant_set_metadata(&ctx, &tx_manager, &repo).await;
 }

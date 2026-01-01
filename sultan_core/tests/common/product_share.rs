@@ -1156,12 +1156,16 @@ pub async fn test_soft_delete_product_preserves_data(
     tx_manager.commit(tx).await.expect("Failed to commit tx");
 
     // Verify data still exists in database (soft deleted)
-    let row: Option<(i64, bool)> =
-        sqlx::query_as("SELECT id, is_deleted FROM products WHERE id = ?")
-            .bind(product_id)
-            .fetch_optional(pool)
-            .await
-            .expect("Failed to query");
+    let row: Option<(i64, bool)> = sqlx::query_as(
+        format!(
+            "SELECT id, is_deleted FROM products WHERE id = {}",
+            product_id
+        )
+        .as_str(),
+    )
+    .fetch_optional(pool)
+    .await
+    .expect("Failed to query");
 
     assert!(row.is_some());
     let (id, is_deleted) = row.unwrap();
@@ -1200,12 +1204,16 @@ pub async fn test_soft_delete_variant_preserves_data(
     tx_manager.commit(tx).await.expect("Failed to commit tx");
 
     // Verify data still exists in database (soft deleted)
-    let row: Option<(i64, bool)> =
-        sqlx::query_as("SELECT id, is_deleted FROM product_variants WHERE id = ?")
-            .bind(variant_id)
-            .fetch_optional(pool)
-            .await
-            .expect("Failed to query");
+    let row: Option<(i64, bool)> = sqlx::query_as(
+        format!(
+            "SELECT id, is_deleted FROM product_variants WHERE id = {}",
+            variant_id
+        )
+        .as_str(),
+    )
+    .fetch_optional(pool)
+    .await
+    .expect("Failed to query");
 
     assert!(row.is_some());
     let (id, is_deleted) = row.unwrap();
@@ -1523,18 +1531,19 @@ pub async fn test_update_product_with_empty_category_update(
     repo: &SqliteProductRepository,
     pool: &Pool<Sqlite>,
 ) {
+    let category_repo = SqliteCategoryRepository::new(pool.clone());
     // Create categories
     let category_id1 = super::generate_test_id().await;
     let category_id2 = super::generate_test_id().await;
 
-    sqlx::query("INSERT INTO categories (id, name) VALUES (?, ?), (?, ?)")
-        .bind(category_id1)
-        .bind("Category 1")
-        .bind(category_id2)
-        .bind("Category 2")
-        .execute(pool)
+    category_repo
+        .create(ctx, category_id1, &category_create_with_name("Category 1"))
         .await
-        .expect("Failed to create categories");
+        .expect("Failed to create category 1");
+    category_repo
+        .create(ctx, category_id2, &category_create_with_name("Category 2"))
+        .await
+        .expect("Failed to create category 2");
 
     // Create product with categories
     let product_id = super::generate_test_id().await;
@@ -1570,12 +1579,16 @@ pub async fn test_update_product_with_empty_category_update(
     tx_manager.commit(tx).await.expect("Failed to commit tx");
 
     // Verify categories were removed
-    let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM product_categories WHERE product_id = ?")
-            .bind(product_id)
-            .fetch_one(pool)
-            .await
-            .expect("Failed to count categories");
+    let count: i64 = sqlx::query_scalar(
+        format!(
+            "SELECT COUNT(*) FROM product_categories WHERE product_id = {}",
+            product_id
+        )
+        .as_str(),
+    )
+    .fetch_one(pool)
+    .await
+    .expect("Failed to count categories");
 
     assert_eq!(count, 0);
 }
@@ -1586,21 +1599,24 @@ pub async fn test_update_product_replace_categories(
     repo: &SqliteProductRepository,
     pool: &Pool<Sqlite>,
 ) {
+    let category_repo = SqliteCategoryRepository::new(pool.clone());
     // Create categories
     let category_id1 = super::generate_test_id().await;
     let category_id2 = super::generate_test_id().await;
     let category_id3 = super::generate_test_id().await;
 
-    sqlx::query("INSERT INTO categories (id, name) VALUES (?, ?), (?, ?), (?, ?)")
-        .bind(category_id1)
-        .bind("Category 1")
-        .bind(category_id2)
-        .bind("Category 2")
-        .bind(category_id3)
-        .bind("Category 3")
-        .execute(pool)
+    category_repo
+        .create(ctx, category_id1, &category_create_with_name("Category 1"))
         .await
-        .expect("Failed to create categories");
+        .expect("Failed to create category 1");
+    category_repo
+        .create(ctx, category_id2, &category_create_with_name("Category 2"))
+        .await
+        .expect("Failed to create category 2");
+    category_repo
+        .create(ctx, category_id3, &category_create_with_name("Category 3"))
+        .await
+        .expect("Failed to create category 3");
 
     // Create product with categories
     let product_id = super::generate_test_id().await;
@@ -1637,9 +1653,12 @@ pub async fn test_update_product_replace_categories(
 
     // Verify only category_id3 is associated
     let categories: Vec<i64> = sqlx::query_scalar(
-        "SELECT category_id FROM product_categories WHERE product_id = ? ORDER BY category_id",
+        format!(
+            "SELECT category_id FROM product_categories WHERE product_id = {} ORDER BY category_id",
+            product_id
+        )
+        .as_str(),
     )
-    .bind(product_id)
     .fetch_all(pool)
     .await
     .expect("Failed to fetch categories");
@@ -2348,4 +2367,50 @@ pub async fn test_update_variant_only_barcode<'a, T, P>(
 
     assert_eq!(saved.barcode, Some("NEW-BARCODE-123".to_string()));
     assert_eq!(saved.name, Some("Default Variant".to_string())); // Unchanged
+}
+
+pub async fn test_update_variant_set_metadata<'a, T, P>(
+    ctx: &Context,
+    tx_manager: &'a T,
+    repo: &'a P,
+) where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
+{
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_product(&ctx, product_id, &product, &mut tx)
+        .await
+        .expect("Failed to create product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let variant_id = super::generate_test_id().await;
+    let variant = create_test_variant(product_id);
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_variant(&ctx, variant_id, &variant, &mut tx)
+        .await
+        .expect("Failed to create variant");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    // Set new metadata
+    let update = ProductVariantUpdate {
+        barcode: Update::Unchanged,
+        name: Update::Unchanged,
+        metadata: Update::Set(json!({"new": "data", "count": 42})),
+    };
+
+    repo.update_variant(&ctx, variant_id, &update)
+        .await
+        .expect("Failed to update variant");
+
+    let saved = repo
+        .get_variant_by_id(&ctx, variant_id)
+        .await
+        .expect("Failed to get variant")
+        .expect("Variant not found");
+
+    assert_eq!(saved.metadata, Some(json!({"new": "data", "count": 42})));
 }
