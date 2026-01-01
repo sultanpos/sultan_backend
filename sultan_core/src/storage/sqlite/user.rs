@@ -234,8 +234,8 @@ impl UserRepository for SqliteUserRepository {
         let mut bindings: Vec<String> = Vec::new();
 
         if let Some(ref username) = filter.username {
-            sql.push_str(" AND username LIKE ?");
-            bindings.push(format!("{}%", username));
+            sql.push_str(" AND username  = ?");
+            bindings.push(username.to_string());
         }
 
         if let Some(ref name) = filter.name {
