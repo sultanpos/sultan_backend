@@ -471,4 +471,17 @@ impl<'a> ProductRepository<Transaction<'a, Sqlite>> for SqliteProductRepository 
             None => Ok(Vec::new()),
         }
     }
+
+    async fn get_product_category(&self, _: &Context, product_id: i64) -> DomainResult<Vec<i64>> {
+        let query = sqlx::query_as::<_, (i64,)>(
+            "SELECT category_id FROM product_categories WHERE product_id = ?",
+        )
+        .bind(product_id);
+
+        let categories = query.fetch_all(&self.pool).await?;
+
+        let category_ids = categories.into_iter().map(|(id,)| id).collect();
+
+        Ok(category_ids)
+    }
 }

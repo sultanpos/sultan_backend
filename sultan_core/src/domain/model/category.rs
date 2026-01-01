@@ -25,3 +25,13 @@ pub struct CategoryUpdate {
     pub name: Option<String>,
     pub description: super::Update<String>,
 }
+
+/* Fixture */
+
+pub fn category_create_with_name(name: &str) -> CategoryCreate {
+    CategoryCreate {
+        parent_id: None,
+        name: name.to_string(),
+        description: None,
+    }
+}

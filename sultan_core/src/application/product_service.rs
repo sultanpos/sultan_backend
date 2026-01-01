@@ -308,6 +308,7 @@ mod tests {
             async fn get_variant_by_barcode(&self, ctx: &Context, barcode: &str) -> DomainResult<Option<ProductVariant>>;
             async fn get_variant_by_id(&self, ctx: &Context, id: i64) -> DomainResult<Option<ProductVariant>>;
             async fn get_variant_by_product_id(&self, ctx: &Context, product_id: i64) -> DomainResult<Vec<ProductVariant>>;
+            async fn get_product_category(&self, ctx: &Context, product_id: i64) -> DomainResult<Vec<i64>>;
         }
     }
 

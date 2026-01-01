@@ -62,4 +62,6 @@ pub trait ProductRepository<Tx>: Send + Sync {
         ctx: &Context,
         product_id: i64,
     ) -> DomainResult<Vec<ProductVariant>>;
+
+    async fn get_product_category(&self, ctx: &Context, product_id: i64) -> DomainResult<Vec<i64>>;
 }
