@@ -203,99 +203,26 @@ async fn test_get_variant_by_barcode_not_found() {
 
 #[tokio::test]
 async fn test_get_variant_by_id_not_found() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool);
-    let ctx = Context::new();
-
-    let result = repo
-        .get_variant_by_id(&ctx, 999999)
-        .await
-        .expect("Failed to query");
-
-    assert!(result.is_none());
+    let (ctx, _, repo, _) = create_sqlite_product_repo().await;
+    common::product_share::test_get_variant_by_id_not_found(&ctx, &repo).await;
 }
 
 #[tokio::test]
 async fn test_get_variant_by_product_id_success() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool.clone());
-    let tx_manager = SqliteTransactionManager::new(pool);
-    let ctx = Context::new();
-
-    let product_id = generate_test_id();
-    let product = create_test_product();
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id, &product, &mut tx)
-        .await
-        .expect("Failed to create product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    // Create multiple variants
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    for i in 0..3 {
-        let variant_id = generate_test_id();
-        let variant = ProductVariantCreate {
-            product_id,
-            barcode: Some(format!("BC_{}", i)),
-            name: Some(format!("Variant {}", i)),
-            metadata: None,
-        };
-        repo.create_variant(&ctx, variant_id, &variant, &mut tx)
-            .await
-            .expect("Failed to create variant");
-    }
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    let variants = repo
-        .get_variant_by_product_id(&ctx, product_id)
-        .await
-        .expect("Failed to get variants");
-
-    assert_eq!(variants.len(), 3);
-    for variant in &variants {
-        assert_eq!(variant.product.id, product_id);
-    }
+    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    common::product_share::test_get_variant_by_product_id_success(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_get_variant_by_product_id_empty() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool.clone());
-    let tx_manager = SqliteTransactionManager::new(pool);
-    let ctx = Context::new();
-
-    let product_id = generate_test_id();
-    let product = create_test_product();
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id, &product, &mut tx)
-        .await
-        .expect("Failed to create product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    // Don't create any variants
-
-    let variants = repo
-        .get_variant_by_product_id(&ctx, product_id)
-        .await
-        .expect("Failed to get variants");
-
-    assert_eq!(variants.len(), 0);
+    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    common::product_share::test_get_variant_by_product_id_empty(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_get_variant_by_product_id_product_not_found() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool);
-    let ctx = Context::new();
-
-    let variants = repo
-        .get_variant_by_product_id(&ctx, 999999)
-        .await
-        .expect("Failed to get variants");
-
-    assert_eq!(variants.len(), 0);
+    let (ctx, _, repo, _) = create_sqlite_product_repo().await;
+    common::product_share::test_get_variant_by_product_id_product_not_found(&ctx, &repo).await;
 }
 
 // =============================================================================
@@ -304,107 +231,23 @@ async fn test_get_variant_by_product_id_product_not_found() {
 
 #[tokio::test]
 async fn test_transaction_rollback_product_creation() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool.clone());
-    let tx_manager = SqliteTransactionManager::new(pool);
-    let ctx = Context::new();
-
-    let product_id = generate_test_id();
-    let product = create_test_product();
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id, &product, &mut tx)
-        .await
-        .expect("Failed to create product");
-    // Rollback instead of commit
-    tx_manager
-        .rollback(tx)
-        .await
-        .expect("Failed to rollback tx");
-
-    // Product should NOT exist
-    let saved = repo
-        .get_by_id(&ctx, product_id)
-        .await
-        .expect("Failed to query");
-    assert!(saved.is_none());
+    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    common::product_share::test_transaction_rollback_product_creation(&ctx, &tx_manager, &repo)
+        .await;
 }
 
 #[tokio::test]
 async fn test_transaction_rollback_variant_creation() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool.clone());
-    let tx_manager = SqliteTransactionManager::new(pool);
-    let ctx = Context::new();
-
-    // Create product first (committed)
-    let product_id = generate_test_id();
-    let product = create_test_product();
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id, &product, &mut tx)
-        .await
-        .expect("Failed to create product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    // Create variant but rollback
-    let variant_id = generate_test_id();
-    let variant = create_test_variant(product_id);
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_variant(&ctx, variant_id, &variant, &mut tx)
-        .await
-        .expect("Failed to create variant");
-    tx_manager
-        .rollback(tx)
-        .await
-        .expect("Failed to rollback tx");
-
-    // Variant should NOT exist
-    let saved = repo
-        .get_variant_by_id(&ctx, variant_id)
-        .await
-        .expect("Failed to query");
-    assert!(saved.is_none());
+    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    common::product_share::test_transaction_rollback_variant_creation(&ctx, &tx_manager, &repo)
+        .await;
 }
 
 #[tokio::test]
 async fn test_transaction_product_and_variant_atomic() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool.clone());
-    let tx_manager = SqliteTransactionManager::new(pool);
-    let ctx = Context::new();
-
-    let product_id = generate_test_id();
-    let variant_id = generate_test_id();
-
-    // Create both in same transaction
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-
-    let product = create_test_product();
-    repo.create_product(&ctx, product_id, &product, &mut tx)
-        .await
-        .expect("Failed to create product");
-
-    let variant = create_test_variant(product_id);
-    repo.create_variant(&ctx, variant_id, &variant, &mut tx)
-        .await
-        .expect("Failed to create variant");
-
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    // Both should exist
-    let saved_product = repo
-        .get_by_id(&ctx, product_id)
-        .await
-        .expect("Failed to get product");
-    assert!(saved_product.is_some());
-
-    let saved_variant = repo
-        .get_variant_by_id(&ctx, variant_id)
-        .await
-        .expect("Failed to get variant");
-    assert!(saved_variant.is_some());
+    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    common::product_share::test_transaction_product_and_variant_atomic(&ctx, &tx_manager, &repo)
+        .await;
 }
 
 // =============================================================================
@@ -413,83 +256,16 @@ async fn test_transaction_product_and_variant_atomic() {
 
 #[tokio::test]
 async fn test_soft_delete_product_preserves_data() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool.clone());
-    let tx_manager = SqliteTransactionManager::new(pool.clone());
-    let ctx = Context::new();
-
-    let product_id = generate_test_id();
-    let product = create_test_product();
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id, &product, &mut tx)
-        .await
-        .expect("Failed to create product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.delete_product(&ctx, product_id, &mut tx)
-        .await
-        .expect("Failed to delete product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    // Verify data still exists in database (soft deleted)
-    let row: Option<(i64, bool)> =
-        sqlx::query_as("SELECT id, is_deleted FROM products WHERE id = ?")
-            .bind(product_id)
-            .fetch_optional(&pool)
-            .await
-            .expect("Failed to query");
-
-    assert!(row.is_some());
-    let (id, is_deleted) = row.unwrap();
-    assert_eq!(id, product_id);
-    assert!(is_deleted);
+    let (ctx, tx_manager, repo, pool) = create_sqlite_product_repo().await;
+    common::product_share::test_soft_delete_product_preserves_data(&ctx, &tx_manager, &repo, &pool)
+        .await;
 }
 
 #[tokio::test]
 async fn test_soft_delete_variant_preserves_data() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool.clone());
-    let tx_manager = SqliteTransactionManager::new(pool.clone());
-    let ctx = Context::new();
-
-    let product_id = generate_test_id();
-    let product = create_test_product();
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id, &product, &mut tx)
-        .await
-        .expect("Failed to create product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    let variant_id = generate_test_id();
-    let variant = create_test_variant(product_id);
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_variant(&ctx, variant_id, &variant, &mut tx)
-        .await
-        .expect("Failed to create variant");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.delete_variant(&ctx, variant_id, &mut tx)
-        .await
-        .expect("Failed to delete variant");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    // Verify data still exists in database (soft deleted)
-    let row: Option<(i64, bool)> =
-        sqlx::query_as("SELECT id, is_deleted FROM product_variants WHERE id = ?")
-            .bind(variant_id)
-            .fetch_optional(&pool)
-            .await
-            .expect("Failed to query");
-
-    assert!(row.is_some());
-    let (id, is_deleted) = row.unwrap();
-    assert_eq!(id, variant_id);
-    assert!(is_deleted);
+    let (ctx, tx_manager, repo, pool) = create_sqlite_product_repo().await;
+    common::product_share::test_soft_delete_variant_preserves_data(&ctx, &tx_manager, &repo, &pool)
+        .await;
 }
 
 // =============================================================================
@@ -498,99 +274,14 @@ async fn test_soft_delete_variant_preserves_data() {
 
 #[tokio::test]
 async fn test_product_with_metadata_json() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool.clone());
-    let tx_manager = SqliteTransactionManager::new(pool);
-    let ctx = Context::new();
-
-    let product_id = generate_test_id();
-    let complex_metadata = json!({
-        "tags": ["electronics", "gadget"],
-        "specs": {
-            "weight": 100,
-            "dimensions": {"width": 10, "height": 20, "depth": 5}
-        },
-        "featured": true
-    });
-
-    let product = ProductCreate {
-        name: "Complex Metadata Product".to_string(),
-        description: None,
-        product_type: "product".to_string(),
-        main_image: None,
-        sellable: true,
-        buyable: true,
-        editable_price: false,
-        has_variant: false,
-        metadata: Some(complex_metadata.clone()),
-        category_ids: vec![],
-    };
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id, &product, &mut tx)
-        .await
-        .expect("Failed to create product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    let saved = repo
-        .get_by_id(&ctx, product_id)
-        .await
-        .expect("Failed to get product")
-        .expect("Product not found");
-
-    assert_eq!(saved.metadata, Some(complex_metadata));
+    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    common::product_share::test_product_with_metadata_json(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_deleted_product_fails() {
-    let pool = init_sqlite_pool().await;
-    let repo: SqliteProductRepository = SqliteProductRepository::new(pool.clone());
-    let tx_manager = SqliteTransactionManager::new(pool);
-    let ctx = Context::new();
-
-    let product_id = generate_test_id();
-    let product = create_test_product();
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id, &product, &mut tx)
-        .await
-        .expect("Failed to create product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    // Delete the product
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.delete_product(&ctx, product_id, &mut tx)
-        .await
-        .expect("Failed to delete product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    // Try to update deleted product
-    let update = ProductUpdate {
-        name: Some("Should Fail".to_string()),
-        description: Update::Unchanged,
-        product_type: None,
-        main_image: Update::Unchanged,
-        sellable: None,
-        buyable: None,
-        editable_price: None,
-        has_variant: None,
-        metadata: Update::Unchanged,
-        category_ids: None,
-    };
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    let result = repo
-        .update_product(&ctx, product_id, &update, &mut tx)
-        .await;
-    tx_manager
-        .rollback(tx)
-        .await
-        .expect("Failed to rollback tx");
-
-    assert!(matches!(
-        result,
-        Err(sultan_core::domain::Error::NotFound(_))
-    ));
+    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    common::product_share::test_update_deleted_product_fails(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]

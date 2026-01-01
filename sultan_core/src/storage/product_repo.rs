@@ -2,12 +2,9 @@ use async_trait::async_trait;
 
 use crate::domain::{
     Context, DomainResult,
-    model::{
-        category::Category,
-        product::{
-            Product, ProductCreate, ProductUpdate, ProductVariant, ProductVariantCreate,
-            ProductVariantUpdate,
-        },
+    model::product::{
+        Product, ProductCreate, ProductUpdate, ProductVariant, ProductVariantCreate,
+        ProductVariantUpdate,
     },
 };
 
