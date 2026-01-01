@@ -1311,3 +1311,208 @@ pub async fn test_update_deleted_product_fails<'a, T, P>(
         Err(sultan_core::domain::Error::NotFound(_))
     ));
 }
+
+pub async fn test_update_deleted_variant_fails<'a, T, P>(
+    ctx: &Context,
+    tx_manager: &'a T,
+    repo: &'a P,
+) where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
+{
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_product(&ctx, product_id, &product, &mut tx)
+        .await
+        .expect("Failed to create product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let variant_id = super::generate_test_id().await;
+    let variant = create_test_variant(product_id);
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_variant(&ctx, variant_id, &variant, &mut tx)
+        .await
+        .expect("Failed to create variant");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    // Delete the variant
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.delete_variant(&ctx, variant_id, &mut tx)
+        .await
+        .expect("Failed to delete variant");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    // Try to update deleted variant
+    let update = ProductVariantUpdate {
+        barcode: Update::Set("SHOULD_FAIL".to_string()),
+        name: Update::Unchanged,
+        metadata: Update::Unchanged,
+    };
+
+    let result = repo.update_variant(&ctx, variant_id, &update).await;
+
+    assert!(matches!(
+        result,
+        Err(sultan_core::domain::Error::NotFound(_))
+    ));
+}
+
+pub async fn test_delete_already_deleted_product_fails<'a, T, P>(
+    ctx: &Context,
+    tx_manager: &'a T,
+    repo: &'a P,
+) where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
+{
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_product(&ctx, product_id, &product, &mut tx)
+        .await
+        .expect("Failed to create product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    // Delete once
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.delete_product(&ctx, product_id, &mut tx)
+        .await
+        .expect("Failed to delete product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    // Try to delete again
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    let result = repo.delete_product(&ctx, product_id, &mut tx).await;
+    tx_manager
+        .rollback(tx)
+        .await
+        .expect("Failed to rollback tx");
+
+    assert!(matches!(
+        result,
+        Err(sultan_core::domain::Error::NotFound(_))
+    ));
+}
+
+pub async fn test_get_variant_by_id_success<'a, T, P>(ctx: &Context, tx_manager: &'a T, repo: &'a P)
+where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
+{
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_product(&ctx, product_id, &product, &mut tx)
+        .await
+        .expect("Failed to create product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let variant_id = super::generate_test_id().await;
+    let variant = create_test_variant(product_id);
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_variant(&ctx, variant_id, &variant, &mut tx)
+        .await
+        .expect("Failed to create variant");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let result = repo
+        .get_variant_by_id(&ctx, variant_id)
+        .await
+        .expect("Failed to get variant");
+
+    assert!(result.is_some());
+    let saved_variant = result.unwrap();
+    assert_eq!(saved_variant.id, variant_id);
+    assert_eq!(saved_variant.product.id, product_id);
+    assert_eq!(saved_variant.barcode, Some("1234567890".to_string()));
+}
+
+pub async fn test_get_variant_by_id_when_product_deleted<'a, T, P>(
+    ctx: &Context,
+    tx_manager: &'a T,
+    repo: &'a P,
+) where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
+{
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_product(&ctx, product_id, &product, &mut tx)
+        .await
+        .expect("Failed to create product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let variant_id = super::generate_test_id().await;
+    let variant = create_test_variant(product_id);
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_variant(&ctx, variant_id, &variant, &mut tx)
+        .await
+        .expect("Failed to create variant");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    // Delete the product
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.delete_product(&ctx, product_id, &mut tx)
+        .await
+        .expect("Failed to delete product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    // Try to get variant - should return None because product is deleted
+    let result = repo
+        .get_variant_by_id(&ctx, variant_id)
+        .await
+        .expect("Failed to get variant");
+
+    assert!(result.is_none());
+}
+
+pub async fn test_get_variant_by_barcode_when_product_deleted<'a, T, P>(
+    ctx: &Context,
+    tx_manager: &'a T,
+    repo: &'a P,
+) where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
+{
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_product(&ctx, product_id, &product, &mut tx)
+        .await
+        .expect("Failed to create product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let variant_id = super::generate_test_id().await;
+    let variant = create_test_variant(product_id);
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_variant(&ctx, variant_id, &variant, &mut tx)
+        .await
+        .expect("Failed to create variant");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    // Delete the product
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.delete_product(&ctx, product_id, &mut tx)
+        .await
+        .expect("Failed to delete product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    // Try to get variant by barcode - should return None because product is deleted
+    let result = repo
+        .get_variant_by_barcode(&ctx, "1234567890")
+        .await
+        .expect("Failed to get variant");
+
+    assert!(result.is_none());
+}
