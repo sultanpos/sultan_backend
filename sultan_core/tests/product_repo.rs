@@ -1,5 +1,35 @@
+pub mod common;
+use serde_json::json;
 use sultan_core::testing::storage::product;
 use sultan_core::testing::storage::product::create_sqlite_product_repo;
+use sultan_core::{
+    domain::model::product::{ProductCreate, ProductVariantCreate},
+    storage::{ProductRepository, transaction::TransactionManager},
+};
+
+fn create_test_product() -> ProductCreate {
+    ProductCreate {
+        name: "Test Product".to_string(),
+        description: Some("A test product description".to_string()),
+        product_type: "product".to_string(),
+        main_image: Some("https://example.com/image.jpg".to_string()),
+        sellable: true,
+        buyable: true,
+        editable_price: false,
+        has_variant: false,
+        metadata: Some(json!({"key": "value"})),
+        category_ids: vec![],
+    }
+}
+
+fn create_test_variant(product_id: i64) -> ProductVariantCreate {
+    ProductVariantCreate {
+        product_id,
+        barcode: Some("1234567890".to_string()),
+        name: Some("Default Variant".to_string()),
+        metadata: Some(json!({"sku": "SKU001"})),
+    }
+}
 
 // =============================================================================
 // Product CRUD Tests
@@ -7,72 +37,72 @@ use sultan_core::testing::storage::product::create_sqlite_product_repo;
 
 #[tokio::test]
 async fn test_create_product_success() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::product_test_create_success(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_create_product_without_optional_fields() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_create_product_without_optional_fields(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_create_product_with_categories() {
-    let (ctx, tx_manager, repo, pool) = create_sqlite_product_repo().await;
-    product::test_create_product_with_categories(&ctx, &tx_manager, &repo, &pool).await;
+    let (ctx, tx_manager, repo, category_repo, _) = create_sqlite_product_repo().await;
+    product::test_create_product_with_categories(&ctx, &tx_manager, &repo, &category_repo).await;
 }
 
 #[tokio::test]
 async fn test_update_product_name() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_create_product_without_optional_fields(&ctx, &tx_manager, &repo).await;
     product::test_update_product_name(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_product_clear_description() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_create_product_without_optional_fields(&ctx, &tx_manager, &repo).await;
     product::test_update_product_clear_description(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_product_all_fields() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_create_product_without_optional_fields(&ctx, &tx_manager, &repo).await;
     product::test_update_product_all_fields(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_product_categories() {
-    let (ctx, tx_manager, repo, pool) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, category_repo, _) = create_sqlite_product_repo().await;
     product::test_create_product_without_optional_fields(&ctx, &tx_manager, &repo).await;
-    product::test_update_product_categories(&ctx, &tx_manager, &repo, &pool).await;
+    product::test_update_product_categories(&ctx, &tx_manager, &repo, &category_repo).await;
 }
 
 #[tokio::test]
 async fn test_update_product_not_found() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_update_product_not_found(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_delete_product_success() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_delete_product_success(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_delete_product_not_found() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_delete_product_not_found(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_get_product_by_id_not_found() {
-    let (ctx, _, repo, _) = create_sqlite_product_repo().await;
-    product::test_get_product_by_id_not_found(&ctx, &repo).await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
+    product::test_get_product_by_id_not_found(&ctx, &tx_manager, &repo).await;
 }
 
 // =============================================================================
@@ -81,55 +111,55 @@ async fn test_get_product_by_id_not_found() {
 
 #[tokio::test]
 async fn test_create_variant_success() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_create_variant_success(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_create_variant_without_optional_fields() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_create_variant_without_optional_fields(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_variant_barcode() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_update_variant_barcode(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_variant_clear_name() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_update_variant_clear_name(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_variant_all_fields() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_update_variant_all_fields(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_variant_not_found() {
-    let (ctx, _, repo, _) = create_sqlite_product_repo().await;
-    product::test_update_variant_not_found(&ctx, &repo).await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
+    product::test_update_variant_not_found(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_delete_variant_success() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_delete_variant_success(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_delete_variant_not_found() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_delete_variant_not_found(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_delete_variants_by_product_id() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = product::create_sqlite_product_repo().await;
     product::test_delete_variants_by_product_id(&ctx, &tx_manager, &repo).await;
 }
 
@@ -139,38 +169,38 @@ async fn test_delete_variants_by_product_id() {
 
 #[tokio::test]
 async fn test_get_variant_by_barcode_success() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_get_variant_by_barcode_success(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_get_variant_by_barcode_not_found() {
-    let (ctx, _, repo, _) = create_sqlite_product_repo().await;
-    product::test_get_variant_by_barcode_not_found(&ctx, &repo).await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
+    product::test_get_variant_by_barcode_not_found(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_get_variant_by_id_not_found() {
-    let (ctx, _, repo, _) = create_sqlite_product_repo().await;
-    product::test_get_variant_by_id_not_found(&ctx, &repo).await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
+    product::test_get_variant_by_id_not_found(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_get_variant_by_product_id_success() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_get_variant_by_product_id_success(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_get_variant_by_product_id_empty() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_get_variant_by_product_id_empty(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_get_variant_by_product_id_product_not_found() {
-    let (ctx, _, repo, _) = create_sqlite_product_repo().await;
-    product::test_get_variant_by_product_id_product_not_found(&ctx, &repo).await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
+    product::test_get_variant_by_product_id_product_not_found(&ctx, &tx_manager, &repo).await;
 }
 
 // =============================================================================
@@ -179,19 +209,19 @@ async fn test_get_variant_by_product_id_product_not_found() {
 
 #[tokio::test]
 async fn test_transaction_rollback_product_creation() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_transaction_rollback_product_creation(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_transaction_rollback_variant_creation() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_transaction_rollback_variant_creation(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_transaction_product_and_variant_atomic() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_transaction_product_and_variant_atomic(&ctx, &tx_manager, &repo).await;
 }
 
@@ -201,14 +231,84 @@ async fn test_transaction_product_and_variant_atomic() {
 
 #[tokio::test]
 async fn test_soft_delete_product_preserves_data() {
-    let (ctx, tx_manager, repo, pool) = create_sqlite_product_repo().await;
-    product::test_soft_delete_product_preserves_data(&ctx, &tx_manager, &repo, &pool).await;
+    let (ctx, tx_manager, repo, _, pool) = create_sqlite_product_repo().await;
+    let product_id = common::generate_test_id().await;
+    let product = create_test_product();
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_product(&ctx, product_id, &product, &mut tx)
+        .await
+        .expect("Failed to create product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.delete_product(&ctx, product_id, &mut tx)
+        .await
+        .expect("Failed to delete product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    // Verify data still exists in database (soft deleted)
+    let row: Option<(i64, bool)> = sqlx::query_as(
+        format!(
+            "SELECT id, is_deleted FROM products WHERE id = {}",
+            product_id
+        )
+        .as_str(),
+    )
+    .fetch_optional(&pool)
+    .await
+    .expect("Failed to query");
+
+    assert!(row.is_some());
+    let (id, is_deleted) = row.unwrap();
+    assert_eq!(id, product_id);
+    assert!(is_deleted);
 }
 
 #[tokio::test]
 async fn test_soft_delete_variant_preserves_data() {
-    let (ctx, tx_manager, repo, pool) = create_sqlite_product_repo().await;
-    product::test_soft_delete_variant_preserves_data(&ctx, &tx_manager, &repo, &pool).await;
+    let (ctx, tx_manager, repo, _, pool) = create_sqlite_product_repo().await;
+
+    let product_id = common::generate_test_id().await;
+    let product = create_test_product();
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_product(&ctx, product_id, &product, &mut tx)
+        .await
+        .expect("Failed to create product");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let variant_id = common::generate_test_id().await;
+    let variant = create_test_variant(product_id);
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.create_variant(&ctx, variant_id, &variant, &mut tx)
+        .await
+        .expect("Failed to create variant");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
+    repo.delete_variant(&ctx, variant_id, &mut tx)
+        .await
+        .expect("Failed to delete variant");
+    tx_manager.commit(tx).await.expect("Failed to commit tx");
+
+    // Verify data still exists in database (soft deleted)
+    let row: Option<(i64, bool)> = sqlx::query_as(
+        format!(
+            "SELECT id, is_deleted FROM product_variants WHERE id = {}",
+            variant_id
+        )
+        .as_str(),
+    )
+    .fetch_optional(&pool)
+    .await
+    .expect("Failed to query");
+
+    assert!(row.is_some());
+    let (id, is_deleted) = row.unwrap();
+    assert_eq!(id, variant_id);
+    assert!(is_deleted);
 }
 
 // =============================================================================
@@ -217,25 +317,25 @@ async fn test_soft_delete_variant_preserves_data() {
 
 #[tokio::test]
 async fn test_product_with_metadata_json() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_product_with_metadata_json(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_deleted_product_fails() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_update_deleted_product_fails(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_deleted_variant_fails() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_update_deleted_variant_fails(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_delete_already_deleted_product_fails() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_delete_already_deleted_product_fails(&ctx, &tx_manager, &repo).await;
 }
 
@@ -245,127 +345,133 @@ async fn test_delete_already_deleted_product_fails() {
 
 #[tokio::test]
 async fn test_get_variant_by_id_success() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_get_variant_by_id_success(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_get_variant_by_id_when_product_deleted() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_get_variant_by_id_when_product_deleted(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_get_variant_by_barcode_when_product_deleted() {
-    let (ctx, tx_manager, repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = create_sqlite_product_repo().await;
     product::test_get_variant_by_barcode_when_product_deleted(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_product_with_empty_category_update() {
-    let (ctx, tx_manager, repo, pool) = product::create_sqlite_product_repo().await;
-    product::test_update_product_with_empty_category_update(&ctx, &tx_manager, &repo, &pool).await;
+    let (ctx, tx_manager, repo, category_repo, _) = product::create_sqlite_product_repo().await;
+    product::test_update_product_with_empty_category_update(
+        &ctx,
+        &tx_manager,
+        &repo,
+        &category_repo,
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn test_update_product_replace_categories() {
-    let (ctx, tx_manager, repo, pool) = product::create_sqlite_product_repo().await;
-    product::test_update_product_replace_categories(&ctx, &tx_manager, &repo, &pool).await;
+    let (ctx, tx_manager, repo, category_repo, _) = product::create_sqlite_product_repo().await;
+    product::test_update_product_replace_categories(&ctx, &tx_manager, &repo, &category_repo).await;
 }
 
 #[tokio::test]
 async fn test_update_product_only_metadata() {
-    let (ctx, tx_manager, repo, _pool) = product::create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = product::create_sqlite_product_repo().await;
     product::test_update_product_only_metadata(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_product_clear_metadata() {
-    let (ctx, tx_manager, repo, _pool) = product::create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = product::create_sqlite_product_repo().await;
     product::test_update_product_clear_metadata(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_variant_clear_metadata() {
-    let (ctx, tx_manager, repo, _pool) = product::create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = product::create_sqlite_product_repo().await;
     product::test_update_variant_clear_metadata(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_variant_clear_barcode() {
-    let (ctx, tx_manager, repo, _pool) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = product::create_sqlite_product_repo().await;
     product::test_update_variant_clear_barcode(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_multiple_variants_for_single_product() {
-    let (ctx, tx_manager, repo, _pool) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = product::create_sqlite_product_repo().await;
     product::test_multiple_variants_for_single_product(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_delete_variants_by_product_id_preserves_other_products() {
-    let (ctx, tx_manager, repo, _pool) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = product::create_sqlite_product_repo().await;
     product::test_delete_variants_by_product_id_preserves_other_products(&ctx, &tx_manager, &repo)
         .await;
 }
 
 #[tokio::test]
 async fn test_update_product_boolean_flags() {
-    let (ctx, tx_manager, repo, _pool) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = product::create_sqlite_product_repo().await;
     product::test_update_product_boolean_flags(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_product_main_image() {
-    let (ctx, tx_manager, repo, _pool) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = product::create_sqlite_product_repo().await;
     product::test_update_product_main_image(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_product_clear_main_image() {
-    let (ctx, tx_manager, repo, _pool) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = product::create_sqlite_product_repo().await;
     product::test_update_product_clear_main_image(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_product_type() {
-    let (ctx, tx_manager, repo, _pool) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = product::create_sqlite_product_repo().await;
     product::test_update_product_type(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_variant_without_barcode() {
-    let (ctx, tx_manager, repo, _pool) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = product::create_sqlite_product_repo().await;
     product::test_variant_without_barcode(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_get_deleted_variant_returns_none() {
-    let (ctx, tx_manager, repo, _pool) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = product::create_sqlite_product_repo().await;
     product::test_get_deleted_variant_returns_none(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_get_deleted_product_returns_none() {
-    let (ctx, tx_manager, repo, _pool) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = product::create_sqlite_product_repo().await;
     product::test_get_deleted_product_returns_none(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_variant_only_name() {
-    let (ctx, tx_manager, repo, _pool) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = product::create_sqlite_product_repo().await;
     product::test_update_variant_only_name(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_variant_only_barcode() {
-    let (ctx, tx_manager, repo, _pool) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = product::create_sqlite_product_repo().await;
     product::test_update_variant_only_barcode(&ctx, &tx_manager, &repo).await;
 }
 
 #[tokio::test]
 async fn test_update_variant_set_metadata() {
-    let (ctx, tx_manager, repo, _pool) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, _, _) = product::create_sqlite_product_repo().await;
     product::test_update_variant_set_metadata(&ctx, &tx_manager, &repo).await;
 }
