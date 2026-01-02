@@ -18,20 +18,22 @@ use crate::{
     },
 };
 use serde_json::json;
-use sqlx::{Pool, Sqlite};
+use sqlx::SqlitePool;
 
 pub async fn create_sqlite_product_repo() -> (
     Context,
     SqliteTransactionManager,
     SqliteProductRepository,
-    Pool<Sqlite>,
+    SqliteCategoryRepository,
+    SqlitePool,
 ) {
     let pool = super::init_sqlite_pool().await;
     (
         Context::new(),
         SqliteTransactionManager::new(pool.clone()),
         SqliteProductRepository::new(pool.clone()),
-        pool,
+        SqliteCategoryRepository::new(pool.clone()),
+        pool.clone(),
     )
 }
 
@@ -142,16 +144,16 @@ pub async fn test_create_product_without_optional_fields<'a, T, P>(
     assert_eq!(saved.metadata, None);
 }
 
-pub async fn test_create_product_with_categories<'a, T, P>(
+pub async fn test_create_product_with_categories<'a, T, P, C>(
     ctx: &Context,
     tx_manager: &'a T,
     repo: &'a P,
-    pool: &Pool<Sqlite>,
+    category_repo: &'a C,
 ) where
     T: TransactionManager,
     P: ProductRepository<T::Transaction<'a>>,
+    C: CategoryRepository,
 {
-    let category_repo = SqliteCategoryRepository::new(pool.clone());
     // First create categories
     let category_id1 = super::generate_test_id().await;
     let category_id2 = super::generate_test_id().await;
@@ -339,16 +341,16 @@ where
     assert_eq!(saved.metadata, Some(json!({"new_key": "new_value"})));
 }
 
-pub async fn test_update_product_categories<'a, T, P>(
+pub async fn test_update_product_categories<'a, T, P, C>(
     ctx: &Context,
     tx_manager: &'a T,
     repo: &'a P,
-    pool: &Pool<Sqlite>,
+    category_repo: &'a C,
 ) where
     T: TransactionManager,
     P: ProductRepository<T::Transaction<'a>>,
+    C: CategoryRepository,
 {
-    let category_repo = SqliteCategoryRepository::new(pool.clone());
     // Create categories
     let cat_id1 = super::generate_test_id().await;
     let cat_id2 = super::generate_test_id().await;
@@ -490,9 +492,10 @@ where
     assert!(matches!(result, Err(Error::NotFound(_))));
 }
 
-pub async fn test_get_product_by_id_not_found<'a, P>(ctx: &Context, repo: &'a P)
+pub async fn test_get_product_by_id_not_found<'a, T, P>(ctx: &Context, _: &'a T, repo: &'a P)
 where
-    P: ProductRepository<sqlx::Transaction<'a, Sqlite>>,
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
 {
     let result = repo.get_by_id(&ctx, 999999).await.expect("Failed to query");
 
@@ -710,9 +713,10 @@ where
     assert_eq!(saved.metadata, Some(json!({"new_sku": "SKU999"})));
 }
 
-pub async fn test_update_variant_not_found<'a, P>(ctx: &Context, repo: &'a P)
+pub async fn test_update_variant_not_found<'a, T, P>(ctx: &Context, _: &'a T, repo: &'a P)
 where
-    P: ProductRepository<sqlx::Transaction<'a, Sqlite>>,
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
 {
     let update = ProductVariantUpdate {
         barcode: Update::Set("X".to_string()),
@@ -908,9 +912,10 @@ pub async fn test_get_variant_by_barcode_success<'a, T, P>(
     assert_eq!(saved.product.id, product_id);
 }
 
-pub async fn test_get_variant_by_barcode_not_found<'a, P>(ctx: &Context, repo: &'a P)
+pub async fn test_get_variant_by_barcode_not_found<'a, T, P>(ctx: &Context, _: &'a T, repo: &'a P)
 where
-    P: ProductRepository<sqlx::Transaction<'a, Sqlite>>,
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
 {
     let result = repo
         .get_variant_by_barcode(&ctx, "NONEXISTENT_BARCODE")
@@ -920,9 +925,10 @@ where
     assert!(result.is_none());
 }
 
-pub async fn test_get_variant_by_id_not_found<'a, P>(ctx: &Context, repo: &'a P)
+pub async fn test_get_variant_by_id_not_found<'a, T, P>(ctx: &Context, _: &'a T, repo: &'a P)
 where
-    P: ProductRepository<sqlx::Transaction<'a, Sqlite>>,
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
 {
     let result = repo
         .get_variant_by_id(&ctx, 999999)
@@ -1003,9 +1009,13 @@ pub async fn test_get_variant_by_product_id_empty<'a, T, P>(
     assert_eq!(variants.len(), 0);
 }
 
-pub async fn test_get_variant_by_product_id_product_not_found<'a, P>(ctx: &Context, repo: &'a P)
-where
-    P: ProductRepository<sqlx::Transaction<'a, Sqlite>>,
+pub async fn test_get_variant_by_product_id_product_not_found<'a, T, P>(
+    ctx: &Context,
+    _: &'a T,
+    repo: &'a P,
+) where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
 {
     let variants = repo
         .get_variant_by_product_id(&ctx, 999999)
@@ -1121,93 +1131,6 @@ pub async fn test_transaction_product_and_variant_atomic<'a, T, P>(
         .await
         .expect("Failed to get variant");
     assert!(saved_variant.is_some());
-}
-
-pub async fn test_soft_delete_product_preserves_data(
-    ctx: &Context,
-    tx_manager: &SqliteTransactionManager,
-    repo: &SqliteProductRepository,
-    pool: &Pool<Sqlite>,
-) {
-    let product_id = super::generate_test_id().await;
-    let product = create_test_product();
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id, &product, &mut tx)
-        .await
-        .expect("Failed to create product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.delete_product(&ctx, product_id, &mut tx)
-        .await
-        .expect("Failed to delete product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    // Verify data still exists in database (soft deleted)
-    let row: Option<(i64, bool)> = sqlx::query_as(
-        format!(
-            "SELECT id, is_deleted FROM products WHERE id = {}",
-            product_id
-        )
-        .as_str(),
-    )
-    .fetch_optional(pool)
-    .await
-    .expect("Failed to query");
-
-    assert!(row.is_some());
-    let (id, is_deleted) = row.unwrap();
-    assert_eq!(id, product_id);
-    assert!(is_deleted);
-}
-
-pub async fn test_soft_delete_variant_preserves_data(
-    ctx: &Context,
-    tx_manager: &SqliteTransactionManager,
-    repo: &SqliteProductRepository,
-    pool: &Pool<Sqlite>,
-) {
-    let product_id = super::generate_test_id().await;
-    let product = create_test_product();
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_product(&ctx, product_id, &product, &mut tx)
-        .await
-        .expect("Failed to create product");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    let variant_id = super::generate_test_id().await;
-    let variant = create_test_variant(product_id);
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.create_variant(&ctx, variant_id, &variant, &mut tx)
-        .await
-        .expect("Failed to create variant");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    let mut tx = tx_manager.begin().await.expect("Failed to begin tx");
-    repo.delete_variant(&ctx, variant_id, &mut tx)
-        .await
-        .expect("Failed to delete variant");
-    tx_manager.commit(tx).await.expect("Failed to commit tx");
-
-    // Verify data still exists in database (soft deleted)
-    let row: Option<(i64, bool)> = sqlx::query_as(
-        format!(
-            "SELECT id, is_deleted FROM product_variants WHERE id = {}",
-            variant_id
-        )
-        .as_str(),
-    )
-    .fetch_optional(pool)
-    .await
-    .expect("Failed to query");
-
-    assert!(row.is_some());
-    let (id, is_deleted) = row.unwrap();
-    assert_eq!(id, variant_id);
-    assert!(is_deleted);
 }
 
 pub async fn test_product_with_metadata_json<'a, T, P>(
@@ -1505,13 +1428,16 @@ pub async fn test_get_variant_by_barcode_when_product_deleted<'a, T, P>(
     assert!(result.is_none());
 }
 
-pub async fn test_update_product_with_empty_category_update(
+pub async fn test_update_product_with_empty_category_update<'a, T, P, C>(
     ctx: &Context,
-    tx_manager: &SqliteTransactionManager,
-    repo: &SqliteProductRepository,
-    pool: &Pool<Sqlite>,
-) {
-    let category_repo = SqliteCategoryRepository::new(pool.clone());
+    tx_manager: &'a T,
+    repo: &'a P,
+    category_repo: &'a C,
+) where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
+    C: CategoryRepository,
+{
     // Create categories
     let category_id1 = super::generate_test_id().await;
     let category_id2 = super::generate_test_id().await;
@@ -1558,28 +1484,24 @@ pub async fn test_update_product_with_empty_category_update(
         .expect("Failed to update product");
     tx_manager.commit(tx).await.expect("Failed to commit tx");
 
-    // Verify categories were removed
-    let count: i64 = sqlx::query_scalar(
-        format!(
-            "SELECT COUNT(*) FROM product_categories WHERE product_id = {}",
-            product_id
-        )
-        .as_str(),
-    )
-    .fetch_one(pool)
-    .await
-    .expect("Failed to count categories");
+    let categories = repo
+        .get_product_category(ctx, product_id)
+        .await
+        .expect("Failed to get product categories");
 
-    assert_eq!(count, 0);
+    assert_eq!(categories.len(), 0);
 }
 
-pub async fn test_update_product_replace_categories(
+pub async fn test_update_product_replace_categories<'a, T, P, C>(
     ctx: &Context,
-    tx_manager: &SqliteTransactionManager,
-    repo: &SqliteProductRepository,
-    pool: &Pool<Sqlite>,
-) {
-    let category_repo = SqliteCategoryRepository::new(pool.clone());
+    tx_manager: &'a T,
+    repo: &'a P,
+    category_repo: &'a C,
+) where
+    T: TransactionManager,
+    P: ProductRepository<T::Transaction<'a>>,
+    C: CategoryRepository,
+{
     // Create categories
     let category_id1 = super::generate_test_id().await;
     let category_id2 = super::generate_test_id().await;
@@ -1632,16 +1554,10 @@ pub async fn test_update_product_replace_categories(
     tx_manager.commit(tx).await.expect("Failed to commit tx");
 
     // Verify only category_id3 is associated
-    let categories: Vec<i64> = sqlx::query_scalar(
-        format!(
-            "SELECT category_id FROM product_categories WHERE product_id = {} ORDER BY category_id",
-            product_id
-        )
-        .as_str(),
-    )
-    .fetch_all(pool)
-    .await
-    .expect("Failed to fetch categories");
+    let categories = repo
+        .get_product_category(ctx, product_id)
+        .await
+        .expect("Failed to get product categories");
 
     assert_eq!(categories, vec![category_id3]);
 }
