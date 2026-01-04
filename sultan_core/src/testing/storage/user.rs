@@ -9,10 +9,10 @@ use crate::{
             user::{UserCreate, UserFilter, UserUpdate},
         },
     },
-    storage::UserRepository,
+    storage::{SqliteUserRepository, UserRepository},
 };
 
-pub async fn create_sqlite_user_repo() -> (Context, impl UserRepository) {
+pub async fn create_sqlite_user_repo() -> (Context, SqliteUserRepository) {
     let pool = super::init_sqlite_pool().await;
     (
         Context::new(),
@@ -24,7 +24,10 @@ pub async fn create_sqlite_user_repo() -> (Context, impl UserRepository) {
 // Basic CRUD Tests
 // =============================================================================
 
-pub async fn user_test_create_and_get_integration<U: UserRepository>(ctx: &Context, repo: U) {
+pub async fn user_test_create_and_get_integration<Tx, U: UserRepository<Tx>>(
+    ctx: &Context,
+    repo: U,
+) {
     let username = Uuid::new_v4().to_string();
     let name = "Integration User";
     let email = "integration@example.com";
@@ -57,7 +60,7 @@ pub async fn user_test_create_and_get_integration<U: UserRepository>(ctx: &Conte
     assert_eq!(user.password, password_hash);
 }
 
-pub async fn user_test_create_duplicate<U: UserRepository>(ctx: &Context, repo: U) {
+pub async fn user_test_create_duplicate<Tx, U: UserRepository<Tx>>(ctx: &Context, repo: U) {
     let user = UserCreate {
         username: Uuid::new_v4().to_string(),
         name: "Duplicate".to_string(),
@@ -79,7 +82,7 @@ pub async fn user_test_create_duplicate<U: UserRepository>(ctx: &Context, repo: 
     assert!(result.is_err());
 }
 
-pub async fn user_test_update<U: UserRepository>(ctx: &Context, repo: U) {
+pub async fn user_test_update<Tx, U: UserRepository<Tx>>(ctx: &Context, repo: U) {
     let user = UserCreate {
         username: Uuid::new_v4().to_string(),
         name: "Original".to_string(),
@@ -124,7 +127,7 @@ pub async fn user_test_update<U: UserRepository>(ctx: &Context, repo: U) {
     assert_eq!(updated_user.name, "Updated");
 }
 
-pub async fn user_test_update_not_found<U: UserRepository>(ctx: &Context, repo: U) {
+pub async fn user_test_update_not_found<Tx, U: UserRepository<Tx>>(ctx: &Context, repo: U) {
     let user = UserUpdate {
         username: Some("non_existent".to_string()),
         name: Some("Non Existent".to_string()),
@@ -139,7 +142,7 @@ pub async fn user_test_update_not_found<U: UserRepository>(ctx: &Context, repo: 
     assert!(matches!(result, Err(crate::domain::Error::NotFound(_))));
 }
 
-pub async fn user_test_update_password<U: UserRepository>(ctx: &Context, repo: U) {
+pub async fn user_test_update_password<Tx, U: UserRepository<Tx>>(ctx: &Context, repo: U) {
     let user = UserCreate {
         username: Uuid::new_v4().to_string(),
         name: "Password Test".to_string(),
@@ -173,7 +176,7 @@ pub async fn user_test_update_password<U: UserRepository>(ctx: &Context, repo: U
         .expect("User not found");
 }
 
-pub async fn user_test_delete<U: UserRepository>(ctx: &Context, repo: U) {
+pub async fn user_test_delete<Tx, U: UserRepository<Tx>>(ctx: &Context, repo: U) {
     let user = UserCreate {
         username: Uuid::new_v4().to_string(),
         name: "Delete Test".to_string(),
@@ -212,7 +215,7 @@ pub async fn user_test_delete<U: UserRepository>(ctx: &Context, repo: U) {
 // Pagination Tests
 // =============================================================================
 
-pub async fn user_test_get_all_pagination<U: UserRepository>(ctx: &Context, repo: U) {
+pub async fn user_test_get_all_pagination<Tx, U: UserRepository<Tx>>(ctx: &Context, repo: U) {
     for i in 0..15 {
         let user = UserCreate {
             username: format!("user_{}", Uuid::new_v4()),
@@ -248,7 +251,7 @@ pub async fn user_test_get_all_pagination<U: UserRepository>(ctx: &Context, repo
 // Filter Tests
 // =============================================================================
 
-pub async fn user_test_filter_by_username<U: UserRepository>(ctx: &Context, repo: U) {
+pub async fn user_test_filter_by_username<Tx, U: UserRepository<Tx>>(ctx: &Context, repo: U) {
     let users_data = vec![
         (
             format!("filter_admin_user1_{}", Uuid::new_v4()),
@@ -287,7 +290,7 @@ pub async fn user_test_filter_by_username<U: UserRepository>(ctx: &Context, repo
     assert_eq!(users.len(), 1);
 }
 
-pub async fn user_test_filter_by_name<U: UserRepository>(ctx: &Context, repo: U) {
+pub async fn user_test_filter_by_name<Tx, U: UserRepository<Tx>>(ctx: &Context, repo: U) {
     let users_data = vec![
         (
             format!("filter_name_user1_{}", Uuid::new_v4()),
@@ -327,7 +330,7 @@ pub async fn user_test_filter_by_name<U: UserRepository>(ctx: &Context, repo: U)
     assert!(users.iter().all(|u| u.name.contains("FilterSmith")));
 }
 
-pub async fn user_test_filter_combined<U: UserRepository>(ctx: &Context, repo: U) {
+pub async fn user_test_filter_combined<Tx, U: UserRepository<Tx>>(ctx: &Context, repo: U) {
     let users_data = vec![
         (
             format!("combined_admin_john_{}", Uuid::new_v4()),
@@ -370,7 +373,7 @@ pub async fn user_test_filter_combined<U: UserRepository>(ctx: &Context, repo: U
     assert_eq!(users[0].name, "John CombinedTest");
 }
 
-pub async fn user_test_filter_by_email<U: UserRepository>(ctx: &Context, repo: U) {
+pub async fn user_test_filter_by_email<Tx, U: UserRepository<Tx>>(ctx: &Context, repo: U) {
     let users_data = vec![
         (
             format!("email_user1_{}", Uuid::new_v4()),
@@ -419,7 +422,7 @@ pub async fn user_test_filter_by_email<U: UserRepository>(ctx: &Context, repo: U
 // Get Tests
 // =============================================================================
 
-pub async fn user_test_get_by_id<U: UserRepository>(ctx: &Context, repo: U) {
+pub async fn user_test_get_by_id<Tx, U: UserRepository<Tx>>(ctx: &Context, repo: U) {
     let user = UserCreate {
         username: Uuid::new_v4().to_string(),
         name: "ID Test".to_string(),
@@ -450,22 +453,28 @@ pub async fn user_test_get_by_id<U: UserRepository>(ctx: &Context, repo: U) {
     assert_eq!(fetched_user.phone, user.phone);
 }
 
-pub async fn user_test_get_by_id_not_found<U: UserRepository>(ctx: &Context, repo: U) {
+pub async fn user_test_get_by_id_not_found<Tx, U: UserRepository<Tx>>(ctx: &Context, repo: U) {
     let result = repo.get_by_id(ctx, 9999).await.expect("Failed to query");
     assert!(result.is_none());
 }
 
-pub async fn user_test_delete_not_found<U: UserRepository>(ctx: &Context, repo: U) {
+pub async fn user_test_delete_not_found<Tx, U: UserRepository<Tx>>(ctx: &Context, repo: U) {
     let result = repo.delete_user(ctx, 9999).await;
     assert!(matches!(result, Err(crate::domain::Error::NotFound(_))));
 }
 
-pub async fn user_test_update_password_not_found<U: UserRepository>(ctx: &Context, repo: U) {
+pub async fn user_test_update_password_not_found<Tx, U: UserRepository<Tx>>(
+    ctx: &Context,
+    repo: U,
+) {
     let result = repo.update_password(ctx, 9999, "new_pass").await;
     assert!(matches!(result, Err(crate::domain::Error::NotFound(_))));
 }
 
-pub async fn user_test_get_by_username_not_found<U: UserRepository>(ctx: &Context, repo: U) {
+pub async fn user_test_get_by_username_not_found<Tx, U: UserRepository<Tx>>(
+    ctx: &Context,
+    repo: U,
+) {
     let result = repo
         .get_user_by_username(ctx, "nonexistent_user_xyz")
         .await
@@ -478,7 +487,10 @@ pub async fn user_test_get_by_username_not_found<U: UserRepository>(ctx: &Contex
 // Permission Tests
 // =============================================================================
 
-pub async fn user_test_save_permission_with_branch<U: UserRepository>(ctx: &Context, repo: U) {
+pub async fn user_test_save_permission_with_branch<Tx, U: UserRepository<Tx>>(
+    ctx: &Context,
+    repo: U,
+) {
     let user = UserCreate {
         username: Uuid::new_v4().to_string(),
         name: "Permission User 1".to_string(),
@@ -517,7 +529,10 @@ pub async fn user_test_save_permission_with_branch<U: UserRepository>(ctx: &Cont
     assert_eq!(permissions[0].action, 3);
 }
 
-pub async fn user_test_save_permission_without_branch<U: UserRepository>(ctx: &Context, repo: U) {
+pub async fn user_test_save_permission_without_branch<Tx, U: UserRepository<Tx>>(
+    ctx: &Context,
+    repo: U,
+) {
     let user = UserCreate {
         username: Uuid::new_v4().to_string(),
         name: "Permission User 2".to_string(),
@@ -556,7 +571,10 @@ pub async fn user_test_save_permission_without_branch<U: UserRepository>(ctx: &C
     assert_eq!(permissions[0].action, 3);
 }
 
-pub async fn user_test_save_multiple_permissions<U: UserRepository>(ctx: &Context, repo: U) {
+pub async fn user_test_save_multiple_permissions<Tx, U: UserRepository<Tx>>(
+    ctx: &Context,
+    repo: U,
+) {
     let user = UserCreate {
         username: Uuid::new_v4().to_string(),
         name: "Permission User 3".to_string(),
@@ -599,7 +617,10 @@ pub async fn user_test_save_multiple_permissions<U: UserRepository>(ctx: &Contex
     assert_eq!(permissions.len(), 3);
 }
 
-pub async fn user_test_delete_permission_with_branch<U: UserRepository>(ctx: &Context, repo: U) {
+pub async fn user_test_delete_permission_with_branch<Tx, U: UserRepository<Tx>>(
+    ctx: &Context,
+    repo: U,
+) {
     let user = UserCreate {
         username: Uuid::new_v4().to_string(),
         name: "Permission User 4".to_string(),
@@ -643,7 +664,10 @@ pub async fn user_test_delete_permission_with_branch<U: UserRepository>(ctx: &Co
     assert_eq!(permissions.len(), 0);
 }
 
-pub async fn user_test_delete_permission_without_branch<U: UserRepository>(ctx: &Context, repo: U) {
+pub async fn user_test_delete_permission_without_branch<Tx, U: UserRepository<Tx>>(
+    ctx: &Context,
+    repo: U,
+) {
     let user = UserCreate {
         username: Uuid::new_v4().to_string(),
         name: "Permission User 5".to_string(),
@@ -687,7 +711,7 @@ pub async fn user_test_delete_permission_without_branch<U: UserRepository>(ctx: 
     assert_eq!(permissions.len(), 0);
 }
 
-pub async fn user_test_delete_specific_permission_keeps_others<U: UserRepository>(
+pub async fn user_test_delete_specific_permission_keeps_others<Tx, U: UserRepository<Tx>>(
     ctx: &Context,
     repo: U,
 ) {
@@ -739,7 +763,7 @@ pub async fn user_test_delete_specific_permission_keeps_others<U: UserRepository
     assert_eq!(permissions[0].resource, 3);
 }
 
-pub async fn user_test_get_permission_not_found<U: UserRepository>(ctx: &Context, repo: U) {
+pub async fn user_test_get_permission_not_found<Tx, U: UserRepository<Tx>>(ctx: &Context, repo: U) {
     let user = UserCreate {
         username: Uuid::new_v4().to_string(),
         name: "Permission User 7".to_string(),
@@ -770,7 +794,7 @@ pub async fn user_test_get_permission_not_found<U: UserRepository>(ctx: &Context
     assert_eq!(permissions.len(), 0);
 }
 
-pub async fn user_test_save_permission_null_branch_then_delete<U: UserRepository>(
+pub async fn user_test_save_permission_null_branch_then_delete<Tx, U: UserRepository<Tx>>(
     ctx: &Context,
     repo: U,
 ) {
@@ -818,7 +842,7 @@ pub async fn user_test_save_permission_null_branch_then_delete<U: UserRepository
     assert_eq!(permissions.len(), 0);
 }
 
-pub async fn user_test_save_and_update_permission_null_branch<U: UserRepository>(
+pub async fn user_test_save_and_update_permission_null_branch<Tx, U: UserRepository<Tx>>(
     ctx: &Context,
     repo: U,
 ) {
@@ -867,7 +891,7 @@ pub async fn user_test_save_and_update_permission_null_branch<U: UserRepository>
     assert_eq!(permissions[0].action, 2);
 }
 
-pub async fn user_test_delete_permission_null_vs_non_null_branch<U: UserRepository>(
+pub async fn user_test_delete_permission_null_vs_non_null_branch<Tx, U: UserRepository<Tx>>(
     ctx: &Context,
     repo: U,
 ) {
