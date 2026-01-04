@@ -9,7 +9,10 @@ use crate::{
             user::{UserCreate, UserFilter, UserUpdate},
         },
     },
-    storage::{SqliteUserRepository, UserRepository},
+    storage::{
+        SqliteUserRepository, UserRepository, sqlite::transaction::SqliteTransactionManager,
+        transaction::TransactionManager,
+    },
 };
 
 pub async fn create_sqlite_user_repo() -> (Context, SqliteUserRepository) {
@@ -17,6 +20,16 @@ pub async fn create_sqlite_user_repo() -> (Context, SqliteUserRepository) {
     (
         Context::new(),
         crate::storage::sqlite::user::SqliteUserRepository::new(pool),
+    )
+}
+
+pub async fn create_sqlite_user_repo_tx()
+-> (Context, SqliteUserRepository, SqliteTransactionManager) {
+    let pool = super::init_sqlite_pool().await;
+    (
+        Context::new(),
+        crate::storage::sqlite::user::SqliteUserRepository::new(pool.clone()),
+        SqliteTransactionManager::new(pool.clone()),
     )
 }
 
@@ -58,6 +71,116 @@ pub async fn user_test_create_and_get_integration<Tx, U: UserRepository<Tx>>(
     assert_eq!(user.name, name);
     assert_eq!(user.email, Some(email.to_string()));
     assert_eq!(user.password, password_hash);
+}
+
+pub async fn user_test_create_and_get_integration_tx<
+    'a,
+    Tx: TransactionManager,
+    U: UserRepository<Tx::Transaction<'a>>,
+>(
+    ctx: &Context,
+    tx_manager: &'a Tx,
+    repo: &'a U,
+) {
+    let username = Uuid::new_v4().to_string();
+    let name = "Integration User";
+    let email = "integration@example.com";
+    let password_hash = "hashed_password";
+
+    let user = UserCreate {
+        username: username.clone(),
+        name: name.to_string(),
+        email: Some(email.to_string()),
+        password: password_hash.to_string(),
+        photo: None,
+        pin: None,
+        address: None,
+        phone: None,
+    };
+
+    let id = super::generate_test_id().await;
+    let mut tx = tx_manager.begin().await.expect("failed create transaction");
+    repo.create_user_tx(ctx, id, &user, &mut tx)
+        .await
+        .expect("Failed to create user");
+
+    let user = repo.get_by_id(ctx, id).await.expect("Failed to get user");
+    assert!(user.is_none());
+
+    tx_manager
+        .commit(tx)
+        .await
+        .expect("Failed to commit transaction");
+
+    let user = repo
+        .get_by_id(ctx, id)
+        .await
+        .expect("Failed to get user")
+        .expect("User not found");
+    assert_eq!(user.username, username);
+}
+
+pub async fn user_test_delete_tx<
+    'a,
+    Tx: TransactionManager,
+    U: UserRepository<Tx::Transaction<'a>>,
+>(
+    ctx: &Context,
+    tx_manager: &'a Tx,
+    repo: &'a U,
+) {
+    let username = Uuid::new_v4().to_string();
+    let name = "Integration User";
+    let email = "integration@example.com";
+    let password_hash = "hashed_password";
+
+    let user = UserCreate {
+        username: username.clone(),
+        name: name.to_string(),
+        email: Some(email.to_string()),
+        password: password_hash.to_string(),
+        photo: None,
+        pin: None,
+        address: None,
+        phone: None,
+    };
+
+    let user_id = super::generate_test_id().await;
+    repo.create_user(ctx, user_id, &user)
+        .await
+        .expect("Failed to create user");
+
+    let user = repo
+        .get_user_by_username(ctx, &username)
+        .await
+        .expect("Failed to get user")
+        .expect("User not found");
+
+    assert_eq!(user.username, username);
+
+    let mut tx = tx_manager.begin().await.expect("failed create transaction");
+    repo.delete_user_tx(ctx, user_id, &mut tx)
+        .await
+        .expect("Failed to delete user");
+
+    let user = repo
+        .get_user_by_username(ctx, &username)
+        .await
+        .expect("Failed to get user")
+        .expect("User not found");
+
+    assert_eq!(user.username, username);
+
+    tx_manager
+        .commit(tx)
+        .await
+        .expect("Failed to commit transaction");
+
+    let user = repo
+        .get_by_id(ctx, user_id)
+        .await
+        .expect("Failed to get user");
+    assert!(user.is_none());
 }
 
 pub async fn user_test_create_duplicate<Tx, U: UserRepository<Tx>>(ctx: &Context, repo: U) {

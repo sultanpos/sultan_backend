@@ -11,6 +11,18 @@ async fn test_create_and_get_user_integration() {
 }
 
 #[tokio::test]
+async fn user_test_create_and_get_integration_tx() {
+    let (ctx, repo, tx_manager) = user::create_sqlite_user_repo_tx().await;
+    user::user_test_create_and_get_integration_tx(&ctx, &tx_manager, &repo).await;
+}
+
+#[tokio::test]
+async fn user_test_delete_tx() {
+    let (ctx, repo, tx_manager) = user::create_sqlite_user_repo_tx().await;
+    user::user_test_delete_tx(&ctx, &tx_manager, &repo).await;
+}
+
+#[tokio::test]
 async fn test_create_duplicate_user() {
     let (ctx, repo) = user::create_sqlite_user_repo().await;
     user::user_test_create_duplicate(&ctx, repo).await;
