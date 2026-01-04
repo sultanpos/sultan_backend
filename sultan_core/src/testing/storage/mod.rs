@@ -47,12 +47,6 @@ pub async fn init_sqlite_pool() -> SqlitePool {
         .await
         .expect("Failed to run SQLite migrations");
 
-    // Enable WAL mode
-    sqlx::query("PRAGMA journal_mode=WAL;")
-        .execute(&new_pool)
-        .await
-        .expect("Failed to set WAL mode");
-
     new_pool
 }
 
