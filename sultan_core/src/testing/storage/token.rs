@@ -3,12 +3,14 @@ use crate::{
         Context,
         model::{token::Token, user::UserCreate},
     },
-    storage::{TokenRepository, UserRepository},
+    storage::{
+        SqliteUserRepository, TokenRepository, UserRepository, sqlite::SqliteTokenRepository,
+    },
 };
 use chrono::{Duration, Utc};
 
 pub async fn create_sqlite_user_and_token_repo()
--> (Context, impl TokenRepository, impl UserRepository) {
+-> (Context, SqliteTokenRepository, SqliteUserRepository) {
     let pool = super::init_sqlite_pool().await;
     (
         Context::new(),
@@ -18,7 +20,7 @@ pub async fn create_sqlite_user_and_token_repo()
 }
 
 /// Helper to create a test user (required due to foreign key constraint)
-async fn create_test_user<R: UserRepository>(user_repo: &R, ctx: &Context) -> i64 {
+async fn create_test_user<R: UserRepository<Tx>, Tx>(user_repo: &R, ctx: &Context) -> i64 {
     let user_id = super::generate_test_id().await;
     let user = UserCreate {
         username: format!("token_test_user_{}", user_id),
@@ -39,10 +41,10 @@ async fn create_test_user<R: UserRepository>(user_repo: &R, ctx: &Context) -> i6
     user_id
 }
 
-pub async fn token_test_save_and_get_token(
+pub async fn token_test_save_and_get_token<Tx, U: UserRepository<Tx>>(
     ctx: &Context,
     token_repo: impl TokenRepository,
-    user_repo: impl UserRepository,
+    user_repo: U,
 ) {
     // Create a user first (foreign key requirement)
     let user_id = create_test_user(&user_repo, &ctx).await;
@@ -92,10 +94,10 @@ pub async fn token_test_get_token_not_found(ctx: &Context, token_repo: impl Toke
     assert!(result.is_none(), "Token should not be found");
 }
 
-pub async fn token_test_delete_token(
+pub async fn token_test_delete_token<Tx, U: UserRepository<Tx>>(
     ctx: &Context,
     token_repo: impl TokenRepository,
-    user_repo: impl UserRepository,
+    user_repo: U,
 ) {
     // Create a user first
     let user_id = create_test_user(&user_repo, &ctx).await;
@@ -149,10 +151,10 @@ pub async fn token_test_delete_token_not_found(ctx: &Context, token_repo: impl T
     );
 }
 
-pub async fn token_test_multiple_tokens_same_user(
+pub async fn token_test_multiple_tokens_same_user<Tx, U: UserRepository<Tx>>(
     ctx: &Context,
     token_repo: impl TokenRepository,
-    user_repo: impl UserRepository,
+    user_repo: U,
 ) {
     // Create a user
     let user_id = create_test_user(&user_repo, &ctx).await;
@@ -224,10 +226,10 @@ pub async fn token_test_multiple_tokens_same_user(
     assert_eq!(fetched2_after.id, actual_token2_id);
 }
 
-pub async fn token_test_token_with_expired_time(
+pub async fn token_test_token_with_expired_time<Tx, U: UserRepository<Tx>>(
     ctx: &Context,
     token_repo: impl TokenRepository,
-    user_repo: impl UserRepository,
+    user_repo: U,
 ) {
     // Create a user
     let user_id = create_test_user(&user_repo, &ctx).await;

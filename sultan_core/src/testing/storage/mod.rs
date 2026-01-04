@@ -12,6 +12,7 @@ use crate::{domain::model::pagination::PaginationOptions, snowflake::SnowflakeGe
 use once_cell::sync::Lazy;
 use sqlx::SqlitePool;
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 pub static ID_GENERATOR: Lazy<Mutex<SnowflakeGenerator>> =
     Lazy::new(|| Mutex::new(SnowflakeGenerator::new(1).unwrap()));
@@ -27,13 +28,10 @@ pub fn default_pagination() -> PaginationOptions {
 
 pub async fn init_sqlite_pool() -> SqlitePool {
     // Create an isolated in-memory database for each test to avoid schema conflicts
-    let connection_string = "sqlite::memory:".to_string();
-
-    let new_pool = sqlx::sqlite::SqlitePoolOptions::new()
-        .min_connections(1)
-        .connect(&connection_string)
+    let temp_file = format!("/tmp/test_{}.db", Uuid::new_v4());
+    let new_pool = SqlitePool::connect(&format!("sqlite://{}?mode=rwc", temp_file))
         .await
-        .expect("Failed to create in-memory SQLite database");
+        .expect("Failed to create pool");
 
     let crate_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let migrations = std::path::Path::new(&crate_dir).join("../migrations");
