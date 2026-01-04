@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
 use serde::Serialize;
-use sqlx::{QueryBuilder, Sqlite, SqlitePool};
+use sqlx::{QueryBuilder, Sqlite, SqlitePool, Transaction};
 
 use crate::{
     domain::{
@@ -20,6 +20,37 @@ use crate::{
 // ============================================================================
 
 const USER_COLUMNS: &str = "id, username, email, password, name, created_at, updated_at, deleted_at, is_deleted, photo, pin, address, phone";
+
+// Macro to build the create user query to avoid duplication
+macro_rules! build_create_user_query {
+    ($id:expr, $user:expr) => {
+        sqlx::query("INSERT INTO users (id, username, name, email, password, photo, pin, address, phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind($id)
+            .bind(&$user.username)
+            .bind(&$user.name)
+            .bind(&$user.email)
+            .bind(&$user.password)
+            .bind(&$user.photo)
+            .bind(&$user.pin)
+            .bind(&$user.address)
+            .bind(&$user.phone)
+    };
+}
+
+// Macro to build the delete user query to avoid duplication
+macro_rules! build_delete_user_query {
+    ($user_id:expr) => {
+        sqlx::query(
+            r#"
+            UPDATE users SET
+                is_deleted = 1,
+                deleted_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            WHERE id = ? AND is_deleted = 0
+            "#,
+        )
+        .bind($user_id)
+    };
+}
 
 #[derive(Clone)]
 pub struct SqliteUserRepository {
@@ -108,21 +139,24 @@ impl From<PermissionDbSqlite> for Permission {
 
 // Implement the UserRepository trait for SQLite
 #[async_trait]
-impl UserRepository for SqliteUserRepository {
+impl<'a> UserRepository<Transaction<'a, Sqlite>> for SqliteUserRepository {
     async fn create_user(&self, _: &Context, id: i64, user: &UserCreate) -> DomainResult<()> {
-        let query = sqlx::query("INSERT INTO users (id, username, name, email, password, photo, pin, address, phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(id)
-            .bind(&user.username)
-            .bind(&user.name)
-            .bind(&user.email)
-            .bind(&user.password)
-            .bind(&user.photo)
-            .bind(&user.pin)
-            .bind(&user.address)
-            .bind(&user.phone)
-            .execute(&self.pool);
+        build_create_user_query!(id, user)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
 
-        query.await?;
+    async fn create_user_tx(
+        &self,
+        _: &Context,
+        id: i64,
+        user: &UserCreate,
+        tx: &mut Transaction<'a, Sqlite>,
+    ) -> DomainResult<()> {
+        build_create_user_query!(id, user)
+            .execute(&mut **tx)
+            .await?;
         Ok(())
     }
 
@@ -206,18 +240,19 @@ impl UserRepository for SqliteUserRepository {
     }
 
     async fn delete_user(&self, _: &Context, user_id: i64) -> DomainResult<()> {
-        let query = sqlx::query(
-            r#"
-            UPDATE users SET
-                is_deleted = 1,
-                deleted_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-            WHERE id = ? AND is_deleted = 0
-            "#,
-        )
-        .bind(user_id)
-        .execute(&self.pool);
+        let result = build_delete_user_query!(user_id)
+            .execute(&self.pool)
+            .await?;
+        Self::check_rows_affected(result.rows_affected(), "User", user_id)
+    }
 
-        let result = query.await?;
+    async fn delete_user_tx(
+        &self,
+        _: &Context,
+        user_id: i64,
+        tx: &mut Transaction<'a, Sqlite>,
+    ) -> DomainResult<()> {
+        let result = build_delete_user_query!(user_id).execute(&mut **tx).await?;
         Self::check_rows_affected(result.rows_affected(), "User", user_id)
     }
 

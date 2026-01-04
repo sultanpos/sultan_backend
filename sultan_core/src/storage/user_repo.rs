@@ -7,8 +7,15 @@ use crate::domain::model::permission::Permission;
 use crate::domain::model::user::{User, UserCreate, UserFilter, UserUpdate};
 
 #[async_trait]
-pub trait UserRepository: Send + Sync {
+pub trait UserRepository<Tx>: Send + Sync {
     async fn create_user(&self, ctx: &Context, id: i64, user: &UserCreate) -> DomainResult<()>;
+    async fn create_user_tx(
+        &self,
+        ctx: &Context,
+        id: i64,
+        user: &UserCreate,
+        tx: &mut Tx,
+    ) -> DomainResult<()>;
     async fn get_user_by_username(
         &self,
         ctx: &Context,
@@ -22,6 +29,7 @@ pub trait UserRepository: Send + Sync {
         password_hash: &str,
     ) -> DomainResult<()>;
     async fn delete_user(&self, ctx: &Context, user_id: i64) -> DomainResult<()>;
+    async fn delete_user_tx(&self, ctx: &Context, user_id: i64, tx: &mut Tx) -> DomainResult<()>;
     async fn get_all(
         &self,
         ctx: &Context,

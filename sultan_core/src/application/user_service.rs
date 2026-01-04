@@ -29,15 +29,16 @@ pub trait UserServiceTrait: Send + Sync {
     ) -> DomainResult<Vec<Permission>>;
 }
 
-pub struct UserService<R, P, I, C> {
+pub struct UserService<R, P, I, C, Tx> {
     password_hasher: Arc<P>,
     repository: R,
     id_generator: I,
     cache: Arc<C>,
+    _phantom: std::marker::PhantomData<Tx>,
 }
 
-impl<R: UserRepository, P: PasswordHash, I: IdGenerator, C: CacheService<i64>>
-    UserService<R, P, I, C>
+impl<R: UserRepository<Tx>, P: PasswordHash, I: IdGenerator, C: CacheService<i64>, Tx: Send + Sync>
+    UserService<R, P, I, C, Tx>
 {
     pub fn new(repository: R, password_hasher: Arc<P>, id_generator: I, cache: Arc<C>) -> Self {
         Self {
@@ -45,17 +46,19 @@ impl<R: UserRepository, P: PasswordHash, I: IdGenerator, C: CacheService<i64>>
             password_hasher,
             id_generator,
             cache,
+            _phantom: std::marker::PhantomData,
         }
     }
 }
 
 #[async_trait]
-impl<R, P, I, C> UserServiceTrait for UserService<R, P, I, C>
+impl<R, P, I, C, Tx> UserServiceTrait for UserService<R, P, I, C, Tx>
 where
-    R: UserRepository,
+    R: UserRepository<Tx>,
     P: PasswordHash + Send + Sync,
     I: IdGenerator,
     C: CacheService<i64>,
+    Tx: Send + Sync,
 {
     async fn create(&self, ctx: &Context, user: &UserCreate) -> DomainResult<()> {
         ctx.require_access(None, resource::USER, action::CREATE)?;
@@ -154,15 +157,18 @@ mod tests {
     use mockall::mock;
     use std::collections::HashMap;
 
+    // Use a unit type for mock transaction since mocks don't use real transactions
     mock! {
         pub UserRepo {}
         #[async_trait]
-        impl UserRepository for UserRepo {
+        impl UserRepository<()> for UserRepo {
             async fn create_user(&self, ctx: &Context, id: i64, user: &UserCreate) -> DomainResult<()>;
+            async fn create_user_tx(&self, ctx: &Context, id: i64, user: &UserCreate, tx: &mut ()) -> DomainResult<()>;
             async fn get_user_by_username(&self, ctx: &Context, username: &str) -> DomainResult<Option<User>>;
             async fn update_user(&self, ctx: &Context, id: i64, user: &UserUpdate) -> DomainResult<()>;
             async fn update_password(&self, ctx: &Context, id: i64, password_hash: &str) -> DomainResult<()>;
             async fn delete_user(&self, ctx: &Context, user_id: i64) -> DomainResult<()>;
+            async fn delete_user_tx(&self, ctx: &Context, user_id: i64, tx: &mut ()) -> DomainResult<()>;
             async fn get_all(&self, ctx: &Context, filter: UserFilter, pagination: PaginationOptions) -> DomainResult<Vec<User>>;
             async fn get_by_id(&self, ctx: &Context, user_id: i64) -> DomainResult<Option<User>>;
             async fn save_user_permission(&self, ctx: &Context, user_id: i64, branch_id: Option<i64>, permission: i32, action: i32) -> DomainResult<()>;

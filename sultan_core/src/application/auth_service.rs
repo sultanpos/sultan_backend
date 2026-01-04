@@ -30,26 +30,29 @@ pub trait AuthServiceTrait: Send + Sync {
 }
 
 /// Auth service handles authentication operations
-pub struct AuthService<U, T, P, J>
+pub struct AuthService<U, T, P, J, Tx>
 where
-    U: UserRepository,
+    U: UserRepository<Tx>,
     T: TokenRepository,
     P: PasswordHash,
     J: JwtManager,
+    Tx: Send + Sync,
 {
     user_repo: U,
     token_repo: T,
     password_hasher: P,
     jwt_manager: J,
     refresh_token_expiry_days: i64,
+    _phantom: std::marker::PhantomData<Tx>,
 }
 
-impl<U, T, P, J> AuthService<U, T, P, J>
+impl<U, T, P, J, Tx> AuthService<U, T, P, J, Tx>
 where
-    U: UserRepository,
+    U: UserRepository<Tx>,
     T: TokenRepository,
     P: PasswordHash,
     J: JwtManager,
+    Tx: Send + Sync,
 {
     /// Creates a new AuthService with default configuration.
     ///
@@ -61,6 +64,7 @@ where
             password_hasher,
             jwt_manager,
             refresh_token_expiry_days: DEFAULT_REFRESH_TOKEN_EXPIRY_DAYS,
+            _phantom: std::marker::PhantomData,
         }
     }
 
@@ -124,12 +128,13 @@ where
 }
 
 #[async_trait]
-impl<U, T, P, J> AuthServiceTrait for AuthService<U, T, P, J>
+impl<U, T, P, J, Tx> AuthServiceTrait for AuthService<U, T, P, J, Tx>
 where
-    U: UserRepository,
+    U: UserRepository<Tx>,
     T: TokenRepository,
     P: PasswordHash + Send + Sync,
     J: JwtManager + Send + Sync,
+    Tx: Send + Sync,
 {
     /// Login with username and password
     /// Returns JWT access token and a refresh token
@@ -220,13 +225,24 @@ mod tests {
         user: Option<User>,
     }
 
+    // Use a unit type for mock transaction since mocks don't use real transactions
     #[async_trait]
-    impl UserRepository for MockUserRepo {
+    impl UserRepository<()> for MockUserRepo {
         async fn create_user(
             &self,
             _ctx: &Context,
             _id: i64,
             _user: &UserCreate,
+        ) -> DomainResult<()> {
+            Ok(())
+        }
+
+        async fn create_user_tx(
+            &self,
+            _ctx: &Context,
+            _id: i64,
+            _user: &UserCreate,
+            _tx: &mut (),
         ) -> DomainResult<()> {
             Ok(())
         }
@@ -258,6 +274,15 @@ mod tests {
         }
 
         async fn delete_user(&self, _ctx: &Context, _user_id: i64) -> DomainResult<()> {
+            Ok(())
+        }
+
+        async fn delete_user_tx(
+            &self,
+            _ctx: &Context,
+            _user_id: i64,
+            _tx: &mut (),
+        ) -> DomainResult<()> {
             Ok(())
         }
 
@@ -523,12 +548,14 @@ mod tests {
             MockTokenRepo,
             MockPasswordHasher,
             MockJwtManager,
+            (),
         >::hash_token(token);
         let hash2 = AuthService::<
             MockUserRepo,
             MockTokenRepo,
             MockPasswordHasher,
             MockJwtManager,
+            (),
         >::hash_token(token);
 
         // Same token should produce same hash
