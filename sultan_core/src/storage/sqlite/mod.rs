@@ -2,6 +2,7 @@ pub mod branch;
 pub mod category;
 pub mod customer;
 pub mod product;
+pub mod sell_price;
 pub mod supplier;
 pub mod token;
 pub mod transaction;
@@ -12,6 +13,7 @@ pub use branch::SqliteBranchRepository;
 pub use category::SqliteCategoryRepository;
 pub use customer::SqliteCustomerRepository;
 pub use product::SqliteProductRepository;
+pub use sell_price::SqliteSellPriceRepository;
 pub use supplier::SqliteSupplierRepository;
 pub use token::SqliteTokenRepository;
 pub use unit::SqliteUnitOfMeasureRepository;
@@ -76,6 +78,8 @@ pub enum TableName {
     Units,
     Products,
     ProductVariants,
+    SellPrices,
+    SellDiscounts,
 }
 
 impl TableName {
@@ -93,6 +97,8 @@ impl TableName {
             TableName::Units => "units",
             TableName::Products => "products",
             TableName::ProductVariants => "product_variants",
+            TableName::SellPrices => "sell_prices",
+            TableName::SellDiscounts => "sell_discounts",
         }
     }
 }

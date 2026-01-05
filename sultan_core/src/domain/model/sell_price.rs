@@ -62,7 +62,7 @@ pub struct SellDiscountCreate {
 
 #[derive(Debug, Clone)]
 pub struct SellDiscountUpdate {
-    pub quantity: i64,
+    pub quantity: Option<i64>,
     pub discount_formula: Option<String>,
     pub customer_level: Update<i64>,
     pub metadata: Update<Value>,

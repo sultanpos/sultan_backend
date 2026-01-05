@@ -39,13 +39,13 @@ CREATE TABLE sell_discounts (
     ),
     deleted_at TEXT,
     is_deleted INTEGER NOT NULL DEFAULT 0,
-    price_id INTEGER NOT NULL,
+    sell_price_id INTEGER NOT NULL,
     quantity INTEGER,
     discount_formula TEXT NOT NULL,
     calculated_price INTEGER NOT NULL,
     customer_level INTEGER,
     metadata TEXT,
-    FOREIGN KEY (price_id) REFERENCES sell_prices (id) ON DELETE CASCADE
+    FOREIGN KEY (sell_price_id) REFERENCES sell_prices (id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_sell_discounts_price_id ON sell_discounts (price_id);
+CREATE INDEX idx_sell_discounts_sell_price_id ON sell_discounts (sell_price_id);

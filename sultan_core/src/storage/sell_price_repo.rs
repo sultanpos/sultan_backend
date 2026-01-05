@@ -62,7 +62,12 @@ pub trait SellPriceRepository<Tx>: Send + Sync {
         tx: &mut Tx,
     ) -> DomainResult<()>;
     async fn delete_discount(&self, ctx: &Context, id: i64) -> DomainResult<()>;
-    async fn delete_discount_tx(&self, ctx: &Context, id: i64, tx: &mut Tx) -> DomainResult<()>;
+    async fn delete_discount_by_sell_price_id_tx(
+        &self,
+        ctx: &Context,
+        id: i64,
+        tx: &mut Tx,
+    ) -> DomainResult<()>;
     async fn get_all_discount_by_price_id(
         &self,
         ctx: &Context,
