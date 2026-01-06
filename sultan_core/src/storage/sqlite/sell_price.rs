@@ -91,9 +91,16 @@ impl SqliteSellPriceRepository {
     }
 }
 
-#[async_trait]
-impl<'a> SellPriceRepository<Transaction<'a, Sqlite>> for SqliteSellPriceRepository {
-    async fn create(&self, _: &Context, id: i64, price: &SellPriceCreate) -> DomainResult<()> {
+impl SqliteSellPriceRepository {
+    async fn create_impl<'e, E>(
+        &self,
+        id: i64,
+        price: &SellPriceCreate,
+        executor: E,
+    ) -> DomainResult<()>
+    where
+        E: sqlx::Executor<'e, Database = Sqlite>,
+    {
         let query = r#"
             INSERT INTO sell_prices (id, branch_id, product_variant_id, uom_id, quantity, price, metadata)
             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -107,9 +114,130 @@ impl<'a> SellPriceRepository<Transaction<'a, Sqlite>> for SqliteSellPriceReposit
             .bind(price.quantity)
             .bind(price.price)
             .bind(metadata_str)
-            .execute(&self.pool)
+            .execute(executor)
             .await?;
         Ok(())
+    }
+
+    async fn update_impl<'e, E>(
+        &self,
+        id: i64,
+        sell_price: &SellPriceUpdate,
+        executor: E,
+    ) -> DomainResult<()>
+    where
+        E: sqlx::Executor<'e, Database = Sqlite>,
+    {
+        let mut builder: QueryBuilder<Sqlite> = QueryBuilder::new("UPDATE sell_prices SET ");
+        let mut separated = builder.separated(", ");
+
+        if let Some(uom_id) = &sell_price.uom_id {
+            separated.push("uom_id = ").push_bind_unseparated(uom_id);
+        }
+        if let Some(quantity) = &sell_price.quantity {
+            separated
+                .push("quantity = ")
+                .push_bind_unseparated(quantity);
+        }
+        if let Some(price) = &sell_price.price {
+            separated.push("price = ").push_bind_unseparated(price);
+        }
+        if sell_price.metadata.should_update() {
+            let metadata_json = serialize_metadata_update(&sell_price.metadata);
+            separated
+                .push("metadata = ")
+                .push_bind_unseparated(metadata_json);
+        }
+
+        separated.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')");
+        builder.push(" WHERE id = ").push_bind(id);
+        builder.push(" AND is_deleted = 0");
+
+        let query = builder.build();
+        let result = query.execute(executor).await?;
+
+        check_rows_affected(result.rows_affected(), "SellPrice", id)?;
+        Ok(())
+    }
+
+    async fn create_discount_impl<'e, E>(
+        &self,
+        id: i64,
+        price: &SellDiscountCreate,
+        executor: E,
+    ) -> DomainResult<()>
+    where
+        E: sqlx::Executor<'e, Database = Sqlite>,
+    {
+        let query = r#"
+            INSERT INTO sell_discounts (id, price_id, quantity, discount_formula, customer_level, metadata)
+            VALUES (?, ?, ?, ?, ?, ?)
+        "#;
+        let metadata_str = serialize_metadata(&price.metadata);
+        sqlx::query(query)
+            .bind(id)
+            .bind(price.price_id)
+            .bind(price.quantity)
+            .bind(&price.discount_formula)
+            .bind(price.customer_level)
+            .bind(metadata_str)
+            .execute(executor)
+            .await?;
+        Ok(())
+    }
+
+    async fn update_discount_impl<'e, E>(
+        &self,
+        id: i64,
+        sell_discount: &SellDiscountUpdate,
+        executor: E,
+    ) -> DomainResult<()>
+    where
+        E: sqlx::Executor<'e, Database = Sqlite>,
+    {
+        let mut builder: QueryBuilder<Sqlite> = QueryBuilder::new("UPDATE sell_discounts SET ");
+        let mut separated = builder.separated(", ");
+
+        if let Some(quantity) = &sell_discount.quantity {
+            separated
+                .push("quantity = ")
+                .push_bind_unseparated(quantity);
+        }
+        if let Some(discount_formula) = &sell_discount.discount_formula {
+            separated
+                .push("discount_formula = ")
+                .push_bind_unseparated(discount_formula);
+        }
+        if sell_discount.customer_level.should_update() {
+            let customer_level_value = sell_discount.customer_level.to_bind_value();
+            separated
+                .push("customer_level = ")
+                .push_bind_unseparated(customer_level_value);
+        }
+
+        if sell_discount.metadata.should_update() {
+            let metadata_json = serialize_metadata_update(&sell_discount.metadata);
+            separated
+                .push("metadata = ")
+                .push_bind_unseparated(metadata_json);
+        }
+
+        separated.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')");
+        builder.push(" WHERE id = ").push_bind(id);
+        builder.push(" AND is_deleted = 0");
+
+        let query = builder.build();
+        let result = query.execute(executor).await?;
+
+        check_rows_affected(result.rows_affected(), "SellDiscount", id)?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl<'a> SellPriceRepository<Transaction<'a, Sqlite>> for SqliteSellPriceRepository {
+    async fn create(&self, _: &Context, id: i64, price: &SellPriceCreate) -> DomainResult<()> {
+        self.create_impl(id, price, &self.pool).await
     }
     async fn create_tx(
         &self,
@@ -118,54 +246,10 @@ impl<'a> SellPriceRepository<Transaction<'a, Sqlite>> for SqliteSellPriceReposit
         price: &SellPriceCreate,
         tx: &mut Transaction<'a, Sqlite>,
     ) -> DomainResult<()> {
-        let query = r#"
-            INSERT INTO sell_prices (id, branch_id, product_variant_id, uom_id, quantity, price, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        "#;
-        let metadata_str = serialize_metadata(&price.metadata);
-        sqlx::query(query)
-            .bind(id)
-            .bind(price.branch_id)
-            .bind(price.product_variant_id)
-            .bind(price.uom_id)
-            .bind(price.quantity)
-            .bind(price.price)
-            .bind(metadata_str)
-            .execute(&mut **tx)
-            .await?;
-        Ok(())
+        self.create_impl(id, price, &mut **tx).await
     }
     async fn update(&self, _: &Context, id: i64, sell_price: &SellPriceUpdate) -> DomainResult<()> {
-        let mut builder: QueryBuilder<Sqlite> = QueryBuilder::new("UPDATE sell_prices SET ");
-        let mut separated = builder.separated(", ");
-
-        if let Some(uom_id) = &sell_price.uom_id {
-            separated.push("uom_id = ").push_bind_unseparated(uom_id);
-        }
-        if let Some(quantity) = &sell_price.quantity {
-            separated
-                .push("quantity = ")
-                .push_bind_unseparated(quantity);
-        }
-        if let Some(price) = &sell_price.price {
-            separated.push("price = ").push_bind_unseparated(price);
-        }
-        if sell_price.metadata.should_update() {
-            let metadata_json = serialize_metadata_update(&sell_price.metadata);
-            separated
-                .push("metadata = ")
-                .push_bind_unseparated(metadata_json);
-        }
-
-        separated.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')");
-        builder.push(" WHERE id = ").push_bind(id);
-        builder.push(" AND is_deleted = 0");
-
-        let query = builder.build();
-        let result = query.execute(&self.pool).await?;
-
-        check_rows_affected(result.rows_affected(), "SellPrice", id)?;
-        Ok(())
+        self.update_impl(id, sell_price, &self.pool).await
     }
     async fn update_tx(
         &self,
@@ -174,36 +258,7 @@ impl<'a> SellPriceRepository<Transaction<'a, Sqlite>> for SqliteSellPriceReposit
         sell_price: &SellPriceUpdate,
         tx: &mut Transaction<'a, Sqlite>,
     ) -> DomainResult<()> {
-        let mut builder: QueryBuilder<Sqlite> = QueryBuilder::new("UPDATE sell_prices SET ");
-        let mut separated = builder.separated(", ");
-
-        if let Some(uom_id) = &sell_price.uom_id {
-            separated.push("uom_id = ").push_bind_unseparated(uom_id);
-        }
-        if let Some(quantity) = &sell_price.quantity {
-            separated
-                .push("quantity = ")
-                .push_bind_unseparated(quantity);
-        }
-        if let Some(price) = &sell_price.price {
-            separated.push("price = ").push_bind_unseparated(price);
-        }
-        if sell_price.metadata.should_update() {
-            let metadata_json = serialize_metadata_update(&sell_price.metadata);
-            separated
-                .push("metadata = ")
-                .push_bind_unseparated(metadata_json);
-        }
-
-        separated.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')");
-        builder.push(" WHERE id = ").push_bind(id);
-        builder.push(" AND is_deleted = 0");
-
-        let query = builder.build();
-        let result = query.execute(&mut **tx).await?;
-
-        check_rows_affected(result.rows_affected(), "SellPrice", id)?;
-        Ok(())
+        self.update_impl(id, sell_price, &mut **tx).await
     }
     async fn delete(&self, _: &Context, id: i64) -> DomainResult<()> {
         let result = soft_delete(&self.pool, TableName::SellPrices, id).await?;
@@ -251,21 +306,7 @@ impl<'a> SellPriceRepository<Transaction<'a, Sqlite>> for SqliteSellPriceReposit
         id: i64,
         price: &SellDiscountCreate,
     ) -> DomainResult<()> {
-        let query = r#"
-            INSERT INTO sell_discounts (id, price_id, quantity, discount_formula, customer_level, metadata)
-            VALUES (?, ?, ?, ?, ?, ?)
-        "#;
-        let metadata_str = serialize_metadata(&price.metadata);
-        sqlx::query(query)
-            .bind(id)
-            .bind(price.price_id)
-            .bind(price.quantity)
-            .bind(&price.discount_formula)
-            .bind(price.customer_level)
-            .bind(metadata_str)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
+        self.create_discount_impl(id, price, &self.pool).await
     }
     async fn create_discount_tx(
         &self,
@@ -274,21 +315,7 @@ impl<'a> SellPriceRepository<Transaction<'a, Sqlite>> for SqliteSellPriceReposit
         price: &SellDiscountCreate,
         tx: &mut Transaction<'a, Sqlite>,
     ) -> DomainResult<()> {
-        let query = r#"
-            INSERT INTO sell_discounts (id, price_id, quantity, discount_formula, customer_level, metadata)
-            VALUES (?, ?, ?, ?, ?, ?)
-        "#;
-        let metadata_str = serialize_metadata(&price.metadata);
-        sqlx::query(query)
-            .bind(id)
-            .bind(price.price_id)
-            .bind(price.quantity)
-            .bind(&price.discount_formula)
-            .bind(price.customer_level)
-            .bind(metadata_str)
-            .execute(&mut **tx)
-            .await?;
-        Ok(())
+        self.create_discount_impl(id, price, &mut **tx).await
     }
     async fn update_discount(
         &self,
@@ -296,42 +323,8 @@ impl<'a> SellPriceRepository<Transaction<'a, Sqlite>> for SqliteSellPriceReposit
         id: i64,
         sell_discount: &SellDiscountUpdate,
     ) -> DomainResult<()> {
-        let mut builder: QueryBuilder<Sqlite> = QueryBuilder::new("UPDATE sell_discounts SET ");
-        let mut separated = builder.separated(", ");
-
-        if let Some(quantity) = &sell_discount.quantity {
-            separated
-                .push("quantity = ")
-                .push_bind_unseparated(quantity);
-        }
-        if let Some(discount_formula) = &sell_discount.discount_formula {
-            separated
-                .push("discount_formula = ")
-                .push_bind_unseparated(discount_formula);
-        }
-        if sell_discount.customer_level.should_update() {
-            let customer_level_value = sell_discount.customer_level.to_bind_value();
-            separated
-                .push("customer_level = ")
-                .push_bind_unseparated(customer_level_value);
-        }
-
-        if sell_discount.metadata.should_update() {
-            let metadata_json = serialize_metadata_update(&sell_discount.metadata);
-            separated
-                .push("metadata = ")
-                .push_bind_unseparated(metadata_json);
-        }
-
-        separated.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')");
-        builder.push(" WHERE id = ").push_bind(id);
-        builder.push(" AND is_deleted = 0");
-
-        let query = builder.build();
-        let result = query.execute(&self.pool).await?;
-
-        check_rows_affected(result.rows_affected(), "SellDiscount", id)?;
-        Ok(())
+        self.update_discount_impl(id, sell_discount, &self.pool)
+            .await
     }
     async fn update_discount_tx(
         &self,
@@ -340,42 +333,8 @@ impl<'a> SellPriceRepository<Transaction<'a, Sqlite>> for SqliteSellPriceReposit
         sell_discount: &SellDiscountUpdate,
         tx: &mut Transaction<'a, Sqlite>,
     ) -> DomainResult<()> {
-        let mut builder: QueryBuilder<Sqlite> = QueryBuilder::new("UPDATE sell_discounts SET ");
-        let mut separated = builder.separated(", ");
-
-        if let Some(quantity) = &sell_discount.quantity {
-            separated
-                .push("quantity = ")
-                .push_bind_unseparated(quantity);
-        }
-        if let Some(discount_formula) = &sell_discount.discount_formula {
-            separated
-                .push("discount_formula = ")
-                .push_bind_unseparated(discount_formula);
-        }
-        if sell_discount.customer_level.should_update() {
-            let customer_level_value = sell_discount.customer_level.to_bind_value();
-            separated
-                .push("customer_level = ")
-                .push_bind_unseparated(customer_level_value);
-        }
-
-        if sell_discount.metadata.should_update() {
-            let metadata_json = serialize_metadata_update(&sell_discount.metadata);
-            separated
-                .push("metadata = ")
-                .push_bind_unseparated(metadata_json);
-        }
-
-        separated.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')");
-        builder.push(" WHERE id = ").push_bind(id);
-        builder.push(" AND is_deleted = 0");
-
-        let query = builder.build();
-        let result = query.execute(&mut **tx).await?;
-
-        check_rows_affected(result.rows_affected(), "SellDiscount", id)?;
-        Ok(())
+        self.update_discount_impl(id, sell_discount, &mut **tx)
+            .await
     }
     async fn delete_discount(&self, _: &Context, id: i64) -> DomainResult<()> {
         let result = soft_delete(&self.pool, TableName::SellDiscounts, id).await?;
