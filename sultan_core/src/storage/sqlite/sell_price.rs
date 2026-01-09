@@ -170,15 +170,17 @@ impl SqliteSellPriceRepository {
         E: sqlx::Executor<'e, Database = Sqlite>,
     {
         let query = r#"
-            INSERT INTO sell_discounts (id, price_id, quantity, discount_formula, customer_level, metadata)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO sell_discounts (id, sell_price_id, quantity, discount_formula, calculated_price, customer_level, metadata)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         "#;
         let metadata_str = serialize_metadata(&price.metadata);
+        let calculated_price = 0; // TODO: Calculate based on formula
         sqlx::query(query)
             .bind(id)
             .bind(price.price_id)
             .bind(price.quantity)
             .bind(&price.discount_formula)
+            .bind(calculated_price)
             .bind(price.customer_level)
             .bind(metadata_str)
             .execute(executor)
@@ -367,9 +369,9 @@ impl<'a> SellPriceRepository<Transaction<'a, Sqlite>> for SqliteSellPriceReposit
         id: i64,
     ) -> DomainResult<Vec<SellDiscount>> {
         let query = r#"
-            SELECT id, created_at, updated_at, deleted_at, is_deleted, price_id, quantity, discount_formula, calculated_price, customer_level, metadata
+            SELECT id, created_at, updated_at, deleted_at, is_deleted, sell_price_id as price_id, quantity, discount_formula, calculated_price, customer_level, metadata
             FROM sell_discounts
-            WHERE price_id = ? AND is_deleted = 0
+            WHERE sell_price_id = ? AND is_deleted = 0
         "#;
         let rows: Vec<SellDiscountDbSqlite> =
             sqlx::query_as(query).bind(id).fetch_all(&self.pool).await?;
@@ -377,7 +379,7 @@ impl<'a> SellPriceRepository<Transaction<'a, Sqlite>> for SqliteSellPriceReposit
     }
     async fn get_discount_by_id(&self, _: &Context, id: i64) -> DomainResult<Option<SellDiscount>> {
         let query = r#"
-            SELECT id, created_at, updated_at, deleted_at, is_deleted, price_id, quantity, discount_formula, calculated_price, customer_level, metadata
+            SELECT id, created_at, updated_at, deleted_at, is_deleted, sell_price_id as price_id, quantity, discount_formula, calculated_price, customer_level, metadata
             FROM sell_discounts
             WHERE id = ? AND is_deleted = 0
         "#;

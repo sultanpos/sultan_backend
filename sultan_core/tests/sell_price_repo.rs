@@ -102,7 +102,135 @@ async fn create_sell_price_test_data() -> SellPriceTestData<'static, SqliteTrans
     }
 }
 
+// =============================================================================
+// Basic CRUD Tests
+// =============================================================================
+
 #[tokio::test]
-async fn test_create_product_success() {
+async fn test_create_and_get_sell_price() {
     sell_price_test_repo_integration(&create_sell_price_test_data().await).await;
+}
+
+#[tokio::test]
+async fn test_delete_sell_price() {
+    sultan_core::testing::storage::sell_price::sell_price_test_delete(
+        &create_sell_price_test_data().await,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_delete_non_existent_sell_price() {
+    sultan_core::testing::storage::sell_price::sell_price_test_delete_non_existent(
+        &create_sell_price_test_data().await,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_get_by_id_not_found() {
+    sultan_core::testing::storage::sell_price::sell_price_test_get_by_id_not_found(
+        &create_sell_price_test_data().await,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_get_all_by_variant_empty() {
+    sultan_core::testing::storage::sell_price::sell_price_test_get_all_by_variant_empty(
+        &create_sell_price_test_data().await,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_get_all_by_variant_multiple() {
+    sultan_core::testing::storage::sell_price::sell_price_test_get_all_by_variant_multiple(
+        &create_sell_price_test_data().await,
+    )
+    .await;
+}
+
+// =============================================================================
+// Update Tests
+// =============================================================================
+
+#[tokio::test]
+async fn test_update_price_only() {
+    sultan_core::testing::storage::sell_price::sell_price_test_update_price_only(
+        &create_sell_price_test_data().await,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_update_quantity_only() {
+    sultan_core::testing::storage::sell_price::sell_price_test_update_quantity_only(
+        &create_sell_price_test_data().await,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_update_metadata() {
+    sultan_core::testing::storage::sell_price::sell_price_test_update_metadata(
+        &create_sell_price_test_data().await,
+    )
+    .await;
+}
+
+// =============================================================================
+// Multiple Variants Tests
+// =============================================================================
+
+#[tokio::test]
+async fn test_different_prices_for_different_variants() {
+    sultan_core::testing::storage::sell_price::sell_price_test_different_variants(
+        &create_sell_price_test_data().await,
+    )
+    .await;
+}
+
+// =============================================================================
+// Discount Tests
+// =============================================================================
+
+#[tokio::test]
+async fn test_create_discount() {
+    sultan_core::testing::storage::sell_price::sell_price_test_create_discount(
+        &create_sell_price_test_data().await,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_update_discount() {
+    sultan_core::testing::storage::sell_price::sell_price_test_update_discount(
+        &create_sell_price_test_data().await,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_delete_discount() {
+    sultan_core::testing::storage::sell_price::sell_price_test_delete_discount(
+        &create_sell_price_test_data().await,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_get_all_discounts_by_price_id() {
+    sultan_core::testing::storage::sell_price::sell_price_test_get_all_discounts(
+        &create_sell_price_test_data().await,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_get_discount_by_id_not_found() {
+    sultan_core::testing::storage::sell_price::sell_price_test_get_discount_not_found(
+        &create_sell_price_test_data().await,
+    )
+    .await;
 }
