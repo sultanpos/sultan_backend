@@ -348,15 +348,13 @@ impl<'a> SellPriceRepository<Transaction<'a, Sqlite>> for SqliteSellPriceReposit
         sell_price_id: i64,
         tx: &mut Transaction<'a, Sqlite>,
     ) -> DomainResult<()> {
-        let sql = format!(
-            r#"
+        let sql = r#"
         UPDATE sell_discounts SET
             is_deleted = 1,
             deleted_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         WHERE sell_price_id = ? AND is_deleted = 0
-        "#,
-        );
-        sqlx::query(&sql)
+        "#;
+        sqlx::query(sql)
             .bind(sell_price_id)
             .execute(&mut **tx)
             .await?;
