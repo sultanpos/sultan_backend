@@ -434,7 +434,7 @@ pub async fn sell_price_test_create_discount<'a, T: TransactionManager + 'a>(
         .expect("Failed to get discount")
         .expect("Discount not found");
 
-    assert_eq!(fetched.price_id, price_id);
+    assert_eq!(fetched.sell_price_id, price_id);
     assert_eq!(fetched.quantity, 5);
     assert_eq!(fetched.discount_formula, Some("price * 0.9".to_string()));
 }

@@ -43,7 +43,7 @@ pub struct SellDiscount {
     pub updated_at: chrono::DateTime<Utc>,
     pub deleted_at: Option<chrono::DateTime<Utc>>,
     pub is_deleted: bool,
-    pub price_id: i64,
+    pub sell_price_id: i64,
     pub quantity: i64,
     pub discount_formula: Option<String>,
     pub calculated_price: i64,

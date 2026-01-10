@@ -70,7 +70,7 @@ impl From<SellDiscountDbSqlite> for SellDiscount {
             updated_at: super::parse_sqlite_date(&db.updated_at),
             deleted_at: db.deleted_at.map(|d| super::parse_sqlite_date(&d)),
             is_deleted: db.is_deleted,
-            price_id: db.price_id,
+            sell_price_id: db.price_id,
             quantity: db.quantity,
             discount_formula: db.discount_formula,
             calculated_price: db.calculated_price,
