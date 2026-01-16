@@ -1,3 +1,4 @@
+use super::i64_to_string;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -26,7 +27,8 @@ pub struct CustomerCreateRequest {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CustomerCreateResponse {
-    #[schema(example = 1)]
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "i64_to_string")]
     pub id: i64,
 }
 
@@ -48,6 +50,8 @@ pub struct CustomerUpdateRequest {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CustomerResponse {
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "i64_to_string")]
     pub id: i64,
     pub created_at: chrono::DateTime<Utc>,
     pub updated_at: chrono::DateTime<Utc>,

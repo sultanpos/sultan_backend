@@ -28,6 +28,9 @@ impl IntoResponse for Error {
             Error::NotFound(msg) => {
                 (StatusCode::NOT_FOUND, Json(json!({"error": msg}))).into_response()
             }
+            Error::Conflict(msg) => {
+                (StatusCode::CONFLICT, Json(json!({"error": msg}))).into_response()
+            }
             Error::Internal(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"error": "Internal error"})),
