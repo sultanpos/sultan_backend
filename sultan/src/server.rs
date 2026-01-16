@@ -10,15 +10,19 @@ use std::{fs::File, sync::Arc};
 use sultan_core::{
     application::{
         AuthService, AuthServiceTrait, CategoryService, CustomerService, InMemoryCache,
-        SupplierService, UserService,
+        SupplierService, UserService, UserServiceTrait,
     },
     crypto::{Argon2PasswordHasher, DefaultJwtManager, JwtConfig, JwtManager},
+    domain::{
+        Context,
+        model::{branch::BranchCreate, permission::resource, user::UserCreate},
+    },
     snowflake::SnowflakeGenerator,
     storage::{
-        SqliteUserRepository,
+        BranchRepository, SqliteUserRepository, UserRepository,
         sqlite::{
-            SqliteCategoryRepository, SqliteCustomerRepository, SqliteSupplierRepository,
-            SqliteTokenRepository,
+            SqliteBranchRepository, SqliteCategoryRepository, SqliteCustomerRepository,
+            SqliteSupplierRepository, SqliteTokenRepository,
         },
     },
 };
@@ -66,6 +70,7 @@ async fn init_sqlite_db(config: &AppConfig) -> anyhow::Result<SqlitePool> {
 async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
     let pool = init_sqlite_db(config).await?;
 
+    let branch_repository = SqliteBranchRepository::new(pool.clone());
     let user_repository = SqliteUserRepository::new(pool.clone());
     let token_repository = SqliteTokenRepository::new(pool.clone());
     let category_repository = SqliteCategoryRepository::new(pool.clone());
@@ -89,11 +94,50 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
     let customer_service = CustomerService::new(customer_repository, SnowflakeGenerator::new(1)?);
     let supplier_service = SupplierService::new(supplier_repository, SnowflakeGenerator::new(1)?);
     let user_service = UserService::new(
-        user_repository,
+        user_repository.clone(),
         Arc::new(Argon2PasswordHasher::default()),
         SnowflakeGenerator::new(1)?,
         Arc::new(permission_cache),
     );
+
+    // init data when not available
+    let ctx = Context::new_internal();
+    let branches = branch_repository.get_all(&ctx).await?;
+    if branches.is_empty() {
+        let id_generator = SnowflakeGenerator::new(1)?;
+        let id = id_generator.generate()?;
+        let default_branch = BranchCreate {
+            is_main: true,
+            code: "SULTAN".to_string(),
+            name: "Sultan".to_string(),
+            address: None,
+            phone: None,
+            npwp: None,
+            image: None,
+        };
+        branch_repository.create(&ctx, id, &default_branch).await?;
+        tracing::info!("Created default branch");
+
+        let user_id = user_service
+            .create(
+                &ctx,
+                &UserCreate {
+                    username: "sultan".to_string(),
+                    password: "sultan".to_string(),
+                    name: "sultan".to_string(),
+                    email: None,
+                    photo: None,
+                    pin: None,
+                    address: None,
+                    phone: None,
+                },
+            )
+            .await?;
+
+        user_repository
+            .save_user_permission(&ctx, user_id, None, resource::ADMIN, 0)
+            .await?
+    }
 
     Ok(AppState {
         auth_service: Arc::new(auth_service) as Arc<dyn AuthServiceTrait>,

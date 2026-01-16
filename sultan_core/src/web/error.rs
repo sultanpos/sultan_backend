@@ -15,9 +15,9 @@ impl IntoResponse for Error {
             Error::ValidationError(msg) => {
                 (StatusCode::BAD_REQUEST, Json(json!({"error": msg}))).into_response()
             }
-            Error::Database(_) => (
+            Error::Database(msg) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": "Database error"})),
+                Json(json!({"error": msg})),
             )
                 .into_response(),
             Error::InvalidCredentials => (
