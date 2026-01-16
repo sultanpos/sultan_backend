@@ -29,7 +29,7 @@ impl SqliteCategoryRepository {
     /// Returns the depth (1 for root categories, 2 for their children, etc.)
     async fn get_category_depth(&self, category_id: i64) -> DomainResult<i32> {
         // Use a recursive CTE to count the depth
-        let query = sqlx::query_scalar::<_, i32>(
+        let query = sqlx::query_scalar::<_, Option<i32>>(
             r#"
             WITH RECURSIVE category_path AS (
                 SELECT id, parent_id, 1 as depth
@@ -50,7 +50,10 @@ impl SqliteCategoryRepository {
         .fetch_one(&self.pool);
 
         let depth = query.await?;
-        Ok(depth)
+        // If depth is None, the category doesn't exist
+        depth.ok_or_else(|| {
+            Error::NotFound(format!("Parent category with id {} not found", category_id))
+        })
     }
 
     /// Get the maximum depth of children under a category.
@@ -223,6 +226,7 @@ impl From<CategoryDbSqlite> for Category {
 impl CategoryRepository for SqliteCategoryRepository {
     async fn create(&self, _: &Context, id: i64, category: &CategoryCreate) -> DomainResult<()> {
         // Check depth limit if parent_id is provided
+        print!("id before insert: {}", id);
         if let Some(pid) = category.parent_id {
             let parent_depth = self.get_category_depth(pid).await?;
             if parent_depth >= Self::MAX_DEPTH {
