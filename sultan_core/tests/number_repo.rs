@@ -10,8 +10,7 @@ mod common;
 #[tokio::test]
 async fn test_generate_next_creates_new_sequence() {
     let pool = common::setup_test_db().await;
-    let id_gen = Arc::new(SnowflakeGenerator::new(1).unwrap());
-    let repo = SqliteNumberRepository::new(pool, id_gen);
+    let repo = SqliteNumberRepository::new(pool);
     let ctx = Context::new();
 
     let params = NumberGenerateParams {
@@ -29,8 +28,7 @@ async fn test_generate_next_creates_new_sequence() {
 #[tokio::test]
 async fn test_generate_next_increments_existing_sequence() {
     let pool = common::setup_test_db().await;
-    let id_gen = Arc::new(SnowflakeGenerator::new(1).unwrap());
-    let repo = SqliteNumberRepository::new(pool, id_gen);
+    let repo = SqliteNumberRepository::new(pool);
     let ctx = Context::new();
 
     let params = NumberGenerateParams {
@@ -56,8 +54,7 @@ async fn test_generate_next_increments_existing_sequence() {
 #[tokio::test]
 async fn test_generate_next_different_prefixes() {
     let pool = common::setup_test_db().await;
-    let id_gen = Arc::new(SnowflakeGenerator::new(1).unwrap());
-    let repo = SqliteNumberRepository::new(pool, id_gen);
+    let repo = SqliteNumberRepository::new(pool);
     let ctx = Context::new();
 
     let params1 = NumberGenerateParams {
@@ -91,8 +88,7 @@ async fn test_generate_next_with_branch() {
     // Create a test branch
     common::create_test_branch(&pool, 1, "BR01").await;
 
-    let id_gen = Arc::new(SnowflakeGenerator::new(1).unwrap());
-    let repo = SqliteNumberRepository::new(pool, id_gen);
+    let repo = SqliteNumberRepository::new(pool);
     let ctx = Context::new();
 
     let params_global = NumberGenerateParams {
@@ -124,8 +120,7 @@ async fn test_generate_next_with_branch() {
 #[tokio::test]
 async fn test_generate_next_with_month() {
     let pool = common::setup_test_db().await;
-    let id_gen = Arc::new(SnowflakeGenerator::new(1).unwrap());
-    let repo = SqliteNumberRepository::new(pool, id_gen);
+    let repo = SqliteNumberRepository::new(pool);
     let ctx = Context::new();
 
     let params_no_month = NumberGenerateParams {
@@ -164,8 +159,7 @@ async fn test_generate_next_with_month() {
 #[tokio::test]
 async fn test_generate_next_different_years() {
     let pool = common::setup_test_db().await;
-    let id_gen = Arc::new(SnowflakeGenerator::new(1).unwrap());
-    let repo = SqliteNumberRepository::new(pool, id_gen);
+    let repo = SqliteNumberRepository::new(pool);
     let ctx = Context::new();
 
     let params_2025 = NumberGenerateParams {
@@ -195,8 +189,7 @@ async fn test_generate_next_different_years() {
 #[tokio::test]
 async fn test_get_sequence_returns_none_for_nonexistent() {
     let pool = common::setup_test_db().await;
-    let id_gen = Arc::new(SnowflakeGenerator::new(1).unwrap());
-    let repo = SqliteNumberRepository::new(pool, id_gen);
+    let repo = SqliteNumberRepository::new(pool);
     let ctx = Context::new();
 
     let params = NumberGenerateParams {
@@ -214,8 +207,7 @@ async fn test_get_sequence_returns_none_for_nonexistent() {
 #[tokio::test]
 async fn test_get_sequence_returns_existing() {
     let pool = common::setup_test_db().await;
-    let id_gen = Arc::new(SnowflakeGenerator::new(1).unwrap());
-    let repo = SqliteNumberRepository::new(pool, id_gen);
+    let repo = SqliteNumberRepository::new(pool);
     let ctx = Context::new();
 
     let params = NumberGenerateParams {
@@ -244,8 +236,7 @@ async fn test_get_sequence_returns_existing() {
 #[tokio::test]
 async fn test_concurrent_generation_no_duplicates() {
     let pool = common::setup_test_db().await;
-    let id_gen = Arc::new(SnowflakeGenerator::new(1).unwrap());
-    let repo = SqliteNumberRepository::new(pool, id_gen);
+    let repo = SqliteNumberRepository::new(pool);
 
     let params = NumberGenerateParams {
         prefix: "CONC".to_string(),
@@ -291,8 +282,7 @@ async fn test_branch_deletion_cascades() {
     // Create a test branch
     let branch_id = common::create_test_branch(&pool, 1, "BR01").await;
 
-    let id_gen = Arc::new(SnowflakeGenerator::new(1).unwrap());
-    let repo = SqliteNumberRepository::new(pool.clone(), id_gen);
+    let repo = SqliteNumberRepository::new(pool.clone());
     let ctx = Context::new();
 
     let params = NumberGenerateParams {

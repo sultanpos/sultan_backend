@@ -1,4 +1,7 @@
+use std::sync::Arc;
+
 use crate::{
+    application::NumberServiceTrait,
     domain::{
         Context, DomainResult,
         model::{
@@ -30,6 +33,7 @@ pub trait CustomerServiceTrait: Send + Sync {
 pub struct CustomerService<R, I> {
     repository: R,
     id_generator: I,
+    number_service: Arc<dyn NumberServiceTrait>,
 }
 
 impl<R, I> CustomerService<R, I>
@@ -37,10 +41,15 @@ where
     R: CustomerRepository,
     I: IdGenerator,
 {
-    pub fn new(repository: R, id_generator: I) -> Self {
+    pub fn new(
+        repository: R,
+        id_generator: I,
+        number_service: Arc<dyn NumberServiceTrait>,
+    ) -> Self {
         Self {
             repository,
             id_generator,
+            number_service,
         }
     }
 }
@@ -54,7 +63,14 @@ where
     async fn create(&self, ctx: &Context, customer: &CustomerCreate) -> DomainResult<i64> {
         ctx.require_access(None, resource::CUSTOMER, action::CREATE)?;
         let id = self.id_generator.generate()?;
-        self.repository.create(ctx, id, customer).await?;
+        let mut customer_with_number = customer.clone();
+        if customer_with_number.number.is_empty() {
+            let generated_number = self.number_service.generate(ctx, "CUS", None, None).await?;
+            customer_with_number.number = generated_number;
+        }
+        self.repository
+            .create(ctx, id, &customer_with_number)
+            .await?;
         Ok(id)
     }
 
@@ -110,6 +126,14 @@ mod tests {
             async fn get_all(&self, ctx: &Context, filter: &CustomerFilter, pagination: &PaginationOptions) -> DomainResult<Vec<Customer>>;
             async fn get_by_id(&self, ctx: &Context, id: i64) -> DomainResult<Option<Customer>>;
             async fn get_by_number(&self, ctx: &Context, number: &str) -> DomainResult<Option<Customer>>;
+        }
+    }
+
+    mock! {
+        pub NumberService {}
+        #[async_trait]
+        impl NumberServiceTrait for NumberService {
+            async fn generate(&self, ctx: &Context, prefix: &str, branch_id: Option<i64>, month: Option<i32>) -> DomainResult<String>;
         }
     }
 
@@ -187,6 +211,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_customer_success() {
         let mut mock_repo = MockCustomerRepo::new();
+        let mut mock_number_service = MockNumberService::new();
         let ctx = create_test_context();
 
         mock_repo
@@ -194,9 +219,19 @@ mod tests {
             .withf(|_, _, customer| customer.name == "Test Customer")
             .times(1)
             .returning(|_, _, _| Ok(()));
+        mock_number_service
+            .expect_generate()
+            .withf(|_, prefix, _, _| prefix == "CUS")
+            .times(1)
+            .returning(|_, _, _, _| Ok("CUST001".to_string()));
 
-        let service = CustomerService::new(mock_repo, create_mock_id_gen(1));
-        let customer = create_test_customer_create();
+        let service = CustomerService::new(
+            mock_repo,
+            create_mock_id_gen(1),
+            Arc::new(mock_number_service),
+        );
+        let mut customer = create_test_customer_create();
+        customer.number = "".to_string(); // Trigger number generation
         let result = service.create(&ctx, &customer).await;
 
         assert!(result.is_ok());
@@ -205,7 +240,11 @@ mod tests {
     #[tokio::test]
     async fn test_create_customer_no_permission() {
         let ctx = create_no_permission_context();
-        let service = CustomerService::new(MockCustomerRepo::new(), create_mock_id_gen(1));
+        let service = CustomerService::new(
+            MockCustomerRepo::new(),
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
         let customer = create_test_customer_create();
 
         let result = service.create(&ctx, &customer).await;
@@ -222,7 +261,11 @@ mod tests {
             .times(1)
             .returning(|_, _, _| Err(Error::Database("DB Error".to_string())));
 
-        let service = CustomerService::new(mock_repo, create_mock_id_gen(1));
+        let service = CustomerService::new(
+            mock_repo,
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
         let customer = create_test_customer_create();
         let result = service.create(&ctx, &customer).await;
 
@@ -248,7 +291,11 @@ mod tests {
             .times(1)
             .returning(|_, _, _| Ok(()));
 
-        let service = CustomerService::new(mock_repo, create_mock_id_gen(1));
+        let service = CustomerService::new(
+            mock_repo,
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
         let update = create_customer_update();
         let result = service.update(&ctx, 1, &update).await;
 
@@ -258,7 +305,11 @@ mod tests {
     #[tokio::test]
     async fn test_update_customer_no_permission() {
         let ctx = create_no_permission_context();
-        let service = CustomerService::new(MockCustomerRepo::new(), create_mock_id_gen(1));
+        let service = CustomerService::new(
+            MockCustomerRepo::new(),
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
         let update = create_customer_update();
 
         let result = service.update(&ctx, 1, &update).await;
@@ -275,7 +326,11 @@ mod tests {
             .times(1)
             .returning(|_, _, _| Err(Error::Database("DB Error".to_string())));
 
-        let service = CustomerService::new(mock_repo, create_mock_id_gen(1));
+        let service = CustomerService::new(
+            mock_repo,
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
         let update = create_customer_update();
         let result = service.update(&ctx, 1, &update).await;
 
@@ -292,7 +347,11 @@ mod tests {
             .times(1)
             .returning(|_, _, _| Err(Error::NotFound("Customer not found".to_string())));
 
-        let service = CustomerService::new(mock_repo, create_mock_id_gen(1));
+        let service = CustomerService::new(
+            mock_repo,
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
         let update = create_customer_update();
         let result = service.update(&ctx, 999, &update).await;
 
@@ -310,7 +369,11 @@ mod tests {
 
         mock_repo.expect_delete().times(1).returning(|_, _| Ok(()));
 
-        let service = CustomerService::new(mock_repo, create_mock_id_gen(1));
+        let service = CustomerService::new(
+            mock_repo,
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
         let result = service.delete(&ctx, 1).await;
         assert!(result.is_ok());
     }
@@ -318,7 +381,11 @@ mod tests {
     #[tokio::test]
     async fn test_delete_customer_no_permission() {
         let ctx = create_no_permission_context();
-        let service = CustomerService::new(MockCustomerRepo::new(), create_mock_id_gen(1));
+        let service = CustomerService::new(
+            MockCustomerRepo::new(),
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
 
         let result = service.delete(&ctx, 1).await;
         assert!(matches!(result, Err(Error::Forbidden(_))));
@@ -334,7 +401,11 @@ mod tests {
             .times(1)
             .returning(|_, _| Err(Error::Database("DB Error".to_string())));
 
-        let service = CustomerService::new(mock_repo, create_mock_id_gen(1));
+        let service = CustomerService::new(
+            mock_repo,
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
         let result = service.delete(&ctx, 1).await;
         assert!(matches!(result, Err(Error::Database(msg)) if msg == "DB Error"));
     }
@@ -349,7 +420,11 @@ mod tests {
             .times(1)
             .returning(|_, _| Err(Error::NotFound("Customer not found".to_string())));
 
-        let service = CustomerService::new(mock_repo, create_mock_id_gen(1));
+        let service = CustomerService::new(
+            mock_repo,
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
         let result = service.delete(&ctx, 999).await;
         assert!(matches!(result, Err(Error::NotFound(_))));
     }
@@ -375,7 +450,11 @@ mod tests {
             .times(1)
             .returning(move |_, _| Ok(Some(customer_clone.clone())));
 
-        let service = CustomerService::new(mock_repo, create_mock_id_gen(1));
+        let service = CustomerService::new(
+            mock_repo,
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
         let result = service.get_by_number(&ctx, "CUST001").await;
 
         assert!(result.is_ok());
@@ -396,7 +475,11 @@ mod tests {
             .times(1)
             .returning(|_, _| Ok(None));
 
-        let service = CustomerService::new(mock_repo, create_mock_id_gen(1));
+        let service = CustomerService::new(
+            mock_repo,
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
         let result = service.get_by_number(&ctx, "NONEXISTENT").await;
 
         assert!(result.is_ok());
@@ -406,7 +489,11 @@ mod tests {
     #[tokio::test]
     async fn test_get_by_number_no_permission() {
         let ctx = create_no_permission_context();
-        let service = CustomerService::new(MockCustomerRepo::new(), create_mock_id_gen(1));
+        let service = CustomerService::new(
+            MockCustomerRepo::new(),
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
 
         let result = service.get_by_number(&ctx, "CUST001").await;
         assert!(matches!(result, Err(Error::Forbidden(_))));
@@ -422,7 +509,11 @@ mod tests {
             .times(1)
             .returning(|_, _| Err(Error::Database("DB Error".to_string())));
 
-        let service = CustomerService::new(mock_repo, create_mock_id_gen(1));
+        let service = CustomerService::new(
+            mock_repo,
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
         let result = service.get_by_number(&ctx, "CUST001").await;
         assert!(matches!(result, Err(Error::Database(msg)) if msg == "DB Error"));
     }
@@ -445,7 +536,11 @@ mod tests {
             .times(1)
             .returning(move |_, _| Ok(Some(customer_clone.clone())));
 
-        let service = CustomerService::new(mock_repo, create_mock_id_gen(1));
+        let service = CustomerService::new(
+            mock_repo,
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
         let result = service.get_by_id(&ctx, 1).await;
 
         assert!(result.is_ok());
@@ -466,7 +561,11 @@ mod tests {
             .times(1)
             .returning(|_, _| Ok(None));
 
-        let service = CustomerService::new(mock_repo, create_mock_id_gen(1));
+        let service = CustomerService::new(
+            mock_repo,
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
         let result = service.get_by_id(&ctx, 999).await;
 
         assert!(result.is_ok());
@@ -476,7 +575,11 @@ mod tests {
     #[tokio::test]
     async fn test_get_by_id_no_permission() {
         let ctx = create_no_permission_context();
-        let service = CustomerService::new(MockCustomerRepo::new(), create_mock_id_gen(1));
+        let service = CustomerService::new(
+            MockCustomerRepo::new(),
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
 
         let result = service.get_by_id(&ctx, 1).await;
         assert!(matches!(result, Err(Error::Forbidden(_))));
@@ -492,7 +595,11 @@ mod tests {
             .times(1)
             .returning(|_, _| Err(Error::Database("DB Error".to_string())));
 
-        let service = CustomerService::new(mock_repo, create_mock_id_gen(1));
+        let service = CustomerService::new(
+            mock_repo,
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
         let result = service.get_by_id(&ctx, 1).await;
         assert!(matches!(result, Err(Error::Database(msg)) if msg == "DB Error"));
     }
@@ -514,7 +621,11 @@ mod tests {
             .times(1)
             .returning(move |_, _, _| Ok(customers_clone.clone()));
 
-        let service = CustomerService::new(mock_repo, create_mock_id_gen(1));
+        let service = CustomerService::new(
+            mock_repo,
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
         let filter = create_default_filter();
         let pagination = create_default_pagination();
         let result = service.get_all(&ctx, &filter, &pagination).await;
@@ -535,7 +646,11 @@ mod tests {
             .times(1)
             .returning(|_, _, _| Ok(vec![]));
 
-        let service = CustomerService::new(mock_repo, create_mock_id_gen(1));
+        let service = CustomerService::new(
+            mock_repo,
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
         let filter = create_default_filter();
         let pagination = create_default_pagination();
         let result = service.get_all(&ctx, &filter, &pagination).await;
@@ -547,7 +662,11 @@ mod tests {
     #[tokio::test]
     async fn test_get_all_no_permission() {
         let ctx = create_no_permission_context();
-        let service = CustomerService::new(MockCustomerRepo::new(), create_mock_id_gen(1));
+        let service = CustomerService::new(
+            MockCustomerRepo::new(),
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
         let filter = create_default_filter();
         let pagination = create_default_pagination();
 
@@ -565,7 +684,11 @@ mod tests {
             .times(1)
             .returning(|_, _, _| Err(Error::Database("DB Error".to_string())));
 
-        let service = CustomerService::new(mock_repo, create_mock_id_gen(1));
+        let service = CustomerService::new(
+            mock_repo,
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
         let filter = create_default_filter();
         let pagination = create_default_pagination();
         let result = service.get_all(&ctx, &filter, &pagination).await;
@@ -586,7 +709,11 @@ mod tests {
             .times(1)
             .returning(move |_, _, _| Ok(customers_clone.clone()));
 
-        let service = CustomerService::new(mock_repo, create_mock_id_gen(1));
+        let service = CustomerService::new(
+            mock_repo,
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
         let filter = CustomerFilter {
             number: None,
             name: Some("Test".to_string()),
@@ -616,7 +743,11 @@ mod tests {
             .times(1)
             .returning(move |_, _, _| Ok(customers_clone.clone()));
 
-        let service = CustomerService::new(mock_repo, create_mock_id_gen(1));
+        let service = CustomerService::new(
+            mock_repo,
+            create_mock_id_gen(1),
+            Arc::new(MockNumberService::new()),
+        );
         let filter = create_default_filter();
         let pagination = PaginationOptions::new(2, 20, None);
         let result = service.get_all(&ctx, &filter, &pagination).await;
