@@ -1,6 +1,7 @@
 pub mod branch;
 pub mod category;
 pub mod customer;
+pub mod number;
 pub mod product;
 pub mod sell_price;
 pub mod supplier;
@@ -12,6 +13,7 @@ pub mod user;
 pub use branch::SqliteBranchRepository;
 pub use category::SqliteCategoryRepository;
 pub use customer::SqliteCustomerRepository;
+pub use number::SqliteNumberRepository;
 pub use product::SqliteProductRepository;
 pub use sell_price::SqliteSellPriceRepository;
 pub use supplier::SqliteSupplierRepository;
