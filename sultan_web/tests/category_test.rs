@@ -44,7 +44,7 @@ async fn test_create_category_success() {
     // Assert
     assert_eq!(status, StatusCode::CREATED);
     assert!(response.get("id").is_some());
-    assert_eq!(response["id"].as_i64().unwrap(), 1);
+    assert_eq!(response["id"].as_str().unwrap(), "1");
 }
 
 #[tokio::test]
@@ -563,7 +563,7 @@ async fn test_create_category_with_parent() {
     let body = json!({
         "name": "Laptops",
         "description": "Laptop computers",
-        "parent_id": 1
+        "parent_id": "1"
     });
 
     let (status, response) = make_request(app, "POST", "/api/category", Some(body))
@@ -588,7 +588,7 @@ async fn test_update_category_with_parent() {
     let body = json!({
         "name": "Updated Electronics",
         "description": "Updated description",
-        "parent_id": 2
+        "parent_id": "2"
     });
 
     let (status, response) = make_request(app, "PUT", "/api/category/1", Some(body))

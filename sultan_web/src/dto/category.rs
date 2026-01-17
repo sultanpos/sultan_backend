@@ -1,3 +1,4 @@
+use super::{i64_to_string, option_string_to_i64, update_string_to_i64};
 use serde::{Deserialize, Serialize};
 use sultan_core::domain::model::Update;
 use utoipa::ToSchema;
@@ -22,6 +23,7 @@ pub struct CategoryCreateRequest {
 
     /// Parent category ID (optional, for subcategories)
     #[schema(example = 1)]
+    #[serde(default, deserialize_with = "option_string_to_i64")]
     pub parent_id: Option<i64>,
 }
 
@@ -29,7 +31,8 @@ pub struct CategoryCreateRequest {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CategoryCreateResponse {
     /// Category ID
-    #[schema(example = 1)]
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "i64_to_string")]
     pub id: i64,
 }
 
@@ -50,13 +53,16 @@ pub struct CategoryUpdateRequest {
     pub description: Update<String>,
 
     /// Parent category ID (optional, for subcategories)
-    #[schema(example = 1, value_type = Option<i64>)]
+    #[schema(example = "1234567890", value_type = Option<String>)]
+    #[serde(default, deserialize_with = "update_string_to_i64")]
     pub parent_id: Update<i64>,
 }
 
 /// Child category response (simplified, no recursion)
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CategoryChildResponse {
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "i64_to_string")]
     pub id: i64,
     /// Category name
     #[schema(example = "Laptops")]
@@ -70,6 +76,8 @@ pub struct CategoryChildResponse {
 /// Category response with hierarchical structure
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CategoryResponse {
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "i64_to_string")]
     pub id: i64,
     /// Category name
     #[schema(example = "Electronics")]

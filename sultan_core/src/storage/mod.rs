@@ -4,6 +4,7 @@ pub mod customer_repo;
 pub mod product_repo;
 pub mod sell_price_repo;
 pub mod sqlite;
+pub mod stock_repo;
 pub mod supplier_repo;
 pub mod token_repo;
 pub mod transaction;

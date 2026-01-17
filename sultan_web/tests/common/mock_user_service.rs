@@ -26,9 +26,9 @@ impl MockUserService {
 
 #[async_trait]
 impl UserServiceTrait for MockUserService {
-    async fn create(&self, _ctx: &Context, _user: &UserCreate) -> DomainResult<()> {
+    async fn create(&self, _ctx: &Context, _user: &UserCreate) -> DomainResult<i64> {
         if self.should_succeed {
-            Ok(())
+            Ok(1)
         } else {
             Err(Error::Database("Mock create user error".to_string()))
         }

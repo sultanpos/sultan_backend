@@ -71,7 +71,7 @@ impl CustomerRepository for SqliteCustomerRepository {
     async fn create(&self, _: &Context, id: i64, customer: &CustomerCreate) -> DomainResult<()> {
         let metadata_json = super::serialize_metadata(&customer.metadata);
 
-        let query = sqlx::query(
+        let result = sqlx::query(
             r#"
             INSERT INTO customers (
                 id, number, name, address, email, phone, level, metadata
@@ -86,10 +86,19 @@ impl CustomerRepository for SqliteCustomerRepository {
         .bind(&customer.phone)
         .bind(customer.level)
         .bind(&metadata_json)
-        .execute(&self.pool);
+        .execute(&self.pool)
+        .await;
 
-        query.await?;
-        Ok(())
+        match result {
+            Ok(_) => Ok(()),
+            Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
+                Err(crate::domain::Error::Conflict(format!(
+                    "Customer with number '{}' already exists",
+                    customer.number
+                )))
+            }
+            Err(e) => Err(e.into()),
+        }
     }
 
     async fn update(&self, _: &Context, id: i64, customer: &CustomerUpdate) -> DomainResult<()> {
@@ -132,8 +141,18 @@ impl CustomerRepository for SqliteCustomerRepository {
         builder.push(" AND is_deleted = 0");
 
         let query = builder.build();
-        let result = query.execute(&self.pool).await?;
-        check_rows_affected(result.rows_affected(), "Customer", id)
+        let result = query.execute(&self.pool).await;
+
+        match result {
+            Ok(query_result) => check_rows_affected(query_result.rows_affected(), "Customer", id),
+            Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
+                Err(crate::domain::Error::Conflict(format!(
+                    "Customer with number '{}' already exists",
+                    customer.number.as_ref().unwrap_or(&"unknown".to_string())
+                )))
+            }
+            Err(e) => Err(e.into()),
+        }
     }
 
     async fn delete(&self, _: &Context, id: i64) -> DomainResult<()> {

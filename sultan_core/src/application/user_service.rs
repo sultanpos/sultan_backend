@@ -12,7 +12,7 @@ use crate::storage::user_repo::UserRepository;
 
 #[async_trait]
 pub trait UserServiceTrait: Send + Sync {
-    async fn create(&self, ctx: &Context, user: &UserCreate) -> DomainResult<()>;
+    async fn create(&self, ctx: &Context, user: &UserCreate) -> DomainResult<i64>;
     async fn update(&self, ctx: &Context, id: i64, user: &UserUpdate) -> DomainResult<()>;
     async fn get_by_id(&self, ctx: &Context, user_id: i64) -> DomainResult<Option<User>>;
     async fn reset_password(
@@ -60,7 +60,7 @@ where
     C: CacheService<i64>,
     Tx: Send + Sync,
 {
-    async fn create(&self, ctx: &Context, user: &UserCreate) -> DomainResult<()> {
+    async fn create(&self, ctx: &Context, user: &UserCreate) -> DomainResult<i64> {
         ctx.require_access(None, resource::USER, action::CREATE)?;
         let password_hash = self.password_hasher.hash_password(&user.password)?;
         let mut user_with_password = user.clone();
@@ -73,7 +73,7 @@ where
         // Invalidate cache for new user
         let _ = self.cache.delete(&id).await;
 
-        Ok(())
+        Ok(id)
     }
 
     async fn update(&self, ctx: &Context, id: i64, user: &UserUpdate) -> DomainResult<()> {

@@ -15,9 +15,9 @@ impl IntoResponse for Error {
             Error::ValidationError(msg) => {
                 (StatusCode::BAD_REQUEST, Json(json!({"error": msg}))).into_response()
             }
-            Error::Database(_) => (
+            Error::Database(msg) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": "Database error"})),
+                Json(json!({"error": msg})),
             )
                 .into_response(),
             Error::InvalidCredentials => (
@@ -27,6 +27,9 @@ impl IntoResponse for Error {
                 .into_response(),
             Error::NotFound(msg) => {
                 (StatusCode::NOT_FOUND, Json(json!({"error": msg}))).into_response()
+            }
+            Error::Conflict(msg) => {
+                (StatusCode::CONFLICT, Json(json!({"error": msg}))).into_response()
             }
             Error::Internal(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -76,7 +79,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
 
         let json = response_to_json(response).await;
-        assert_eq!(json["error"], "Database error");
+        assert_eq!(json["error"], "Connection failed");
     }
 
     #[tokio::test]

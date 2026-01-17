@@ -1,4 +1,4 @@
-use super::{default_page, default_page_size};
+use super::{default_page, default_page_size, i64_to_string};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -26,7 +26,8 @@ pub struct SupplierCreateRequest {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SupplierCreateResponse {
-    #[schema(example = 1)]
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "i64_to_string")]
     pub id: i64,
 }
 
@@ -51,6 +52,8 @@ pub struct SupplierUpdateRequest {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SupplierResponse {
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "i64_to_string")]
     pub id: i64,
     pub created_at: chrono::DateTime<Utc>,
     pub updated_at: chrono::DateTime<Utc>,

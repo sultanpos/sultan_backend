@@ -207,6 +207,8 @@ where
 
         if let Some(stored_token) = self.token_repo.get_by_token(ctx, &token_hash).await? {
             self.token_repo.delete(ctx, stored_token.id).await?;
+        } else {
+            return Err(Error::Unauthorized("Invalid refresh token".to_string()));
         }
 
         Ok(())
