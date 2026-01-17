@@ -3,10 +3,7 @@ use async_trait::async_trait;
 use crate::domain::{
     Context, DomainResult,
     model::{
-        sell_price::{
-            SellDiscount, SellDiscountCreate, SellDiscountUpdate, SellPrice, SellPriceCreate,
-            SellPriceUpdate,
-        },
+        sell_price::SellPrice,
         stock::{Stock, StockCreate, StockUpdate},
     },
 };

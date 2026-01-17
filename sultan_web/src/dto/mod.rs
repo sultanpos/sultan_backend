@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 pub mod category;
 pub mod customer;
 pub mod login;
