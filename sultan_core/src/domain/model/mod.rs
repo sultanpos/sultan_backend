@@ -1,6 +1,7 @@
 pub mod branch;
 pub mod category;
 pub mod customer;
+pub mod number;
 pub mod pagination;
 pub mod permission;
 pub mod product;

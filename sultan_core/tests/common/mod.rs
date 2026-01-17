@@ -43,6 +43,27 @@ pub async fn init_sqlite_pool() -> SqlitePool {
     new_pool
 }
 
+pub async fn setup_test_db() -> SqlitePool {
+    init_sqlite_pool().await
+}
+
+pub async fn create_test_branch(pool: &SqlitePool, id: i64, code: &str) -> i64 {
+    sqlx::query(
+        r#"
+        INSERT INTO branches (id, name, code, is_main)
+        VALUES (?, ?, ?, 0)
+        "#,
+    )
+    .bind(id)
+    .bind(format!("Test Branch {}", code))
+    .bind(code)
+    .execute(pool)
+    .await
+    .expect("Failed to create test branch");
+
+    id
+}
+
 /*
 pub async fn init_postgres_pool() -> PgPool {
     let mut pool = POSTGRES_POOL.lock().await;
