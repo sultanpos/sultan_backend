@@ -10,7 +10,7 @@ use std::{fs::File, sync::Arc};
 use sultan_core::{
     application::{
         AuthService, AuthServiceTrait, CategoryService, CustomerService, InMemoryCache,
-        SupplierService, UserService, UserServiceTrait,
+        NumberService, SupplierService, UserService, UserServiceTrait,
     },
     crypto::{Argon2PasswordHasher, DefaultJwtManager, JwtConfig, JwtManager},
     domain::{
@@ -22,7 +22,7 @@ use sultan_core::{
         BranchRepository, SqliteUserRepository, UserRepository,
         sqlite::{
             SqliteBranchRepository, SqliteCategoryRepository, SqliteCustomerRepository,
-            SqliteSupplierRepository, SqliteTokenRepository,
+            SqliteNumberRepository, SqliteSupplierRepository, SqliteTokenRepository,
         },
     },
 };
@@ -75,7 +75,8 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
     let token_repository = SqliteTokenRepository::new(pool.clone());
     let category_repository = SqliteCategoryRepository::new(pool.clone());
     let supplier_repository = SqliteSupplierRepository::new(pool.clone());
-    let customer_repository = SqliteCustomerRepository::new(pool);
+    let customer_repository = SqliteCustomerRepository::new(pool.clone());
+    let number_repository = SqliteNumberRepository::new(pool.clone());
 
     let password_hasher = Argon2PasswordHasher::default();
     let jwt_manager = DefaultJwtManager::new(JwtConfig::new(
@@ -90,8 +91,16 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
         jwt_manager.clone(),
     );
 
+    let number_service = Arc::new(NumberService::new(
+        number_repository,
+        branch_repository.clone(),
+    ));
     let category_service = CategoryService::new(category_repository, SnowflakeGenerator::new(1)?);
-    let customer_service = CustomerService::new(customer_repository, SnowflakeGenerator::new(1)?);
+    let customer_service = CustomerService::new(
+        customer_repository,
+        SnowflakeGenerator::new(1)?,
+        number_service,
+    );
     let supplier_service = SupplierService::new(supplier_repository, SnowflakeGenerator::new(1)?);
     let user_service = UserService::new(
         user_repository.clone(),

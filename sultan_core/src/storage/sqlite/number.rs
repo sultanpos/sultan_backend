@@ -1,26 +1,23 @@
 use async_trait::async_trait;
 use serde::Serialize;
 use sqlx::{Row, SqlitePool};
-use std::sync::Arc;
 
 use crate::{
     domain::{
         Context, DomainResult,
         model::number::{NumberGenerateParams, NumberSequence},
     },
-    snowflake::IdGenerator,
     storage::NumberRepository,
 };
 
 #[derive(Clone)]
 pub struct SqliteNumberRepository {
     pool: SqlitePool,
-    id_generator: Arc<dyn IdGenerator>,
 }
 
 impl SqliteNumberRepository {
-    pub fn new(pool: SqlitePool, id_generator: Arc<dyn IdGenerator>) -> Self {
-        Self { pool, id_generator }
+    pub fn new(pool: SqlitePool) -> Self {
+        Self { pool }
     }
 }
 
@@ -85,16 +82,14 @@ impl NumberRepository for SqliteNumberRepository {
             row.try_get::<i32, _>("last_number")?
         } else {
             // Sequence doesn't exist, create it with initial value
-            let id = self.id_generator.generate()?;
             let initial_number = 1;
 
             sqlx::query(
                 r#"
-                INSERT INTO number_sequences (id, prefix, branch_id, year, month, last_number)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO number_sequences ( prefix, branch_id, year, month, last_number)
+                VALUES ( ?, ?, ?, ?, ?)
                 "#,
             )
-            .bind(id)
             .bind(&params.prefix)
             .bind(params.branch_id)
             .bind(params.year)
