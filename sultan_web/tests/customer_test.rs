@@ -233,7 +233,7 @@ async fn test_get_customer_by_id_success() {
         .expect("Request failed");
 
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(response["id"].as_i64().unwrap(), 1);
+    assert_eq!(response["id"].as_str().unwrap(), "1");
     assert_eq!(response["name"].as_str().unwrap(), "John Doe");
     assert!(response.get("phone").is_some());
     assert!(response.get("email").is_some());

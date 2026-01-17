@@ -52,7 +52,7 @@ async fn test_create_supplier_success() {
     // Assert
     assert_eq!(status, StatusCode::CREATED);
     assert!(response.get("id").is_some());
-    assert_eq!(response["id"].as_i64().unwrap(), 1);
+    assert_eq!(response["id"].as_str().unwrap(), "1");
 }
 
 #[tokio::test]

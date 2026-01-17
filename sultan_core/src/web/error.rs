@@ -79,7 +79,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
 
         let json = response_to_json(response).await;
-        assert_eq!(json["error"], "Database error");
+        assert_eq!(json["error"], "Connection failed");
     }
 
     #[tokio::test]
