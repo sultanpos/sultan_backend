@@ -49,34 +49,33 @@ async fn test_update_non_existent_unit() {
     let (ctx, repo, pool) = create_sqlite_unit_repo().await;
     unit::unit_test_update_non_existent(&ctx, &repo, &pool).await;
 }
-/*
+
 #[tokio::test]
 async fn test_delete_unit() {
-    let (ctx, repo) = unit::create_sqlite_unit_repo().await;
-    unit::unit_test_delete(&ctx, repo).await;
+    let (ctx, repo, pool) = create_sqlite_unit_repo().await;
+    unit::unit_test_delete(&ctx, &repo, &pool).await;
 }
 
 #[tokio::test]
 async fn test_delete_non_existent_unit() {
-    let (ctx, repo) = unit::create_sqlite_unit_repo().await;
-    unit::unit_test_delete_non_existent(&ctx, repo).await;
+    let (ctx, repo, pool) = create_sqlite_unit_repo().await;
+    unit::unit_test_delete_non_existent(&ctx, &repo, &pool).await;
 }
 
 #[tokio::test]
 async fn test_get_all_units() {
-    let (ctx, repo) = unit::create_sqlite_unit_repo().await;
-    unit::unit_test_get_all(&ctx, repo).await;
+    let (ctx, repo, pool) = create_sqlite_unit_repo().await;
+    unit::unit_test_get_all(&ctx, &repo, &pool).await;
 }
 
 #[tokio::test]
 async fn test_get_all_excludes_deleted() {
-    let (ctx, repo) = unit::create_sqlite_unit_repo().await;
-    unit::unit_test_get_all_excludes_deleted(&ctx, repo).await;
+    let (ctx, repo, pool) = create_sqlite_unit_repo().await;
+    unit::unit_test_get_all_excludes_deleted(&ctx, &repo, &pool).await;
 }
 
 #[tokio::test]
 async fn test_get_by_id_non_existent() {
-    let (ctx, repo) = unit::create_sqlite_unit_repo().await;
-    unit::unit_test_get_by_id_non_existent(&ctx, repo).await;
+    let (ctx, repo, pool) = create_sqlite_unit_repo().await;
+    unit::unit_test_get_by_id_non_existent(&ctx, &repo, &pool).await;
 }
-*/
