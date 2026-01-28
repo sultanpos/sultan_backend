@@ -1,3 +1,5 @@
+use sqlx::Sqlite;
+
 use crate::{
     domain::{
         Context,
@@ -9,30 +11,27 @@ use crate::{
     storage::UnitOfMeasureRepository,
 };
 
-pub async fn create_sqlite_unit_repo() -> (Context, impl UnitOfMeasureRepository) {
-    let pool = super::init_sqlite_pool().await;
-    (
-        Context::new(),
-        crate::storage::sqlite::unit::SqliteUnitOfMeasureRepository::new(pool),
-    )
-}
-
 // =============================================================================
 // Basic CRUD Tests
 // =============================================================================
 
-pub async fn unit_test_create<U: UnitOfMeasureRepository>(ctx: &Context, repo: U) {
+pub async fn unit_test_create<DB, U>(ctx: &Context, repo: &U, pool: &sqlx::Pool<DB>)
+where
+    DB: sqlx::Database,
+    U: UnitOfMeasureRepository<DB>,
+    for<'c> &'c sqlx::Pool<DB>: sqlx::Executor<'c, Database = DB>,
+{
     let id = super::generate_test_id().await;
     let unit = UnitOfMeasureCreate {
         name: "Kilogram".to_string(),
         description: Some("Unit of mass".to_string()),
     };
-    repo.create(ctx, id, &unit)
+    repo.create(ctx, pool, id, &unit)
         .await
         .expect("Failed to create unit of measure");
 
     let unit = repo
-        .get_by_id(ctx, id)
+        .get_by_id(ctx, pool, id)
         .await
         .expect("Failed to get unit of measure")
         .expect("Unit of measure not found");
@@ -43,21 +42,26 @@ pub async fn unit_test_create<U: UnitOfMeasureRepository>(ctx: &Context, repo: U
     assert!(!unit.is_deleted);
 }
 
-pub async fn unit_test_create_without_description<U: UnitOfMeasureRepository>(
+pub async fn unit_test_create_without_description<DB, U>(
     ctx: &Context,
-    repo: U,
-) {
+    repo: &U,
+    pool: &sqlx::Pool<DB>,
+) where
+    DB: sqlx::Database,
+    U: UnitOfMeasureRepository<DB>,
+    for<'c> &'c sqlx::Pool<DB>: sqlx::Executor<'c, Database = DB>,
+{
     let id = super::generate_test_id().await;
     let unit = UnitOfMeasureCreate {
         name: "Piece".to_string(),
         description: None,
     };
-    repo.create(ctx, id, &unit)
+    repo.create(ctx, pool, id, &unit)
         .await
         .expect("Failed to create unit of measure");
 
     let unit = repo
-        .get_by_id(ctx, id)
+        .get_by_id(ctx, pool, id)
         .await
         .expect("Failed to get unit of measure")
         .expect("Unit of measure not found");
@@ -66,13 +70,18 @@ pub async fn unit_test_create_without_description<U: UnitOfMeasureRepository>(
     assert_eq!(unit.description, None);
 }
 
-pub async fn unit_test_update_name<U: UnitOfMeasureRepository>(ctx: &Context, repo: U) {
+pub async fn unit_test_update_name<DB, U>(ctx: &Context, repo: &U, pool: &sqlx::Pool<DB>)
+where
+    DB: sqlx::Database,
+    U: UnitOfMeasureRepository<DB>,
+    for<'c> &'c sqlx::Pool<DB>: sqlx::Executor<'c, Database = DB>,
+{
     let id = super::generate_test_id().await;
     let unit = UnitOfMeasureCreate {
         name: "Original Name".to_string(),
         description: Some("Original description".to_string()),
     };
-    repo.create(ctx, id, &unit)
+    repo.create(ctx, pool, id, &unit)
         .await
         .expect("Failed to create unit of measure");
 
@@ -80,12 +89,12 @@ pub async fn unit_test_update_name<U: UnitOfMeasureRepository>(ctx: &Context, re
         name: Some("Updated Name".to_string()),
         description: Update::Unchanged,
     };
-    repo.update(ctx, id, &update)
+    repo.update(ctx, pool, id, &update)
         .await
         .expect("Failed to update unit of measure");
 
     let unit = repo
-        .get_by_id(ctx, id)
+        .get_by_id(ctx, pool, id)
         .await
         .expect("Failed to get unit of measure")
         .expect("Unit of measure not found");
@@ -95,13 +104,18 @@ pub async fn unit_test_update_name<U: UnitOfMeasureRepository>(ctx: &Context, re
     assert_eq!(unit.description, Some("Original description".to_string()));
 }
 
-pub async fn unit_test_update_description<U: UnitOfMeasureRepository>(ctx: &Context, repo: U) {
+pub async fn unit_test_update_description<DB, U>(ctx: &Context, repo: &U, pool: &sqlx::Pool<DB>)
+where
+    DB: sqlx::Database,
+    U: UnitOfMeasureRepository<DB>,
+    for<'c> &'c sqlx::Pool<DB>: sqlx::Executor<'c, Database = DB>,
+{
     let id = super::generate_test_id().await;
     let unit = UnitOfMeasureCreate {
         name: "Liter".to_string(),
         description: Some("Old description".to_string()),
     };
-    repo.create(ctx, id, &unit)
+    repo.create(ctx, pool, id, &unit)
         .await
         .expect("Failed to create unit of measure");
 
@@ -109,12 +123,12 @@ pub async fn unit_test_update_description<U: UnitOfMeasureRepository>(ctx: &Cont
         name: None,
         description: Update::Set("New description".to_string()),
     };
-    repo.update(ctx, id, &update)
+    repo.update(ctx, pool, id, &update)
         .await
         .expect("Failed to update unit of measure");
 
     let unit = repo
-        .get_by_id(ctx, id)
+        .get_by_id(ctx, pool, id)
         .await
         .expect("Failed to get unit of measure")
         .expect("Unit of measure not found");
@@ -123,16 +137,21 @@ pub async fn unit_test_update_description<U: UnitOfMeasureRepository>(ctx: &Cont
     assert_eq!(unit.description, Some("New description".to_string()));
 }
 
-pub async fn unit_test_update_clear_description<U: UnitOfMeasureRepository>(
+pub async fn unit_test_update_clear_description<DB, U>(
     ctx: &Context,
-    repo: U,
-) {
+    repo: &U,
+    pool: &sqlx::Pool<DB>,
+) where
+    DB: sqlx::Database,
+    U: UnitOfMeasureRepository<DB>,
+    for<'c> &'c sqlx::Pool<DB>: sqlx::Executor<'c, Database = DB>,
+{
     let id = super::generate_test_id().await;
     let unit = UnitOfMeasureCreate {
         name: "Meter".to_string(),
         description: Some("Unit of length".to_string()),
     };
-    repo.create(ctx, id, &unit)
+    repo.create(ctx, pool, id, &unit)
         .await
         .expect("Failed to create unit of measure");
 
@@ -140,12 +159,12 @@ pub async fn unit_test_update_clear_description<U: UnitOfMeasureRepository>(
         name: None,
         description: Update::Clear,
     };
-    repo.update(ctx, id, &update)
+    repo.update(ctx, pool, id, &update)
         .await
         .expect("Failed to update unit of measure");
 
     let unit = repo
-        .get_by_id(ctx, id)
+        .get_by_id(ctx, pool, id)
         .await
         .expect("Failed to get unit of measure")
         .expect("Unit of measure not found");
@@ -154,48 +173,69 @@ pub async fn unit_test_update_clear_description<U: UnitOfMeasureRepository>(
     assert_eq!(unit.description, None);
 }
 
-pub async fn unit_test_update_non_existent<U: UnitOfMeasureRepository>(ctx: &Context, repo: U) {
+pub async fn unit_test_update_non_existent<DB, U>(ctx: &Context, repo: &U, pool: &sqlx::Pool<DB>)
+where
+    DB: sqlx::Database,
+    U: UnitOfMeasureRepository<DB>,
+    for<'c> &'c sqlx::Pool<DB>: sqlx::Executor<'c, Database = DB>,
+{
     let non_existent_id = super::generate_test_id().await;
     let update = UnitOfMeasureUpdate {
         name: Some("New Name".to_string()),
         description: Update::Unchanged,
     };
 
-    let result = repo.update(ctx, non_existent_id, &update).await;
+    let result = repo.update(ctx, pool, non_existent_id, &update).await;
     assert!(result.is_err());
 }
 
-pub async fn unit_test_delete<U: UnitOfMeasureRepository>(ctx: &Context, repo: U) {
+pub async fn unit_test_delete<DB, U>(ctx: &Context, repo: &U, pool: &sqlx::Pool<DB>)
+where
+    DB: sqlx::Database,
+    U: UnitOfMeasureRepository<DB>,
+    for<'c> &'c sqlx::Pool<DB>: sqlx::Executor<'c, Database = DB>,
+{
     let id = super::generate_test_id().await;
     let unit = UnitOfMeasureCreate {
         name: "Gram".to_string(),
         description: Some("Unit of mass".to_string()),
     };
-    repo.create(ctx, id, &unit)
+    repo.create(ctx, pool, id, &unit)
         .await
         .expect("Failed to create unit of measure");
 
-    repo.delete(ctx, id)
+    repo.delete(ctx, pool, id)
         .await
         .expect("Failed to delete unit of measure");
 
-    let result = repo.get_by_id(ctx, id).await.expect("Query failed");
+    let result = repo.get_by_id(ctx, pool, id).await.expect("Query failed");
     assert!(result.is_none());
 }
 
-pub async fn unit_test_delete_non_existent<U: UnitOfMeasureRepository>(ctx: &Context, repo: U) {
+pub async fn unit_test_delete_non_existent<DB, U>(ctx: &Context, repo: &U, pool: &sqlx::Pool<DB>)
+where
+    DB: sqlx::Database,
+    U: UnitOfMeasureRepository<DB>,
+    for<'c> &'c sqlx::Pool<DB>: sqlx::Executor<'c, Database = DB>,
+{
     let non_existent_id = super::generate_test_id().await;
-    let result = repo.delete(ctx, non_existent_id).await;
+    let result = repo.delete(ctx, pool, non_existent_id).await;
     assert!(result.is_err());
 }
 
-pub async fn unit_test_get_all<U: UnitOfMeasureRepository>(ctx: &Context, repo: U) {
+pub async fn unit_test_get_all<DB, U>(ctx: &Context, repo: &U, pool: &sqlx::Pool<DB>)
+where
+    DB: sqlx::Database,
+    U: UnitOfMeasureRepository<DB>,
+    for<'c> &'c sqlx::Pool<DB>: sqlx::Executor<'c, Database = DB>,
+{
     let id1 = super::generate_test_id().await;
     let id2 = super::generate_test_id().await;
     let id3 = super::generate_test_id().await;
 
     repo.create(
         ctx,
+        pool,
         id1,
         &UnitOfMeasureCreate {
             name: "Kilogram".to_string(),
@@ -207,6 +247,7 @@ pub async fn unit_test_get_all<U: UnitOfMeasureRepository>(ctx: &Context, repo: 
 
     repo.create(
         ctx,
+        pool,
         id2,
         &UnitOfMeasureCreate {
             name: "Liter".to_string(),
@@ -218,6 +259,7 @@ pub async fn unit_test_get_all<U: UnitOfMeasureRepository>(ctx: &Context, repo: 
 
     repo.create(
         ctx,
+        pool,
         id3,
         &UnitOfMeasureCreate {
             name: "Piece".to_string(),
@@ -227,7 +269,10 @@ pub async fn unit_test_get_all<U: UnitOfMeasureRepository>(ctx: &Context, repo: 
     .await
     .unwrap();
 
-    let units = repo.get_all(ctx).await.expect("Failed to get all units");
+    let units = repo
+        .get_all(ctx, pool)
+        .await
+        .expect("Failed to get all units");
 
     // Should have at least our 3 units (may have more from other tests)
     assert!(units.len() >= 3);
@@ -236,15 +281,21 @@ pub async fn unit_test_get_all<U: UnitOfMeasureRepository>(ctx: &Context, repo: 
     assert!(units.iter().any(|u| u.id == id3 && u.name == "Piece"));
 }
 
-pub async fn unit_test_get_all_excludes_deleted<U: UnitOfMeasureRepository>(
+pub async fn unit_test_get_all_excludes_deleted<DB, U>(
     ctx: &Context,
-    repo: U,
-) {
+    repo: &U,
+    pool: &sqlx::Pool<DB>,
+) where
+    DB: sqlx::Database,
+    U: UnitOfMeasureRepository<DB>,
+    for<'c> &'c sqlx::Pool<DB>: sqlx::Executor<'c, Database = DB>,
+{
     let id1 = super::generate_test_id().await;
     let id2 = super::generate_test_id().await;
 
     repo.create(
         ctx,
+        pool,
         id1,
         &UnitOfMeasureCreate {
             name: "Active Unit".to_string(),
@@ -256,6 +307,7 @@ pub async fn unit_test_get_all_excludes_deleted<U: UnitOfMeasureRepository>(
 
     repo.create(
         ctx,
+        pool,
         id2,
         &UnitOfMeasureCreate {
             name: "Deleted Unit".to_string(),
@@ -266,19 +318,27 @@ pub async fn unit_test_get_all_excludes_deleted<U: UnitOfMeasureRepository>(
     .unwrap();
 
     // Delete the second unit
-    repo.delete(ctx, id2).await.unwrap();
+    repo.delete(ctx, pool, id2).await.unwrap();
 
-    let units = repo.get_all(ctx).await.expect("Failed to get all units");
+    let units = repo
+        .get_all(ctx, pool)
+        .await
+        .expect("Failed to get all units");
 
     // Should contain the active unit but not the deleted one
     assert!(units.iter().any(|u| u.id == id1));
     assert!(!units.iter().any(|u| u.id == id2));
 }
 
-pub async fn unit_test_get_by_id_non_existent<U: UnitOfMeasureRepository>(ctx: &Context, repo: U) {
+pub async fn unit_test_get_by_id_non_existent<DB, U>(ctx: &Context, repo: &U, pool: &sqlx::Pool<DB>)
+where
+    DB: sqlx::Database,
+    U: UnitOfMeasureRepository<DB>,
+    for<'c> &'c sqlx::Pool<DB>: sqlx::Executor<'c, Database = DB>,
+{
     let non_existent_id = super::generate_test_id().await;
     let result = repo
-        .get_by_id(ctx, non_existent_id)
+        .get_by_id(ctx, pool, non_existent_id)
         .await
         .expect("Query failed");
 
