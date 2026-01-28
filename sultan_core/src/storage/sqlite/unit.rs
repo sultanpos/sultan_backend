@@ -13,14 +13,12 @@ use crate::{
     },
 };
 
-#[derive(Clone)]
-pub struct SqliteUnitOfMeasureRepository {
-}
+#[derive(Clone, Default)]
+pub struct SqliteUnitOfMeasureRepository {}
 
 impl SqliteUnitOfMeasureRepository {
     pub fn new() -> Self {
-        SqliteUnitOfMeasureRepository {
-        }
+        SqliteUnitOfMeasureRepository {}
     }
 }
 
@@ -52,8 +50,16 @@ impl From<UnitOfMeasureDbSqlite> for UnitOfMeasure {
 
 #[async_trait]
 impl UnitOfMeasureRepository<Sqlite> for SqliteUnitOfMeasureRepository {
-    async fn create<'e, E>(&self, _: &Context, e: E, id: i64, uom: &UnitOfMeasureCreate) -> DomainResult<()>
-    where E: sqlx::Executor<'e, Database = Sqlite> {
+    async fn create<'e, E>(
+        &self,
+        _: &Context,
+        e: E,
+        id: i64,
+        uom: &UnitOfMeasureCreate,
+    ) -> DomainResult<()>
+    where
+        E: sqlx::Executor<'e, Database = Sqlite>,
+    {
         let query = sqlx::query(
             r#"
             INSERT INTO units (
@@ -70,8 +76,16 @@ impl UnitOfMeasureRepository<Sqlite> for SqliteUnitOfMeasureRepository {
         Ok(())
     }
 
-    async fn update<'e, E>(&self, _: &Context, e: E, id: i64, uom: &UnitOfMeasureUpdate) -> DomainResult<()>
-    where E: sqlx::Executor<'e, Database = Sqlite> {
+    async fn update<'e, E>(
+        &self,
+        _: &Context,
+        e: E,
+        id: i64,
+        uom: &UnitOfMeasureUpdate,
+    ) -> DomainResult<()>
+    where
+        E: sqlx::Executor<'e, Database = Sqlite>,
+    {
         let mut builder: QueryBuilder<Sqlite> = QueryBuilder::new("UPDATE units SET ");
         let mut separated = builder.separated(", ");
 
@@ -97,15 +111,19 @@ impl UnitOfMeasureRepository<Sqlite> for SqliteUnitOfMeasureRepository {
         Ok(())
     }
 
-    async fn delete<'e, E>(&self, _: &Context, e: E, id: i64) -> DomainResult<()> 
-    where E: sqlx::Executor<'e, Database = Sqlite> {
+    async fn delete<'e, E>(&self, _: &Context, e: E, id: i64) -> DomainResult<()>
+    where
+        E: sqlx::Executor<'e, Database = Sqlite>,
+    {
         let query = soft_delete(e, TableName::Units, id);
         let result = query.await?;
         check_rows_affected(result.rows_affected(), "Unit of measure", id)
     }
 
     async fn get_all<'e, E>(&self, _: &Context, e: E) -> DomainResult<Vec<UnitOfMeasure>>
-    where E: sqlx::Executor<'e, Database = Sqlite> {
+    where
+        E: sqlx::Executor<'e, Database = Sqlite>,
+    {
         let query = sqlx::query_as::<_, UnitOfMeasureDbSqlite>(
             r#"
             SELECT id, created_at, updated_at, deleted_at, is_deleted, name, description
@@ -118,8 +136,15 @@ impl UnitOfMeasureRepository<Sqlite> for SqliteUnitOfMeasureRepository {
         Ok(map_results(units))
     }
 
-    async fn get_by_id<'e, E>(&self, _: &Context, e: E, id: i64) -> DomainResult<Option<UnitOfMeasure>>
-    where E: sqlx::Executor<'e, Database = Sqlite> {
+    async fn get_by_id<'e, E>(
+        &self,
+        _: &Context,
+        e: E,
+        id: i64,
+    ) -> DomainResult<Option<UnitOfMeasure>>
+    where
+        E: sqlx::Executor<'e, Database = Sqlite>,
+    {
         let query = sqlx::query_as::<_, UnitOfMeasureDbSqlite>(
             r#"
             SELECT id, created_at, updated_at, deleted_at, is_deleted, name, description
