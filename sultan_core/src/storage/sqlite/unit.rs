@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use serde::Serialize;
-use sqlx::{QueryBuilder, Sqlite, SqlitePool};
+use sqlx::{QueryBuilder, Sqlite};
 
 use crate::{
     domain::{
@@ -15,12 +15,12 @@ use crate::{
 
 #[derive(Clone)]
 pub struct SqliteUnitOfMeasureRepository {
-    pool: SqlitePool,
 }
 
 impl SqliteUnitOfMeasureRepository {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub fn new() -> Self {
+        SqliteUnitOfMeasureRepository {
+        }
     }
 }
 
@@ -51,8 +51,9 @@ impl From<UnitOfMeasureDbSqlite> for UnitOfMeasure {
 }
 
 #[async_trait]
-impl UnitOfMeasureRepository for SqliteUnitOfMeasureRepository {
-    async fn create(&self, _: &Context, id: i64, uom: &UnitOfMeasureCreate) -> DomainResult<()> {
+impl UnitOfMeasureRepository<Sqlite> for SqliteUnitOfMeasureRepository {
+    async fn create<'e, E>(&self, _: &Context, e: E, id: i64, uom: &UnitOfMeasureCreate) -> DomainResult<()>
+    where E: sqlx::Executor<'e, Database = Sqlite> {
         let query = sqlx::query(
             r#"
             INSERT INTO units (
@@ -63,13 +64,14 @@ impl UnitOfMeasureRepository for SqliteUnitOfMeasureRepository {
         .bind(id)
         .bind(&uom.name)
         .bind(&uom.description)
-        .execute(&self.pool);
+        .execute(e);
 
         query.await?;
         Ok(())
     }
 
-    async fn update(&self, _: &Context, id: i64, uom: &UnitOfMeasureUpdate) -> DomainResult<()> {
+    async fn update<'e, E>(&self, _: &Context, e: E, id: i64, uom: &UnitOfMeasureUpdate) -> DomainResult<()>
+    where E: sqlx::Executor<'e, Database = Sqlite> {
         let mut builder: QueryBuilder<Sqlite> = QueryBuilder::new("UPDATE units SET ");
         let mut separated = builder.separated(", ");
 
@@ -89,19 +91,21 @@ impl UnitOfMeasureRepository for SqliteUnitOfMeasureRepository {
         builder.push(" AND is_deleted = 0");
 
         let query = builder.build();
-        let result = query.execute(&self.pool).await?;
+        let result = query.execute(e).await?;
         check_rows_affected(result.rows_affected(), "Unit of measure", id)?;
 
         Ok(())
     }
 
-    async fn delete(&self, _: &Context, id: i64) -> DomainResult<()> {
-        let query = soft_delete(&self.pool, TableName::Units, id);
+    async fn delete<'e, E>(&self, _: &Context, e: E, id: i64) -> DomainResult<()> 
+    where E: sqlx::Executor<'e, Database = Sqlite> {
+        let query = soft_delete(e, TableName::Units, id);
         let result = query.await?;
         check_rows_affected(result.rows_affected(), "Unit of measure", id)
     }
 
-    async fn get_all(&self, _: &Context) -> DomainResult<Vec<UnitOfMeasure>> {
+    async fn get_all<'e, E>(&self, _: &Context, e: E) -> DomainResult<Vec<UnitOfMeasure>>
+    where E: sqlx::Executor<'e, Database = Sqlite> {
         let query = sqlx::query_as::<_, UnitOfMeasureDbSqlite>(
             r#"
             SELECT id, created_at, updated_at, deleted_at, is_deleted, name, description
@@ -109,12 +113,13 @@ impl UnitOfMeasureRepository for SqliteUnitOfMeasureRepository {
             WHERE is_deleted = 0
             "#,
         )
-        .fetch_all(&self.pool);
+        .fetch_all(e);
         let units = query.await?;
         Ok(map_results(units))
     }
 
-    async fn get_by_id(&self, _: &Context, id: i64) -> DomainResult<Option<UnitOfMeasure>> {
+    async fn get_by_id<'e, E>(&self, _: &Context, e: E, id: i64) -> DomainResult<Option<UnitOfMeasure>>
+    where E: sqlx::Executor<'e, Database = Sqlite> {
         let query = sqlx::query_as::<_, UnitOfMeasureDbSqlite>(
             r#"
             SELECT id, created_at, updated_at, deleted_at, is_deleted, name, description
@@ -123,7 +128,7 @@ impl UnitOfMeasureRepository for SqliteUnitOfMeasureRepository {
             "#,
         )
         .bind(id)
-        .fetch_optional(&self.pool);
+        .fetch_optional(e);
 
         Ok(query.await?.map(UnitOfMeasure::from))
     }

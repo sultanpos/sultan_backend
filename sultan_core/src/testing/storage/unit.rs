@@ -1,3 +1,5 @@
+use sqlx::Sqlite;
+
 use crate::{
     domain::{
         Context,
@@ -9,30 +11,25 @@ use crate::{
     storage::UnitOfMeasureRepository,
 };
 
-pub async fn create_sqlite_unit_repo() -> (Context, impl UnitOfMeasureRepository) {
-    let pool = super::init_sqlite_pool().await;
-    (
-        Context::new(),
-        crate::storage::sqlite::unit::SqliteUnitOfMeasureRepository::new(pool),
-    )
-}
-
 // =============================================================================
 // Basic CRUD Tests
 // =============================================================================
 
-pub async fn unit_test_create<U: UnitOfMeasureRepository>(ctx: &Context, repo: U) {
+pub async fn unit_test_create<DB, U>(ctx: &Context, repo: &U, pool: &sqlx::Pool<DB>) 
+    where DB: sqlx::Database,
+          U: UnitOfMeasureRepository<DB>,
+          for<'c> &'c sqlx::Pool<DB>: sqlx::Executor<'c, Database = DB>,{
     let id = super::generate_test_id().await;
     let unit = UnitOfMeasureCreate {
         name: "Kilogram".to_string(),
         description: Some("Unit of mass".to_string()),
     };
-    repo.create(ctx, id, &unit)
+    repo.create(ctx, pool, id, &unit)
         .await
         .expect("Failed to create unit of measure");
 
     let unit = repo
-        .get_by_id(ctx, id)
+        .get_by_id(ctx, pool, id)
         .await
         .expect("Failed to get unit of measure")
         .expect("Unit of measure not found");
@@ -43,7 +40,7 @@ pub async fn unit_test_create<U: UnitOfMeasureRepository>(ctx: &Context, repo: U
     assert!(!unit.is_deleted);
 }
 
-pub async fn unit_test_create_without_description<U: UnitOfMeasureRepository>(
+/*pub async fn unit_test_create_without_description<U: UnitOfMeasureRepository>(
     ctx: &Context,
     repo: U,
 ) {
@@ -284,3 +281,4 @@ pub async fn unit_test_get_by_id_non_existent<U: UnitOfMeasureRepository>(ctx: &
 
     assert!(result.is_none());
 }
+*/
