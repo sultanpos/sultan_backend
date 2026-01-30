@@ -29,6 +29,7 @@ axum = "0.8"
 utoipa = { version = "5", features = ["chrono"] }
 validator = { version = "0.18", features = ["derive"] }
 once_cell = "1.18"
+sea-orm = { version = "2.0.0-rc.29", features = ["sqlx-sqlite", "runtime-tokio-rustls","macros"]}
 
 [dev-dependencies]
 mockall = "0.13"
