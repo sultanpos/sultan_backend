@@ -78,31 +78,43 @@ impl UnitOfMeasureRepository for SqliteUnitOfMeasureRepository {
         id: i64,
         uom: &UnitOfMeasureUpdate,
     ) -> DomainResult<()> {
-        // First, check if the unit exists and is not deleted
-        let existing = UnitEntity::find_by_id(id)
-            .filter(UnitColumn::IsDeleted.eq(false))
-            .one(&ctx.db)
-            .await?;
+        use sea_orm::{UpdateMany, sea_query::Expr};
 
-        let existing = existing.ok_or(Error::NotFound(format!("Unit with id {} not found", id)))?;
-
-        let mut unit: UnitActiveModel = existing.into();
+        // Build update query with filters
+        let mut update_query: UpdateMany<UnitEntity> = UnitEntity::update_many()
+            .filter(UnitColumn::Id.eq(id))
+            .filter(UnitColumn::IsDeleted.eq(false));
 
         // Update fields if provided
         if let Some(name) = &uom.name {
-            unit.name = Set(name.clone());
+            update_query = update_query.col_expr(UnitColumn::Name, Expr::value(name.clone()));
         }
 
         if uom.description.should_update() {
-            unit.description = Set(uom.description.to_bind_value());
+            update_query = update_query.col_expr(
+                UnitColumn::Description,
+                Expr::value(uom.description.to_bind_value()),
+            );
         }
 
-        // Update the updated_at timestamp
-        unit.updated_at = Set(chrono::Utc::now()
-            .format("%Y-%m-%dT%H:%M:%S%.fZ")
-            .to_string());
+        // Always update the updated_at timestamp
+        update_query = update_query.col_expr(
+            UnitColumn::UpdatedAt,
+            Expr::value(
+                chrono::Utc::now()
+                    .format("%Y-%m-%dT%H:%M:%S%.fZ")
+                    .to_string(),
+            ),
+        );
 
-        unit.update(&ctx.db).await?;
+        // Execute the update
+        let result = update_query.exec(&ctx.db).await?;
+
+        // Check if any rows were affected
+        if result.rows_affected == 0 {
+            return Err(Error::NotFound(format!("Unit with id {} not found", id)));
+        }
+
         Ok(())
     }
 
