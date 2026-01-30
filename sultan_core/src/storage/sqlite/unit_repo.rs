@@ -119,26 +119,27 @@ impl UnitOfMeasureRepository for SqliteUnitOfMeasureRepository {
     }
 
     async fn delete(&self, ctx: &RepoCtx<impl ConnectionTrait>, id: i64) -> DomainResult<()> {
-        // Soft delete: mark as deleted instead of physically removing
-        let existing = UnitEntity::find_by_id(id)
+        use sea_orm::sea_query::Expr;
+
+        let now = chrono::Utc::now()
+            .format("%Y-%m-%dT%H:%M:%S%.fZ")
+            .to_string();
+
+        // Soft delete: mark as deleted with a single UPDATE query
+        let result = UnitEntity::update_many()
+            .filter(UnitColumn::Id.eq(id))
             .filter(UnitColumn::IsDeleted.eq(false))
-            .one(&ctx.db)
+            .col_expr(UnitColumn::IsDeleted, Expr::value(true))
+            .col_expr(UnitColumn::DeletedAt, Expr::value(Some(now.clone())))
+            .col_expr(UnitColumn::UpdatedAt, Expr::value(now))
+            .exec(&ctx.db)
             .await?;
 
-        let existing = existing.ok_or(Error::NotFound(format!("Unit with id {} not found", id)))?;
+        // Check if any rows were affected
+        if result.rows_affected == 0 {
+            return Err(Error::NotFound(format!("Unit with id {} not found", id)));
+        }
 
-        let mut unit: UnitActiveModel = existing.into();
-        unit.is_deleted = Set(true);
-        unit.deleted_at = Set(Some(
-            chrono::Utc::now()
-                .format("%Y-%m-%dT%H:%M:%S%.fZ")
-                .to_string(),
-        ));
-        unit.updated_at = Set(chrono::Utc::now()
-            .format("%Y-%m-%dT%H:%M:%S%.fZ")
-            .to_string());
-
-        unit.update(&ctx.db).await?;
         Ok(())
     }
 
