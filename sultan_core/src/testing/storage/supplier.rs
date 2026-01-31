@@ -1,6 +1,5 @@
 use crate::{
     domain::{
-        Context,
         error::Error::NotFound,
         model::{
             Update,
@@ -8,17 +7,10 @@ use crate::{
             supplier::{SupplierCreate, SupplierFilter, SupplierUpdate},
         },
     },
-    storage::SupplierRepository,
+    storage::{RepoCtx, SupplierRepository},
 };
+use sea_orm::DatabaseConnection;
 use serde_json::json;
-
-pub async fn create_sqlite_supplier_repo() -> (Context, impl SupplierRepository) {
-    let pool = super::init_sqlite_pool().await;
-    (
-        Context::new(),
-        crate::storage::sqlite::supplier::SqliteSupplierRepository::new(pool),
-    )
-}
 
 pub fn default_filter() -> SupplierFilter {
     SupplierFilter {
@@ -30,11 +22,43 @@ pub fn default_filter() -> SupplierFilter {
     }
 }
 
+/// Run all supplier repository tests using a context factory that creates fresh contexts.
+pub async fn supplier_test_all<S, F, Fut>(repo: &S, ctx_factory: F)
+where
+    S: SupplierRepository,
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = RepoCtx<DatabaseConnection>>,
+{
+    supplier_test_repo_integration(&ctx_factory().await, repo).await;
+    supplier_test_create_with_all_fields(&ctx_factory().await, repo).await;
+    supplier_test_create_minimal_fields(&ctx_factory().await, repo).await;
+    supplier_test_partial_update(&ctx_factory().await, repo).await;
+    supplier_test_update_address_scenarios(&ctx_factory().await, repo).await;
+    supplier_test_update_metadata(&ctx_factory().await, repo).await;
+    supplier_test_update_email_scenarios(&ctx_factory().await, repo).await;
+    supplier_test_update_non_existent(&ctx_factory().await, repo).await;
+    supplier_test_delete_non_existent(&ctx_factory().await, repo).await;
+    supplier_test_get_deleted(&ctx_factory().await, repo).await;
+    supplier_test_deleted_not_in_get_all(&ctx_factory().await, repo).await;
+    supplier_test_get_by_id_not_found(&ctx_factory().await, repo).await;
+    supplier_test_get_all(&ctx_factory().await, repo).await;
+    supplier_test_filter_by_name(&ctx_factory().await, repo).await;
+    supplier_test_filter_by_code(&ctx_factory().await, repo).await;
+    supplier_test_filter_by_email(&ctx_factory().await, repo).await;
+    supplier_test_filter_by_phone(&ctx_factory().await, repo).await;
+    supplier_test_filter_by_npwp(&ctx_factory().await, repo).await;
+    supplier_test_filter_multiple_criteria(&ctx_factory().await, repo).await;
+    supplier_test_pagination(&ctx_factory().await, repo).await;
+}
+
 // =============================================================================
 // Basic CRUD Tests
 // =============================================================================
 
-pub async fn supplier_test_repo_integration<S: SupplierRepository>(ctx: &Context, repo: S) {
+pub async fn supplier_test_repo_integration<S: SupplierRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
     let id = super::generate_test_id().await;
     let supplier = SupplierCreate {
         name: "Main Supplier".to_string(),
@@ -95,7 +119,10 @@ pub async fn supplier_test_repo_integration<S: SupplierRepository>(ctx: &Context
     assert!(deleted_supplier.is_none());
 }
 
-pub async fn supplier_test_create_with_all_fields<S: SupplierRepository>(ctx: &Context, repo: S) {
+pub async fn supplier_test_create_with_all_fields<S: SupplierRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
     let id = super::generate_test_id().await;
     let metadata = json!({
         "contact_person": "John Doe",
@@ -135,7 +162,10 @@ pub async fn supplier_test_create_with_all_fields<S: SupplierRepository>(ctx: &C
     assert_eq!(fetched.metadata.unwrap()["contact_person"], "John Doe");
 }
 
-pub async fn supplier_test_create_minimal_fields<S: SupplierRepository>(ctx: &Context, repo: S) {
+pub async fn supplier_test_create_minimal_fields<S: SupplierRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
     let id = super::generate_test_id().await;
     let supplier = SupplierCreate {
         name: "Minimal Supplier".to_string(),
@@ -172,7 +202,10 @@ pub async fn supplier_test_create_minimal_fields<S: SupplierRepository>(ctx: &Co
 // Update Tests
 // =============================================================================
 
-pub async fn supplier_test_partial_update<S: SupplierRepository>(ctx: &Context, repo: S) {
+pub async fn supplier_test_partial_update<S: SupplierRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
     let id = super::generate_test_id().await;
     let supplier = SupplierCreate {
         name: "Original Supplier".to_string(),
@@ -216,7 +249,10 @@ pub async fn supplier_test_partial_update<S: SupplierRepository>(ctx: &Context, 
     assert_eq!(fetched.npwp_name, Some("PT Original".to_string()));
 }
 
-pub async fn supplier_test_update_address_scenarios<S: SupplierRepository>(ctx: &Context, repo: S) {
+pub async fn supplier_test_update_address_scenarios<S: SupplierRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
     let id = super::generate_test_id().await;
     let supplier = SupplierCreate {
         name: "Address Test Supplier".to_string(),
@@ -310,7 +346,10 @@ pub async fn supplier_test_update_address_scenarios<S: SupplierRepository>(ctx: 
     );
 }
 
-pub async fn supplier_test_update_metadata<S: SupplierRepository>(ctx: &Context, repo: S) {
+pub async fn supplier_test_update_metadata<S: SupplierRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
     let id = super::generate_test_id().await;
     let initial_metadata = json!({"version": 1});
 
@@ -368,7 +407,10 @@ pub async fn supplier_test_update_metadata<S: SupplierRepository>(ctx: &Context,
     assert_eq!(fetched2.metadata, None);
 }
 
-pub async fn supplier_test_update_email_scenarios<S: SupplierRepository>(ctx: &Context, repo: S) {
+pub async fn supplier_test_update_email_scenarios<S: SupplierRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
     let id = super::generate_test_id().await;
     let supplier = SupplierCreate {
         name: "Email Test Supplier".to_string(),
@@ -439,7 +481,10 @@ pub async fn supplier_test_update_email_scenarios<S: SupplierRepository>(ctx: &C
     assert_eq!(fetched3.email, None);
 }
 
-pub async fn supplier_test_update_non_existent<S: SupplierRepository>(ctx: &Context, repo: S) {
+pub async fn supplier_test_update_non_existent<S: SupplierRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
     let update_data = SupplierUpdate {
         name: Some("Non-existent".to_string()),
         ..Default::default()
@@ -453,12 +498,18 @@ pub async fn supplier_test_update_non_existent<S: SupplierRepository>(ctx: &Cont
 // Delete Tests
 // =============================================================================
 
-pub async fn supplier_test_delete_non_existent<S: SupplierRepository>(ctx: &Context, repo: S) {
+pub async fn supplier_test_delete_non_existent<S: SupplierRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
     let result = repo.delete(ctx, 999999).await;
     assert!(matches!(result, Err(NotFound(_))));
 }
 
-pub async fn supplier_test_get_deleted<S: SupplierRepository>(ctx: &Context, repo: S) {
+pub async fn supplier_test_get_deleted<S: SupplierRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
     let id = super::generate_test_id().await;
     let supplier = SupplierCreate {
         name: "To Delete".to_string(),
@@ -485,7 +536,10 @@ pub async fn supplier_test_get_deleted<S: SupplierRepository>(ctx: &Context, rep
     assert!(result.is_none());
 }
 
-pub async fn supplier_test_deleted_not_in_get_all<S: SupplierRepository>(ctx: &Context, repo: S) {
+pub async fn supplier_test_deleted_not_in_get_all<S: SupplierRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
     let id = super::generate_test_id().await;
     let supplier = SupplierCreate {
         name: "Will Be Deleted".to_string(),
@@ -526,7 +580,10 @@ pub async fn supplier_test_deleted_not_in_get_all<S: SupplierRepository>(ctx: &C
 // Get Tests
 // =============================================================================
 
-pub async fn supplier_test_get_by_id_not_found<S: SupplierRepository>(ctx: &Context, repo: S) {
+pub async fn supplier_test_get_by_id_not_found<S: SupplierRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
     let result = repo
         .get_by_id(ctx, 999999)
         .await
@@ -534,7 +591,10 @@ pub async fn supplier_test_get_by_id_not_found<S: SupplierRepository>(ctx: &Cont
     assert!(result.is_none());
 }
 
-pub async fn supplier_test_get_all<S: SupplierRepository>(ctx: &Context, repo: S) {
+pub async fn supplier_test_get_all<S: SupplierRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
     // Create multiple suppliers
     let mut created_ids = Vec::new();
     for i in 0..3 {
@@ -570,7 +630,10 @@ pub async fn supplier_test_get_all<S: SupplierRepository>(ctx: &Context, repo: S
 // Filter Tests
 // =============================================================================
 
-pub async fn supplier_test_filter_by_name<S: SupplierRepository>(ctx: &Context, repo: S) {
+pub async fn supplier_test_filter_by_name<S: SupplierRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
     let id1 = super::generate_test_id().await;
     let id2 = super::generate_test_id().await;
 
@@ -625,7 +688,10 @@ pub async fn supplier_test_filter_by_name<S: SupplierRepository>(ctx: &Context, 
     assert!(!suppliers.iter().any(|s| s.id == id2));
 }
 
-pub async fn supplier_test_filter_by_code<S: SupplierRepository>(ctx: &Context, repo: S) {
+pub async fn supplier_test_filter_by_code<S: SupplierRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
     let id1 = super::generate_test_id().await;
     let id2 = super::generate_test_id().await;
 
@@ -680,7 +746,10 @@ pub async fn supplier_test_filter_by_code<S: SupplierRepository>(ctx: &Context, 
     assert!(!suppliers.iter().any(|s| s.id == id2));
 }
 
-pub async fn supplier_test_filter_by_email<S: SupplierRepository>(ctx: &Context, repo: S) {
+pub async fn supplier_test_filter_by_email<S: SupplierRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
     let id1 = super::generate_test_id().await;
     let id2 = super::generate_test_id().await;
 
@@ -735,7 +804,10 @@ pub async fn supplier_test_filter_by_email<S: SupplierRepository>(ctx: &Context,
     assert!(!suppliers.iter().any(|s| s.id == id2));
 }
 
-pub async fn supplier_test_filter_by_phone<S: SupplierRepository>(ctx: &Context, repo: S) {
+pub async fn supplier_test_filter_by_phone<S: SupplierRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
     let id1 = super::generate_test_id().await;
     let id2 = super::generate_test_id().await;
 
@@ -790,7 +862,10 @@ pub async fn supplier_test_filter_by_phone<S: SupplierRepository>(ctx: &Context,
     assert!(!suppliers.iter().any(|s| s.id == id2));
 }
 
-pub async fn supplier_test_filter_by_npwp<S: SupplierRepository>(ctx: &Context, repo: S) {
+pub async fn supplier_test_filter_by_npwp<S: SupplierRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
     let id1 = super::generate_test_id().await;
     let id2 = super::generate_test_id().await;
 
@@ -845,7 +920,10 @@ pub async fn supplier_test_filter_by_npwp<S: SupplierRepository>(ctx: &Context, 
     assert!(!suppliers.iter().any(|s| s.id == id2));
 }
 
-pub async fn supplier_test_filter_multiple_criteria<S: SupplierRepository>(ctx: &Context, repo: S) {
+pub async fn supplier_test_filter_multiple_criteria<S: SupplierRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
     let id1 = super::generate_test_id().await;
     let id2 = super::generate_test_id().await;
     let id3 = super::generate_test_id().await;
@@ -925,7 +1003,10 @@ pub async fn supplier_test_filter_multiple_criteria<S: SupplierRepository>(ctx: 
 // Pagination Tests
 // =============================================================================
 
-pub async fn supplier_test_pagination<S: SupplierRepository>(ctx: &Context, repo: S) {
+pub async fn supplier_test_pagination<S: SupplierRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
     // Create 5 suppliers
     for i in 0..5 {
         let id = super::generate_test_id().await;
