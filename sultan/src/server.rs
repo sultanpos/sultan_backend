@@ -80,7 +80,7 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
     let token_repository = SqliteTokenRepository::new(pool.clone());
     let category_repository = SqliteCategoryRepository::new();
     let supplier_repository = SqliteSupplierRepository::new(pool.clone());
-    let customer_repository = SqliteCustomerRepository::new(pool.clone());
+    let customer_repository = SqliteCustomerRepository::new();
     let number_repository = SqliteNumberRepository::new(pool.clone());
 
     let password_hasher = Argon2PasswordHasher::default();
@@ -110,6 +110,7 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
         customer_repository,
         SnowflakeGenerator::new(1)?,
         number_service,
+        db_connection.clone(),
     );
     let supplier_service = SupplierService::new(supplier_repository, SnowflakeGenerator::new(1)?);
     let user_service = UserService::new(
