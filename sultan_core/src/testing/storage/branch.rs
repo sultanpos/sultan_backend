@@ -115,7 +115,7 @@ pub async fn branch_test_partial_update<B: BranchRepository>(
         .expect("Failed to update branch");
 
     let fetched = repo
-        .get_by_id(&ctx, id)
+        .get_by_id(ctx, id)
         .await
         .expect("Failed to get branch")
         .expect("Branch not found");
@@ -140,7 +140,7 @@ pub async fn branch_test_partial_update<B: BranchRepository>(
         .expect("Failed to update branch");
 
     let fetched2 = repo
-        .get_by_id(&ctx, id)
+        .get_by_id(ctx, id)
         .await
         .expect("Failed to get branch")
         .expect("Branch not found");
@@ -231,10 +231,7 @@ pub async fn branch_test_get_all_branches<B: BranchRepository>(
             .expect("Failed to create branch");
     }
 
-    let branches = repo
-        .get_all(&ctx)
-        .await
-        .expect("Failed to get all branches");
+    let branches = repo.get_all(ctx).await.expect("Failed to get all branches");
     assert!(branches.len() >= 3);
 }
 
@@ -271,7 +268,7 @@ pub async fn branch_test_create_branch_with_all_fields<B: BranchRepository>(
         .expect("Failed to create branch");
 
     let fetched = repo
-        .get_by_id(&ctx, id)
+        .get_by_id(ctx, id)
         .await
         .expect("Failed to get branch")
         .expect("Branch not found");
@@ -314,7 +311,7 @@ pub async fn branch_test_update_address_scenarios<B: BranchRepository>(
         .expect("Failed to update address with value");
 
     let fetched1 = repo
-        .get_by_id(&ctx, id)
+        .get_by_id(ctx, id)
         .await
         .expect("Failed to get branch")
         .expect("Branch not found");
@@ -341,7 +338,7 @@ pub async fn branch_test_update_address_scenarios<B: BranchRepository>(
         .expect("Failed to update without address change");
 
     let fetched2 = repo
-        .get_by_id(&ctx, id)
+        .get_by_id(ctx, id)
         .await
         .expect("Failed to get branch")
         .expect("Branch not found");
@@ -363,7 +360,7 @@ pub async fn branch_test_update_address_scenarios<B: BranchRepository>(
         .expect("Failed to update address to nil");
 
     let fetched3 = repo
-        .get_by_id(&ctx, id)
+        .get_by_id(ctx, id)
         .await
         .expect("Failed to get branch")
         .expect("Branch not found");

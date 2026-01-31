@@ -96,6 +96,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(clippy::type_complexity)]
 mod tests {
     use super::*;
     use crate::application::create_mock_id_gen;

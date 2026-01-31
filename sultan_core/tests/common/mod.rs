@@ -113,11 +113,9 @@ pub async fn init_sqlite_db() -> DatabaseConnection {
         .min_connections(1)
         .sqlx_logging(false);
 
-    let db_connection = Database::connect(opt)
+    Database::connect(opt)
         .await
-        .expect("unable to connect sqlite");
-
-    db_connection
+        .expect("unable to connect sqlite")
 }
 
 pub async fn setup_test_db() -> SqlitePool {

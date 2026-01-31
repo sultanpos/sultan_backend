@@ -85,6 +85,7 @@ impl<R: BranchRepository, I: IdGenerator> BranchServiceTrait for BranchService<R
 }
 
 #[cfg(test)]
+#[allow(clippy::type_complexity)]
 mod tests {
     use super::*;
     use crate::application::create_mock_id_gen;

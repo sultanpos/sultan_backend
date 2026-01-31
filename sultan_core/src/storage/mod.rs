@@ -7,7 +7,6 @@ pub mod sell_price_repo;
 pub mod sqlite;
 pub mod supplier_repo;
 pub mod token_repo;
-pub mod transaction;
 pub mod unit_repo;
 pub mod user_repo;
 

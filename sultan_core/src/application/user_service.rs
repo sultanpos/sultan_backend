@@ -198,6 +198,7 @@ where
 // =============================================================================
 
 #[cfg(test)]
+#[allow(clippy::type_complexity)]
 mod tests {
     use super::*;
     use crate::application::InMemoryCache;

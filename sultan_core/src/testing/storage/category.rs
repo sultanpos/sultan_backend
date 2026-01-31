@@ -48,12 +48,12 @@ pub async fn category_test_create<C: CategoryRepository>(
         description: Some("Electronic devices".to_string()),
         parent_id: None,
     };
-    repo.create(&ctx, id, &category)
+    repo.create(ctx, id, &category)
         .await
         .expect("Failed to create category");
 
     let category = repo
-        .get_by_id(&ctx, id)
+        .get_by_id(ctx, id)
         .await
         .expect("Failed to get category")
         .expect("Category not found");

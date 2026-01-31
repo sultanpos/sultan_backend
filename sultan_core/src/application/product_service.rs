@@ -428,6 +428,7 @@ impl<R: ProductRepository, I: IdGenerator> ProductServiceTrait for ProductServic
 }
 
 #[cfg(test)]
+#[allow(clippy::type_complexity)]
 mod tests {
     use super::*;
     use crate::application::create_mock_id_gen;
