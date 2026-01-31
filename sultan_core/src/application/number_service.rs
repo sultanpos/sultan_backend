@@ -130,7 +130,11 @@ where
         };
 
         // Generate next number atomically
-        let next_number = self.repository.generate_next(ctx, &params).await?;
+        let repo_ctx = RepoCtx {
+            ctx: ctx.clone(),
+            db: self.db.clone(),
+        };
+        let next_number = self.repository.generate_next(&repo_ctx, &params).await?;
 
         // Format and return the number string
         Ok(Self::format_number(
@@ -149,16 +153,51 @@ mod tests {
     use crate::domain::model::branch::Branch;
     use async_trait::async_trait;
     use chrono::Utc;
-    use mockall::mock;
     use sea_orm::{ConnectionTrait, Database};
     use std::sync::{Arc, Mutex};
 
-    mock! {
-        pub NumberRepo {}
-        #[async_trait]
-        impl NumberRepository for NumberRepo {
-            async fn generate_next(&self, ctx: &Context, params: &NumberGenerateParams) -> DomainResult<i32>;
-            async fn get_sequence(&self, ctx: &Context, params: &NumberGenerateParams) -> DomainResult<Option<crate::domain::model::number::NumberSequence>>;
+    // Manual mock for NumberRepository (mockall doesn't support impl Trait)
+    struct MockNumberRepo {
+        generate_next_fn:
+            Arc<Mutex<Option<Box<dyn Fn(&NumberGenerateParams) -> DomainResult<i32> + Send>>>>,
+    }
+
+    impl MockNumberRepo {
+        fn new() -> Self {
+            Self {
+                generate_next_fn: Arc::new(Mutex::new(None)),
+            }
+        }
+
+        fn expect_generate_next<F>(&self, f: F)
+        where
+            F: Fn(&NumberGenerateParams) -> DomainResult<i32> + Send + 'static,
+        {
+            *self.generate_next_fn.lock().unwrap() = Some(Box::new(f));
+        }
+    }
+
+    #[async_trait]
+    impl NumberRepository for MockNumberRepo {
+        async fn generate_next(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            params: &NumberGenerateParams,
+        ) -> DomainResult<i32> {
+            let lock = self.generate_next_fn.lock().unwrap();
+            if let Some(f) = lock.as_ref() {
+                f(params)
+            } else {
+                panic!("generate_next not mocked");
+            }
+        }
+
+        async fn get_sequence(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            _params: &NumberGenerateParams,
+        ) -> DomainResult<Option<crate::domain::model::number::NumberSequence>> {
+            panic!("get_sequence not mocked");
         }
     }
 
@@ -251,11 +290,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_generate_global_number() {
-        let mut number_repo = MockNumberRepo::new();
+        let number_repo = MockNumberRepo::new();
         let branch_repo = MockBranchRepo::new();
         let db = create_test_db().await;
 
-        number_repo.expect_generate_next().returning(|_, _| Ok(1));
+        number_repo.expect_generate_next(|_| Ok(1));
 
         let service = NumberService::new(number_repo, branch_repo, db);
         let ctx = create_test_context();
@@ -271,11 +310,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_generate_with_month() {
-        let mut number_repo = MockNumberRepo::new();
+        let number_repo = MockNumberRepo::new();
         let branch_repo = MockBranchRepo::new();
         let db = create_test_db().await;
 
-        number_repo.expect_generate_next().returning(|_, _| Ok(1));
+        number_repo.expect_generate_next(|_| Ok(1));
 
         let service = NumberService::new(number_repo, branch_repo, db);
         let ctx = create_test_context();
@@ -293,11 +332,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_generate_with_branch() {
-        let mut number_repo = MockNumberRepo::new();
+        let number_repo = MockNumberRepo::new();
         let branch_repo = MockBranchRepo::new();
         let db = create_test_db().await;
 
-        number_repo.expect_generate_next().returning(|_, _| Ok(1));
+        number_repo.expect_generate_next(|_| Ok(1));
 
         branch_repo.expect_get_by_id(|_| Ok(Some(create_test_branch(1, "BR01"))));
 
@@ -314,11 +353,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_generate_with_branch_and_month() {
-        let mut number_repo = MockNumberRepo::new();
+        let number_repo = MockNumberRepo::new();
         let branch_repo = MockBranchRepo::new();
         let db = create_test_db().await;
 
-        number_repo.expect_generate_next().returning(|_, _| Ok(1));
+        number_repo.expect_generate_next(|_| Ok(1));
 
         branch_repo.expect_get_by_id(|_| Ok(Some(create_test_branch(1, "BR01"))));
 

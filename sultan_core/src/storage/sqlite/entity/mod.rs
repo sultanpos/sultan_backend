@@ -1,6 +1,7 @@
 pub mod branch;
 pub mod category;
 pub mod customer;
+pub mod number_sequence;
 pub mod permission;
 pub mod sell_discount;
 pub mod sell_price;
@@ -48,6 +49,11 @@ pub use token::ActiveModel as TokenActiveModel;
 pub use token::Column as TokenColumn;
 pub use token::Entity as TokenEntity;
 pub use token::Model as TokenModel;
+
+pub use number_sequence::ActiveModel as NumberSequenceActiveModel;
+pub use number_sequence::Column as NumberSequenceColumn;
+pub use number_sequence::Entity as NumberSequenceEntity;
+pub use number_sequence::Model as NumberSequenceModel;
 
 pub use unit::ActiveModel as UnitActiveModel;
 pub use unit::Column as UnitColumn;
