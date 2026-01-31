@@ -11,7 +11,7 @@ Sultan Backend is built using Clean Architecture principles with clear separatio
 - **sultan_core**: Domain layer (git submodule)
   - Domain models, entities, and context
   - Application services (auth, branch, category, customer, product, supplier, user)
-  - Storage abstractions (repositories)
+  - Storage abstractions (repositories with SeaORM)
   - Cryptography utilities (JWT, password hashing)
   - Database migrations
   
@@ -43,8 +43,8 @@ Sultan Backend is built using Clean Architecture principles with clear separatio
 
 - **Technical Features**
   - Async/await with Tokio runtime
-  - SQLite database with SQLx
-  - Compile-time query checking
+  - SQLite database with SeaORM ORM
+  - Type-safe query builder
   - Database migrations
   - Request validation
   - Comprehensive error handling
@@ -86,9 +86,10 @@ WRITE_LOG_TO_FILE=0
 
 ### 4. Run migrations
 
-Migrations run automatically on application startup. The system will:
+Migrations are stored in the root `migrations/` directory and are applied using SeaORM migration tools. The system will:
 - Create the database if it doesn't exist
-- Apply all pending migrations from `sultan_core/migrations`
+- Apply all pending migrations
+- Each table follows the standard Sultan schema with soft delete support
 
 ### 5. Build and run
 
@@ -187,6 +188,10 @@ sultan_backend/
 ├── .github/
 │   └── workflows/
 │       └── pr.yml              # CI/CD pipeline
+├── migrations/                 # Database migrations (raw SQL)
+│   ├── 20251123020602_branch.sql
+│   ├── 20251123021242_user.sql
+│   └── ...
 ├── sultan/                     # Web layer
 │   ├── src/
 │   │   ├── config.rs          # Configuration management
@@ -215,10 +220,16 @@ sultan_backend/
 │   ├── src/
 │   │   ├── application/       # Business logic services
 │   │   ├── domain/            # Domain models
-│   │   ├── storage/           # Repository implementations
+│   │   ├── storage/           # Repository traits & implementations
+│   │   │   ├── sqlite/        # SeaORM repository implementations
+│   │   │   │   ├── entity/    # SeaORM entities
+│   │   │   │   ├── branch.rs
+│   │   │   │   ├── category.rs
+│   │   │   │   └── ...
+│   │   │   ├── branch_repo.rs # Repository trait
+│   │   │   └── ...
 │   │   ├── crypto/            # JWT & password utilities
 │   │   └── snowflake/         # ID generation
-│   ├── migrations/            # Database migrations
 │   └── tests/                 # Unit & repository tests
 ├── Cargo.toml                 # Workspace configuration
 └── README.md
@@ -257,6 +268,8 @@ For detailed request/response schemas and to test the endpoints interactively, v
 
 - **Clean Architecture**: Clear separation between domain, application, and infrastructure layers
 - **Dependency Inversion**: Core domain doesn't depend on external frameworks
+- **Repository Pattern**: Data access abstracted through traits with SeaORM
+- **RepoCtx Pattern**: Combines domain context with database connection/transaction
 - **Trait-based Design**: Easy to mock and test with dependency injection
 - **Type Safety**: Leverage Rust's type system for compile-time guarantees
 - **Async First**: Built for high concurrency with Tokio
@@ -266,7 +279,9 @@ For detailed request/response schemas and to test the endpoints interactively, v
 - **Unit Tests**: In `sultan_core/tests/` for business logic and repositories
 - **Integration Tests**: In `sultan_web/tests/` for API endpoints and middleware
 - **Configuration Tests**: In `sultan/tests/` for environment handling
-- **Mock Services**: Trait-based mocking with dependency injection for isolated testing
+- **Manual Mock Pattern**: For repositories with `impl Trait` parameters (mockall doesn't support this)
+- **In-Memory Database**: Use `Database::connect("sqlite::memory:")` for isolated repository tests
+- **RepoCtx Testing**: Tests use `RepoCtx` with both direct connections and transactions
 - **Serial Tests**: Environment-dependent tests use `serial_test` crate to prevent race conditions
 - **Coverage**: Tracked with cargo-llvm-cov and SonarCloud for quality gates
 - **CI/CD**: Automated testing on every pull request with GitHub Actions
@@ -316,7 +331,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🙏 Acknowledgments
 
 - Built with [Axum](https://github.com/tokio-rs/axum) web framework
-- Database operations with [SQLx](https://github.com/launchbadge/sqlx)
+- Database operations with [SeaORM](https://github.com/SeaQL/sea-orm) ORM
 - JWT handling with [jsonwebtoken](https://github.com/Keats/jsonwebtoken)
 - Password hashing with [Argon2](https://github.com/RustCrypto/password-hashes)
 

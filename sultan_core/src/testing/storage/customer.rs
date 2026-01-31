@@ -1,6 +1,5 @@
 use crate::{
     domain::{
-        Context,
         error::Error::NotFound,
         model::{
             Update,
@@ -8,17 +7,10 @@ use crate::{
             pagination::PaginationOptions,
         },
     },
-    storage::CustomerRepository,
+    storage::{CustomerRepository, RepoCtx},
 };
+use sea_orm::DatabaseConnection;
 use serde_json::json;
-
-pub async fn create_sqlite_customer_repo() -> (Context, impl CustomerRepository) {
-    let pool = super::init_sqlite_pool().await;
-    (
-        Context::new(),
-        crate::storage::sqlite::customer::SqliteCustomerRepository::new(pool),
-    )
-}
 
 pub fn default_filter() -> CustomerFilter {
     CustomerFilter {
@@ -30,11 +22,36 @@ pub fn default_filter() -> CustomerFilter {
     }
 }
 
+pub async fn customer_test_all<C, F, Fut>(repo: &C, ctx_factory: F)
+where
+    C: CustomerRepository,
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = RepoCtx<DatabaseConnection>>,
+{
+    customer_test_repo_integration(&ctx_factory().await, repo).await;
+    customer_test_create_with_all_fields(&ctx_factory().await, repo).await;
+    customer_test_create_minimal_fields(&ctx_factory().await, repo).await;
+    customer_test_partial_update(&ctx_factory().await, repo).await;
+    customer_test_update_address_scenarios(&ctx_factory().await, repo).await;
+    customer_test_update_metadata(&ctx_factory().await, repo).await;
+    customer_test_update_email_scenarios(&ctx_factory().await, repo).await;
+    customer_test_update_level(&ctx_factory().await, repo).await;
+    customer_test_update_non_existent(&ctx_factory().await, repo).await;
+    customer_test_delete_non_existent(&ctx_factory().await, repo).await;
+    customer_test_get_deleted(&ctx_factory().await, repo).await;
+    customer_test_deleted_not_in_get_all(&ctx_factory().await, repo).await;
+    customer_test_get_by_number_success(&ctx_factory().await, repo).await;
+    customer_test_get_by_number_not_found(&ctx_factory().await, repo).await;
+}
+
 // =============================================================================
 // Basic CRUD Tests
 // =============================================================================
 
-pub async fn customer_test_repo_integration<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_repo_integration<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     let id = super::generate_test_id().await;
     let customer = CustomerCreate {
         number: "CUST001".to_string(),
@@ -95,7 +112,10 @@ pub async fn customer_test_repo_integration<C: CustomerRepository>(ctx: &Context
     assert!(deleted_customer.is_none());
 }
 
-pub async fn customer_test_create_with_all_fields<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_create_with_all_fields<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     let id = super::generate_test_id().await;
     let metadata = json!({
         "membership": "gold",
@@ -133,7 +153,10 @@ pub async fn customer_test_create_with_all_fields<C: CustomerRepository>(ctx: &C
     assert_eq!(fetched.metadata.unwrap()["membership"], "gold");
 }
 
-pub async fn customer_test_create_minimal_fields<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_create_minimal_fields<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     let id = super::generate_test_id().await;
     let customer = CustomerCreate {
         number: "MIN001".to_string(),
@@ -168,7 +191,10 @@ pub async fn customer_test_create_minimal_fields<C: CustomerRepository>(ctx: &Co
 // Update Tests
 // =============================================================================
 
-pub async fn customer_test_partial_update<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_partial_update<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     let id = super::generate_test_id().await;
     let customer = CustomerCreate {
         number: "ORIG001".to_string(),
@@ -210,7 +236,10 @@ pub async fn customer_test_partial_update<C: CustomerRepository>(ctx: &Context, 
     assert_eq!(fetched.level, 2);
 }
 
-pub async fn customer_test_update_address_scenarios<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_update_address_scenarios<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     let id = super::generate_test_id().await;
     let customer = CustomerCreate {
         number: "ADDR001".to_string(),
@@ -303,7 +332,10 @@ pub async fn customer_test_update_address_scenarios<C: CustomerRepository>(ctx: 
     );
 }
 
-pub async fn customer_test_update_metadata<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_update_metadata<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     let id = super::generate_test_id().await;
     let initial_metadata = json!({"version": 1});
 
@@ -360,7 +392,10 @@ pub async fn customer_test_update_metadata<C: CustomerRepository>(ctx: &Context,
     assert_eq!(fetched2.metadata, None);
 }
 
-pub async fn customer_test_update_email_scenarios<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_update_email_scenarios<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     let id = super::generate_test_id().await;
     let customer = CustomerCreate {
         number: "EMAIL001".to_string(),
@@ -430,7 +465,10 @@ pub async fn customer_test_update_email_scenarios<C: CustomerRepository>(ctx: &C
     assert_eq!(fetched3.email, None);
 }
 
-pub async fn customer_test_update_level<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_update_level<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     let id = super::generate_test_id().await;
     let customer = CustomerCreate {
         number: "LVL001".to_string(),
@@ -464,7 +502,10 @@ pub async fn customer_test_update_level<C: CustomerRepository>(ctx: &Context, re
     assert_eq!(fetched.level, 5);
 }
 
-pub async fn customer_test_update_non_existent<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_update_non_existent<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     let update_data = CustomerUpdate {
         name: Some("Non-existent".to_string()),
         ..Default::default()
@@ -478,12 +519,18 @@ pub async fn customer_test_update_non_existent<C: CustomerRepository>(ctx: &Cont
 // Delete Tests
 // =============================================================================
 
-pub async fn customer_test_delete_non_existent<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_delete_non_existent<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     let result = repo.delete(ctx, 999999).await;
     assert!(matches!(result, Err(NotFound(_))));
 }
 
-pub async fn customer_test_get_deleted<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_get_deleted<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     let id = super::generate_test_id().await;
     let customer = CustomerCreate {
         number: "DEL001".to_string(),
@@ -509,7 +556,10 @@ pub async fn customer_test_get_deleted<C: CustomerRepository>(ctx: &Context, rep
     assert!(result.is_none());
 }
 
-pub async fn customer_test_deleted_not_in_get_all<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_deleted_not_in_get_all<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     let id = super::generate_test_id().await;
     let customer = CustomerCreate {
         number: "WBD001".to_string(),
@@ -549,7 +599,10 @@ pub async fn customer_test_deleted_not_in_get_all<C: CustomerRepository>(ctx: &C
 // Get Tests
 // =============================================================================
 
-pub async fn customer_test_get_by_number_success<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_get_by_number_success<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     let id = super::generate_test_id().await;
     let customer = CustomerCreate {
         number: "CUST-NUM-001".to_string(),
@@ -578,7 +631,10 @@ pub async fn customer_test_get_by_number_success<C: CustomerRepository>(ctx: &Co
     assert_eq!(retrieved.email, Some("number@customer.com".to_string()));
 }
 
-pub async fn customer_test_get_by_number_not_found<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_get_by_number_not_found<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     let result = repo
         .get_by_number(ctx, "NONEXISTENT-NUMBER")
         .await
@@ -586,7 +642,10 @@ pub async fn customer_test_get_by_number_not_found<C: CustomerRepository>(ctx: &
     assert!(result.is_none());
 }
 
-pub async fn customer_test_get_by_number_deleted<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_get_by_number_deleted<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     let id = super::generate_test_id().await;
     let customer = CustomerCreate {
         number: "CUST-DEL-001".to_string(),
@@ -614,8 +673,8 @@ pub async fn customer_test_get_by_number_deleted<C: CustomerRepository>(ctx: &Co
 }
 
 pub async fn customer_test_get_by_number_case_sensitive<C: CustomerRepository>(
-    ctx: &Context,
-    repo: C,
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
 ) {
     let id = super::generate_test_id().await;
     let customer = CustomerCreate {
@@ -650,7 +709,10 @@ pub async fn customer_test_get_by_number_case_sensitive<C: CustomerRepository>(
     );
 }
 
-pub async fn customer_test_get_by_id_not_found<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_get_by_id_not_found<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     let result = repo
         .get_by_id(ctx, 999999)
         .await
@@ -658,7 +720,10 @@ pub async fn customer_test_get_by_id_not_found<C: CustomerRepository>(ctx: &Cont
     assert!(result.is_none());
 }
 
-pub async fn customer_test_get_all<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_get_all<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     // Create multiple customers
     let mut created_ids = Vec::new();
     for i in 0..3 {
@@ -693,7 +758,10 @@ pub async fn customer_test_get_all<C: CustomerRepository>(ctx: &Context, repo: C
 // Filter Tests
 // =============================================================================
 
-pub async fn customer_test_filter_by_name<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_filter_by_name<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     let id1 = super::generate_test_id().await;
     let id2 = super::generate_test_id().await;
 
@@ -746,7 +814,10 @@ pub async fn customer_test_filter_by_name<C: CustomerRepository>(ctx: &Context, 
     assert!(!customers.iter().any(|c| c.id == id2));
 }
 
-pub async fn customer_test_filter_by_number<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_filter_by_number<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     let id1 = super::generate_test_id().await;
     let id2 = super::generate_test_id().await;
 
@@ -799,7 +870,10 @@ pub async fn customer_test_filter_by_number<C: CustomerRepository>(ctx: &Context
     assert!(!customers.iter().any(|c| c.id == id2));
 }
 
-pub async fn customer_test_filter_by_email<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_filter_by_email<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     let id1 = super::generate_test_id().await;
     let id2 = super::generate_test_id().await;
 
@@ -852,7 +926,10 @@ pub async fn customer_test_filter_by_email<C: CustomerRepository>(ctx: &Context,
     assert!(!customers.iter().any(|c| c.id == id2));
 }
 
-pub async fn customer_test_filter_by_phone<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_filter_by_phone<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     let id1 = super::generate_test_id().await;
     let id2 = super::generate_test_id().await;
 
@@ -905,7 +982,10 @@ pub async fn customer_test_filter_by_phone<C: CustomerRepository>(ctx: &Context,
     assert!(!customers.iter().any(|c| c.id == id2));
 }
 
-pub async fn customer_test_filter_by_level<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_filter_by_level<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     let id1 = super::generate_test_id().await;
     let id2 = super::generate_test_id().await;
 
@@ -958,7 +1038,10 @@ pub async fn customer_test_filter_by_level<C: CustomerRepository>(ctx: &Context,
     assert!(!customers.iter().any(|c| c.id == id2));
 }
 
-pub async fn customer_test_filter_multiple_criteria<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_filter_multiple_criteria<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     let id1 = super::generate_test_id().await;
     let id2 = super::generate_test_id().await;
     let id3 = super::generate_test_id().await;
@@ -1035,7 +1118,10 @@ pub async fn customer_test_filter_multiple_criteria<C: CustomerRepository>(ctx: 
 // Pagination Tests
 // =============================================================================
 
-pub async fn customer_test_pagination<C: CustomerRepository>(ctx: &Context, repo: C) {
+pub async fn customer_test_pagination<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
     // Create 5 customers
     for i in 0..5 {
         let id = super::generate_test_id().await;

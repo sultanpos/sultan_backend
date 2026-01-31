@@ -1,23 +1,35 @@
+use sea_orm::DatabaseConnection;
+
 use crate::{
-    domain::{
-        Context,
-        model::{
-            Update,
-            branch::{BranchCreate, BranchUpdate},
-        },
+    domain::model::{
+        Update,
+        branch::{BranchCreate, BranchUpdate},
     },
-    storage::BranchRepository,
+    storage::{BranchRepository, RepoCtx},
 };
 
-pub async fn create_sqlite_branch_repo() -> (Context, impl BranchRepository) {
-    let pool = super::init_sqlite_pool().await;
-    (
-        Context::new(),
-        crate::storage::sqlite::branch::SqliteBranchRepository::new(pool),
-    )
+pub async fn branch_test_all<C, F, Fut>(repo: &C, ctx_factory: F)
+where
+    C: BranchRepository,
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = RepoCtx<DatabaseConnection>>,
+{
+    branch_test_repo_integration(&ctx_factory().await, repo).await;
+    branch_test_partial_update(&ctx_factory().await, repo).await;
+    branch_test_non_existent(&ctx_factory().await, repo).await;
+    branch_test_delete_non_existent(&ctx_factory().await, repo).await;
+    branch_test_get_deleted(&ctx_factory().await, repo).await;
+    branch_test_get_by_id_not_found(&ctx_factory().await, repo).await;
+    branch_test_get_all_branches(&ctx_factory().await, repo).await;
+    branch_test_update_branch_not_found(&ctx_factory().await, repo).await;
+    branch_test_create_branch_with_all_fields(&ctx_factory().await, repo).await;
+    branch_test_update_address_scenarios(&ctx_factory().await, repo).await;
 }
 
-pub async fn branch_test_repo_integration<B: BranchRepository>(ctx: &Context, repo: B) {
+pub async fn branch_test_repo_integration<B: BranchRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &B,
+) {
     let id = super::generate_test_id().await;
     let branch = BranchCreate {
         is_main: true,
@@ -30,13 +42,13 @@ pub async fn branch_test_repo_integration<B: BranchRepository>(ctx: &Context, re
     };
 
     // Test Create
-    repo.create(&ctx, id, &branch)
+    repo.create(ctx, id, &branch)
         .await
         .expect("Failed to create branch");
 
     // Test Get By ID
     let fetched_branch = repo
-        .get_by_id(&ctx, id)
+        .get_by_id(ctx, id)
         .await
         .expect("Failed to get branch")
         .expect("Branch not found");
@@ -48,37 +60,35 @@ pub async fn branch_test_repo_integration<B: BranchRepository>(ctx: &Context, re
         name: Some("Updated Branch".to_string()),
         ..Default::default()
     };
-    repo.update(&ctx, id, &update_data)
+    repo.update(ctx, id, &update_data)
         .await
         .expect("Failed to update branch");
 
     let fetched_updated = repo
-        .get_by_id(&ctx, id)
+        .get_by_id(ctx, id)
         .await
         .expect("Failed to get updated branch")
         .expect("Updated branch not found");
     assert_eq!(fetched_updated.name, "Updated Branch");
 
     // Test Get All
-    let branches = repo
-        .get_all(&ctx)
-        .await
-        .expect("Failed to get all branches");
+    let branches = repo.get_all(ctx).await.expect("Failed to get all branches");
     // Note: Other tests might have added branches, so we check if it contains at least our branch
     assert!(branches.iter().any(|b| b.id == id));
 
     // Test Delete
-    repo.delete(&ctx, id)
-        .await
-        .expect("Failed to delete branch");
+    repo.delete(ctx, id).await.expect("Failed to delete branch");
     let deleted_branch = repo
-        .get_by_id(&ctx, id)
+        .get_by_id(ctx, id)
         .await
         .expect("Failed to get deleted branch");
     assert!(deleted_branch.is_none());
 }
 
-pub async fn branch_test_partial_update<B: BranchRepository>(ctx: &Context, repo: B) {
+pub async fn branch_test_partial_update<B: BranchRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &B,
+) {
     let id = super::generate_test_id().await;
     let branch = BranchCreate {
         is_main: false,
@@ -91,7 +101,7 @@ pub async fn branch_test_partial_update<B: BranchRepository>(ctx: &Context, repo
     };
 
     // Create the branch
-    repo.create(&ctx, id, &branch)
+    repo.create(ctx, id, &branch)
         .await
         .expect("Failed to create branch");
 
@@ -100,12 +110,12 @@ pub async fn branch_test_partial_update<B: BranchRepository>(ctx: &Context, repo
         name: Some("Updated Name".to_string()),
         ..Default::default()
     };
-    repo.update(&ctx, id, &partial_update)
+    repo.update(ctx, id, &partial_update)
         .await
         .expect("Failed to update branch");
 
     let fetched = repo
-        .get_by_id(&ctx, id)
+        .get_by_id(ctx, id)
         .await
         .expect("Failed to get branch")
         .expect("Branch not found");
@@ -125,12 +135,12 @@ pub async fn branch_test_partial_update<B: BranchRepository>(ctx: &Context, repo
         code: Some("NEW".to_string()),
         ..Default::default()
     };
-    repo.update(&ctx, id, &partial_update2)
+    repo.update(ctx, id, &partial_update2)
         .await
         .expect("Failed to update branch");
 
     let fetched2 = repo
-        .get_by_id(&ctx, id)
+        .get_by_id(ctx, id)
         .await
         .expect("Failed to get branch")
         .expect("Branch not found");
@@ -144,22 +154,31 @@ pub async fn branch_test_partial_update<B: BranchRepository>(ctx: &Context, repo
     assert_eq!(fetched2.image, Some("original.png".to_string())); // Should remain unchanged
 }
 
-pub async fn branch_test_non_existent<B: BranchRepository>(ctx: &Context, repo: B) {
+pub async fn branch_test_non_existent<B: BranchRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &B,
+) {
     let update_data = BranchUpdate {
         name: Some("Non-existent".to_string()),
         ..Default::default()
     };
 
-    let result = repo.update(&ctx, 999, &update_data).await;
+    let result = repo.update(ctx, 999, &update_data).await;
     assert!(matches!(result, Err(crate::domain::Error::NotFound(_))));
 }
 
-pub async fn branch_test_delete_non_existent<B: BranchRepository>(ctx: &Context, repo: B) {
-    let result = repo.delete(&ctx, 999).await;
+pub async fn branch_test_delete_non_existent<B: BranchRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &B,
+) {
+    let result = repo.delete(ctx, 999).await;
     assert!(matches!(result, Err(crate::domain::Error::NotFound(_))));
 }
 
-pub async fn branch_test_get_deleted<B: BranchRepository>(ctx: &Context, repo: B) {
+pub async fn branch_test_get_deleted<B: BranchRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &B,
+) {
     let id = super::generate_test_id().await;
     let branch = BranchCreate {
         is_main: false,
@@ -171,29 +190,30 @@ pub async fn branch_test_get_deleted<B: BranchRepository>(ctx: &Context, repo: B
         image: None,
     };
 
-    repo.create(&ctx, id, &branch)
+    repo.create(ctx, id, &branch)
         .await
         .expect("Failed to create branch");
-    repo.delete(&ctx, id)
-        .await
-        .expect("Failed to delete branch");
+    repo.delete(ctx, id).await.expect("Failed to delete branch");
 
+    let result = repo.get_by_id(ctx, id).await.expect("Failed to get branch");
+    assert!(result.is_none());
+}
+
+pub async fn branch_test_get_by_id_not_found<B: BranchRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &B,
+) {
     let result = repo
-        .get_by_id(&ctx, id)
+        .get_by_id(ctx, 9999)
         .await
         .expect("Failed to get branch");
     assert!(result.is_none());
 }
 
-pub async fn branch_test_get_by_id_not_found<B: BranchRepository>(ctx: &Context, repo: B) {
-    let result = repo
-        .get_by_id(&ctx, 9999)
-        .await
-        .expect("Failed to get branch");
-    assert!(result.is_none());
-}
-
-pub async fn branch_test_get_all_branches<B: BranchRepository>(ctx: &Context, repo: B) {
+pub async fn branch_test_get_all_branches<B: BranchRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &B,
+) {
     // Create multiple branches
     for i in 0..3 {
         let id = super::generate_test_id().await;
@@ -206,31 +226,31 @@ pub async fn branch_test_get_all_branches<B: BranchRepository>(ctx: &Context, re
             npwp: None,
             image: None,
         };
-        repo.create(&ctx, id, &branch)
+        repo.create(ctx, id, &branch)
             .await
             .expect("Failed to create branch");
     }
 
-    let branches = repo
-        .get_all(&ctx)
-        .await
-        .expect("Failed to get all branches");
+    let branches = repo.get_all(ctx).await.expect("Failed to get all branches");
     assert!(branches.len() >= 3);
 }
 
-pub async fn branch_test_update_branch_not_found<B: BranchRepository>(ctx: &Context, repo: B) {
+pub async fn branch_test_update_branch_not_found<B: BranchRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &B,
+) {
     let update_data = BranchUpdate {
         name: Some("Non-existent".to_string()),
         ..Default::default()
     };
 
-    let result = repo.update(&ctx, 9999, &update_data).await;
+    let result = repo.update(ctx, 9999, &update_data).await;
     assert!(matches!(result, Err(crate::domain::Error::NotFound(_))));
 }
 
 pub async fn branch_test_create_branch_with_all_fields<B: BranchRepository>(
-    ctx: &Context,
-    repo: B,
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &B,
 ) {
     let id = super::generate_test_id().await;
     let branch = BranchCreate {
@@ -243,12 +263,12 @@ pub async fn branch_test_create_branch_with_all_fields<B: BranchRepository>(
         image: Some("branch.png".to_string()),
     };
 
-    repo.create(&ctx, id, &branch)
+    repo.create(ctx, id, &branch)
         .await
         .expect("Failed to create branch");
 
     let fetched = repo
-        .get_by_id(&ctx, id)
+        .get_by_id(ctx, id)
         .await
         .expect("Failed to get branch")
         .expect("Branch not found");
@@ -261,7 +281,10 @@ pub async fn branch_test_create_branch_with_all_fields<B: BranchRepository>(
     assert_eq!(fetched.image, Some("branch.png".to_string()));
 }
 
-pub async fn branch_test_update_address_scenarios<B: BranchRepository>(ctx: &Context, repo: B) {
+pub async fn branch_test_update_address_scenarios<B: BranchRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &B,
+) {
     let id = super::generate_test_id().await;
     let branch = BranchCreate {
         is_main: false,
@@ -274,7 +297,7 @@ pub async fn branch_test_update_address_scenarios<B: BranchRepository>(ctx: &Con
     };
 
     // Create the branch
-    repo.create(&ctx, id, &branch)
+    repo.create(ctx, id, &branch)
         .await
         .expect("Failed to create branch");
 
@@ -283,12 +306,12 @@ pub async fn branch_test_update_address_scenarios<B: BranchRepository>(ctx: &Con
         address: Update::Set("456 Updated Ave".to_string()),
         ..Default::default()
     };
-    repo.update(&ctx, id, &update_with_value)
+    repo.update(ctx, id, &update_with_value)
         .await
         .expect("Failed to update address with value");
 
     let fetched1 = repo
-        .get_by_id(&ctx, id)
+        .get_by_id(ctx, id)
         .await
         .expect("Failed to get branch")
         .expect("Branch not found");
@@ -310,12 +333,12 @@ pub async fn branch_test_update_address_scenarios<B: BranchRepository>(ctx: &Con
         address: Update::Unchanged,             // Don't touch address
         ..Default::default()
     };
-    repo.update(&ctx, id, &update_no_change)
+    repo.update(ctx, id, &update_no_change)
         .await
         .expect("Failed to update without address change");
 
     let fetched2 = repo
-        .get_by_id(&ctx, id)
+        .get_by_id(ctx, id)
         .await
         .expect("Failed to get branch")
         .expect("Branch not found");
@@ -332,12 +355,12 @@ pub async fn branch_test_update_address_scenarios<B: BranchRepository>(ctx: &Con
         address: Update::Clear, // Set address to NULL
         ..Default::default()
     };
-    repo.update(&ctx, id, &update_to_nil)
+    repo.update(ctx, id, &update_to_nil)
         .await
         .expect("Failed to update address to nil");
 
     let fetched3 = repo
-        .get_by_id(&ctx, id)
+        .get_by_id(ctx, id)
         .await
         .expect("Failed to get branch")
         .expect("Branch not found");

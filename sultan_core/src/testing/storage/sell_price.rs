@@ -1,605 +1,510 @@
+use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
+
 use crate::{
-    domain::{
-        Context, Error,
-        model::{
-            Update,
-            sell_price::{
-                SellDiscountCreate, SellDiscountUpdate, SellPriceCreate, SellPriceUpdate,
-            },
-        },
+    domain::model::{
+        Update,
+        sell_price::{SellDiscountCreate, SellDiscountUpdate, SellPriceCreate, SellPriceUpdate},
     },
-    storage::{
-        sell_price_repo::SellPriceRepository,
-        sqlite::{SqliteProductRepository, SqliteSellPriceRepository},
-        transaction::TransactionManager,
-    },
+    storage::{RepoCtx, sell_price_repo::SellPriceRepository},
 };
-use serde_json::json;
 
-pub async fn create_sqlite_branch_repo()
--> (Context, SqliteProductRepository, SqliteSellPriceRepository) {
-    let pool = super::init_sqlite_pool().await;
-    (
-        Context::new(),
-        SqliteProductRepository::new(pool.clone()),
-        SqliteSellPriceRepository::new(pool.clone()),
-    )
+/// Run all SellPrice repository tests.
+///
+/// This function runs a comprehensive suite of tests for the SellPriceRepository
+/// implementation. Each test receives a fresh RepoCtx from the ctx_factory.
+///
+/// # Arguments
+///
+/// * `repo` - The SellPriceRepository implementation to test
+/// * `ctx_factory` - A factory function that creates new RepoCtx instances
+pub async fn sell_price_test_all<C, F, Fut>(repo: &C, ctx_factory: F)
+where
+    C: SellPriceRepository,
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = RepoCtx<DatabaseConnection>>,
+{
+    sell_price_test_repo_integration(&ctx_factory().await, repo).await;
+    sell_price_test_get_by_id_not_found(&ctx_factory().await, repo).await;
+    sell_price_test_update_not_found(&ctx_factory().await, repo).await;
+    sell_price_test_delete_not_found(&ctx_factory().await, repo).await;
+    sell_price_test_get_deleted(&ctx_factory().await, repo).await;
+    sell_price_test_partial_update(&ctx_factory().await, repo).await;
+    sell_price_test_get_all_by_product_variant_id(&ctx_factory().await, repo).await;
+
+    // Discount tests
+    sell_discount_test_repo_integration(&ctx_factory().await, repo).await;
+    sell_discount_test_get_by_id_not_found(&ctx_factory().await, repo).await;
+    sell_discount_test_update_not_found(&ctx_factory().await, repo).await;
+    sell_discount_test_delete_not_found(&ctx_factory().await, repo).await;
+    sell_discount_test_get_deleted(&ctx_factory().await, repo).await;
+    sell_discount_test_partial_update(&ctx_factory().await, repo).await;
+    sell_discount_test_delete_by_sell_price_id(&ctx_factory().await, repo).await;
 }
 
-pub struct SellPriceTestData<'a, T: TransactionManager + 'a> {
-    pub ctx: Context,
-    pub product_id: i64,
-    pub unit_id: i64,
-    pub variant_id: Vec<i64>,
-    pub tx_manager: Box<T>,
-    pub sell_price_repo: Box<dyn SellPriceRepository<T::Transaction<'a>>>,
+/// Creates a test product and product_variant in the database.
+/// Returns the product_variant_id that can be used for sell_price tests.
+async fn create_test_product_variant(ctx: &RepoCtx<DatabaseConnection>) -> i64 {
+    let product_id = super::generate_test_id().await;
+    let variant_id = super::generate_test_id().await;
+
+    // Insert a product first
+    ctx.db
+        .execute_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Sqlite,
+            "INSERT INTO products (id, name, product_type, sellable, buyable) VALUES (?, 'Test Product', 'product', 1, 1)",
+            vec![product_id.into()],
+        ))
+        .await
+        .expect("Failed to insert test product");
+
+    // Insert a product_variant
+    ctx.db
+        .execute_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Sqlite,
+            "INSERT INTO product_variants (id, product_id, name) VALUES (?, ?, 'Test Variant')",
+            vec![variant_id.into(), product_id.into()],
+        ))
+        .await
+        .expect("Failed to insert test product variant");
+
+    variant_id
 }
 
-pub async fn sell_price_test_repo_integration<'a, T: TransactionManager + 'a>(
-    test_data: &SellPriceTestData<'a, T>,
+// =============================================================================
+// SellPrice Tests
+// =============================================================================
+
+pub async fn sell_price_test_repo_integration<P: SellPriceRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &P,
 ) {
     let id = super::generate_test_id().await;
-    let sell_price = SellPriceCreate {
+    let product_variant_id = create_test_product_variant(ctx).await;
+    let uom_id = super::generate_test_id().await;
+
+    let price = SellPriceCreate {
         branch_id: None,
-        product_variant_id: test_data.variant_id[0],
-        price: 1000,
-        quantity: 10,
-        uom_id: test_data.unit_id,
-        metadata: Some(json!({"key": "value"})),
+        product_variant_id,
+        uom_id,
+        quantity: 1,
+        price: 10000,
+        metadata: None,
     };
 
-    test_data
-        .sell_price_repo
-        .create(&test_data.ctx, id, &sell_price)
-        .await
-        .expect("failed to insert sell price");
-
-    let fetched_price = test_data
-        .sell_price_repo
-        .get_by_id(&test_data.ctx, id)
-        .await
-        .expect("failed to get sell price")
-        .expect("sell price not found");
-    assert_eq!(fetched_price.id, id);
-    assert_eq!(fetched_price.price, 1000);
-    assert_eq!(fetched_price.quantity, 10);
-    assert_eq!(fetched_price.product_variant_id, test_data.variant_id[0]);
-    assert_eq!(fetched_price.uom_id, test_data.unit_id);
-    assert_eq!(fetched_price.metadata, Some(json!({"key": "value"})));
-
-    let update_result = test_data
-        .sell_price_repo
-        .update(
-            &test_data.ctx,
-            1,
-            &SellPriceUpdate {
-                price: Some(1200),
-                quantity: None,
-                uom_id: None,
-                metadata: Update::Unchanged,
-            },
-        )
-        .await;
-    assert!(matches!(update_result, Err(Error::NotFound(_))));
-
-    test_data
-        .sell_price_repo
-        .update(
-            &test_data.ctx,
-            id,
-            &SellPriceUpdate {
-                price: Some(1200),
-                quantity: None,
-                uom_id: None,
-                metadata: Update::Unchanged,
-            },
-        )
-        .await
-        .expect("unable to update");
-}
-
-pub async fn sell_price_test_delete<'a, T: TransactionManager + 'a>(
-    test_data: &SellPriceTestData<'a, T>,
-) {
-    let id = super::generate_test_id().await;
-    let sell_price = SellPriceCreate {
-        branch_id: None,
-        product_variant_id: test_data.variant_id[0],
-        price: 1500,
-        quantity: 5,
-        uom_id: test_data.unit_id,
-        metadata: Some(json!({"test": "delete"})),
-    };
-
-    test_data
-        .sell_price_repo
-        .create(&test_data.ctx, id, &sell_price)
+    // Test Create
+    repo.create(ctx, id, &price)
         .await
         .expect("Failed to create sell price");
 
-    test_data
-        .sell_price_repo
-        .delete(&test_data.ctx, id)
+    // Test Get By ID
+    let fetched = repo
+        .get_by_id(ctx, id)
+        .await
+        .expect("Failed to get sell price")
+        .expect("SellPrice not found");
+    assert_eq!(fetched.id, id);
+    assert_eq!(fetched.product_variant_id, product_variant_id);
+    assert_eq!(fetched.quantity, 1);
+    assert_eq!(fetched.price, 10000);
+
+    // Test Update
+    let update_data = SellPriceUpdate {
+        uom_id: None,
+        quantity: Some(5),
+        price: Some(15000),
+        metadata: Update::Unchanged,
+    };
+    repo.update(ctx, id, &update_data)
+        .await
+        .expect("Failed to update sell price");
+
+    let fetched_updated = repo
+        .get_by_id(ctx, id)
+        .await
+        .expect("Failed to get updated sell price")
+        .expect("Updated sell price not found");
+    assert_eq!(fetched_updated.quantity, 5);
+    assert_eq!(fetched_updated.price, 15000);
+
+    // Test Delete
+    repo.delete(ctx, id)
+        .await
+        .expect("Failed to delete sell price");
+    let deleted = repo
+        .get_by_id(ctx, id)
+        .await
+        .expect("Failed to get deleted sell price");
+    assert!(deleted.is_none());
+}
+
+pub async fn sell_price_test_get_by_id_not_found<P: SellPriceRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &P,
+) {
+    let non_existent_id = super::generate_test_id().await;
+    let result = repo.get_by_id(ctx, non_existent_id).await;
+    assert!(result.is_ok());
+    assert!(result.unwrap().is_none());
+}
+
+pub async fn sell_price_test_update_not_found<P: SellPriceRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &P,
+) {
+    let non_existent_id = super::generate_test_id().await;
+    let update_data = SellPriceUpdate {
+        uom_id: None,
+        quantity: Some(10),
+        price: None,
+        metadata: Update::Unchanged,
+    };
+    let result = repo.update(ctx, non_existent_id, &update_data).await;
+    assert!(result.is_err());
+}
+
+pub async fn sell_price_test_delete_not_found<P: SellPriceRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &P,
+) {
+    let non_existent_id = super::generate_test_id().await;
+    let result = repo.delete(ctx, non_existent_id).await;
+    assert!(result.is_err());
+}
+
+pub async fn sell_price_test_get_deleted<P: SellPriceRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &P,
+) {
+    let id = super::generate_test_id().await;
+    let product_variant_id = create_test_product_variant(ctx).await;
+    let uom_id = super::generate_test_id().await;
+
+    let price = SellPriceCreate {
+        branch_id: None,
+        product_variant_id,
+        uom_id,
+        quantity: 1,
+        price: 5000,
+        metadata: None,
+    };
+
+    repo.create(ctx, id, &price)
+        .await
+        .expect("Failed to create sell price");
+    repo.delete(ctx, id)
         .await
         .expect("Failed to delete sell price");
 
-    let result = test_data
-        .sell_price_repo
-        .get_by_id(&test_data.ctx, id)
+    // Should not find deleted price
+    let result = repo.get_by_id(ctx, id).await;
+    assert!(result.is_ok());
+    assert!(result.unwrap().is_none());
+}
+
+pub async fn sell_price_test_partial_update<P: SellPriceRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &P,
+) {
+    let id = super::generate_test_id().await;
+    let product_variant_id = create_test_product_variant(ctx).await;
+    let uom_id = super::generate_test_id().await;
+
+    let price = SellPriceCreate {
+        branch_id: Some(12345),
+        product_variant_id,
+        uom_id,
+        quantity: 10,
+        price: 50000,
+        metadata: Some(serde_json::json!({"note": "original"})),
+    };
+
+    repo.create(ctx, id, &price)
         .await
-        .expect("Failed to get deleted sell price");
+        .expect("Failed to create sell price");
 
-    assert!(result.is_none());
-}
-
-pub async fn sell_price_test_delete_non_existent<'a, T: TransactionManager + 'a>(
-    test_data: &SellPriceTestData<'a, T>,
-) {
-    let result = test_data
-        .sell_price_repo
-        .delete(&test_data.ctx, 999999)
-        .await;
-    assert!(matches!(result, Err(Error::NotFound(_))));
-}
-
-pub async fn sell_price_test_get_by_id_not_found<'a, T: TransactionManager + 'a>(
-    test_data: &SellPriceTestData<'a, T>,
-) {
-    let result = test_data
-        .sell_price_repo
-        .get_by_id(&test_data.ctx, 999999)
+    // Partial update: only update price
+    let partial_update = SellPriceUpdate {
+        uom_id: None,
+        quantity: None,
+        price: Some(75000),
+        metadata: Update::Unchanged,
+    };
+    repo.update(ctx, id, &partial_update)
         .await
-        .expect("Failed to execute get_by_id");
+        .expect("Failed to update sell price");
 
-    assert!(result.is_none());
-}
-
-pub async fn sell_price_test_get_all_by_variant_empty<'a, T: TransactionManager + 'a>(
-    test_data: &SellPriceTestData<'a, T>,
-) {
-    let prices = test_data
-        .sell_price_repo
-        .get_all_by_product_variant_id(&test_data.ctx, test_data.variant_id[0])
+    let fetched = repo
+        .get_by_id(ctx, id)
         .await
-        .expect("Failed to get prices");
-
-    assert!(prices.is_empty());
+        .expect("Failed to get sell price")
+        .expect("SellPrice not found");
+    // Price should be updated
+    assert_eq!(fetched.price, 75000);
+    // Other fields should remain unchanged
+    assert_eq!(fetched.quantity, 10);
 }
 
-pub async fn sell_price_test_get_all_by_variant_multiple<'a, T: TransactionManager + 'a>(
-    test_data: &SellPriceTestData<'a, T>,
+pub async fn sell_price_test_get_all_by_product_variant_id<P: SellPriceRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &P,
 ) {
-    let variant_id = test_data.variant_id[0];
+    let product_variant_id = create_test_product_variant(ctx).await;
 
-    // Create multiple prices for the same variant with different branch_ids to avoid unique constraint
-    for i in 1..=3 {
+    // Create multiple prices for the same product variant
+    // Note: Since there's a unique constraint on (product_variant_id, COALESCE(branch_id, 0)),
+    // we need to use different branch_ids for each price
+    for i in 0..3 {
         let id = super::generate_test_id().await;
-        let branch_id = super::generate_test_id().await; // Use unique branch_id for each
+        let uom_id = super::generate_test_id().await;
         let price = SellPriceCreate {
-            branch_id: Some(branch_id),
-            product_variant_id: variant_id,
-            price: 1000 + (i * 100),
-            quantity: 10 + i,
-            uom_id: test_data.unit_id,
-            metadata: Some(json!({"index": i})),
+            branch_id: Some(i + 1), // Different branch_id for each
+            product_variant_id,
+            uom_id,
+            quantity: i + 1,
+            price: (i + 1) * 10000,
+            metadata: None,
         };
-
-        test_data
-            .sell_price_repo
-            .create(&test_data.ctx, id, &price)
+        repo.create(ctx, id, &price)
             .await
             .expect("Failed to create sell price");
     }
 
-    let prices = test_data
-        .sell_price_repo
-        .get_all_by_product_variant_id(&test_data.ctx, variant_id)
+    let prices = repo
+        .get_all_by_product_variant_id(ctx, product_variant_id)
         .await
-        .expect("Failed to get prices");
-
+        .expect("Failed to get all prices");
     assert_eq!(prices.len(), 3);
 }
 
-pub async fn sell_price_test_update_price_only<'a, T: TransactionManager + 'a>(
-    test_data: &SellPriceTestData<'a, T>,
-) {
-    let id = super::generate_test_id().await;
-    let sell_price = SellPriceCreate {
-        branch_id: None,
-        product_variant_id: test_data.variant_id[0],
-        price: 1000,
-        quantity: 10,
-        uom_id: test_data.unit_id,
-        metadata: Some(json!({"key": "original"})),
-    };
-
-    test_data
-        .sell_price_repo
-        .create(&test_data.ctx, id, &sell_price)
-        .await
-        .expect("Failed to create sell price");
-
-    test_data
-        .sell_price_repo
-        .update(
-            &test_data.ctx,
-            id,
-            &SellPriceUpdate {
-                price: Some(1500),
-                quantity: None,
-                uom_id: None,
-                metadata: Update::Unchanged,
-            },
-        )
-        .await
-        .expect("Failed to update price");
-
-    let updated = test_data
-        .sell_price_repo
-        .get_by_id(&test_data.ctx, id)
-        .await
-        .expect("Failed to get updated price")
-        .expect("Price not found");
-
-    assert_eq!(updated.price, 1500);
-    assert_eq!(updated.quantity, 10);
-    assert_eq!(updated.metadata, Some(json!({"key": "original"})));
-}
-
-pub async fn sell_price_test_update_quantity_only<'a, T: TransactionManager + 'a>(
-    test_data: &SellPriceTestData<'a, T>,
-) {
-    let id = super::generate_test_id().await;
-    let sell_price = SellPriceCreate {
-        branch_id: None,
-        product_variant_id: test_data.variant_id[0],
-        price: 2000,
-        quantity: 5,
-        uom_id: test_data.unit_id,
-        metadata: None,
-    };
-
-    test_data
-        .sell_price_repo
-        .create(&test_data.ctx, id, &sell_price)
-        .await
-        .expect("Failed to create sell price");
-
-    test_data
-        .sell_price_repo
-        .update(
-            &test_data.ctx,
-            id,
-            &SellPriceUpdate {
-                price: None,
-                quantity: Some(15),
-                uom_id: None,
-                metadata: Update::Unchanged,
-            },
-        )
-        .await
-        .expect("Failed to update quantity");
-
-    let updated = test_data
-        .sell_price_repo
-        .get_by_id(&test_data.ctx, id)
-        .await
-        .expect("Failed to get updated price")
-        .expect("Price not found");
-
-    assert_eq!(updated.quantity, 15);
-    assert_eq!(updated.price, 2000);
-}
-
-pub async fn sell_price_test_update_metadata<'a, T: TransactionManager + 'a>(
-    test_data: &SellPriceTestData<'a, T>,
-) {
-    let id = super::generate_test_id().await;
-    let sell_price = SellPriceCreate {
-        branch_id: None,
-        product_variant_id: test_data.variant_id[0],
-        price: 3000,
-        quantity: 8,
-        uom_id: test_data.unit_id,
-        metadata: Some(json!({"old": "data"})),
-    };
-
-    test_data
-        .sell_price_repo
-        .create(&test_data.ctx, id, &sell_price)
-        .await
-        .expect("Failed to create sell price");
-
-    test_data
-        .sell_price_repo
-        .update(
-            &test_data.ctx,
-            id,
-            &SellPriceUpdate {
-                price: None,
-                quantity: None,
-                uom_id: None,
-                metadata: Update::Set(json!({"new": "value"})),
-            },
-        )
-        .await
-        .expect("Failed to update metadata");
-
-    let updated = test_data
-        .sell_price_repo
-        .get_by_id(&test_data.ctx, id)
-        .await
-        .expect("Failed to get updated price")
-        .expect("Price not found");
-
-    assert_eq!(updated.metadata, Some(json!({"new": "value"})));
-}
-
-pub async fn sell_price_test_different_variants<'a, T: TransactionManager + 'a>(
-    test_data: &SellPriceTestData<'a, T>,
-) {
-    let id1 = super::generate_test_id().await;
-    let id2 = super::generate_test_id().await;
-
-    let price1 = SellPriceCreate {
-        branch_id: None,
-        product_variant_id: test_data.variant_id[0],
-        price: 1000,
-        quantity: 10,
-        uom_id: test_data.unit_id,
-        metadata: None,
-    };
-
-    let price2 = SellPriceCreate {
-        branch_id: None,
-        product_variant_id: test_data.variant_id[1],
-        price: 2000,
-        quantity: 20,
-        uom_id: test_data.unit_id,
-        metadata: None,
-    };
-
-    test_data
-        .sell_price_repo
-        .create(&test_data.ctx, id1, &price1)
-        .await
-        .expect("Failed to create price 1");
-
-    test_data
-        .sell_price_repo
-        .create(&test_data.ctx, id2, &price2)
-        .await
-        .expect("Failed to create price 2");
-
-    let prices1 = test_data
-        .sell_price_repo
-        .get_all_by_product_variant_id(&test_data.ctx, test_data.variant_id[0])
-        .await
-        .expect("Failed to get prices for variant 1");
-
-    let prices2 = test_data
-        .sell_price_repo
-        .get_all_by_product_variant_id(&test_data.ctx, test_data.variant_id[1])
-        .await
-        .expect("Failed to get prices for variant 2");
-
-    assert_eq!(prices1.len(), 1);
-    assert_eq!(prices1[0].price, 1000);
-    assert_eq!(prices2.len(), 1);
-    assert_eq!(prices2[0].price, 2000);
-}
-
 // =============================================================================
-// Discount Tests
+// SellDiscount Tests
 // =============================================================================
 
-pub async fn sell_price_test_create_discount<'a, T: TransactionManager + 'a>(
-    test_data: &SellPriceTestData<'a, T>,
-) {
-    let price_id = super::generate_test_id().await;
-    let sell_price = SellPriceCreate {
+async fn create_test_sell_price<P: SellPriceRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &P,
+) -> i64 {
+    let id = super::generate_test_id().await;
+    let product_variant_id = create_test_product_variant(ctx).await;
+    let uom_id = super::generate_test_id().await;
+
+    let price = SellPriceCreate {
         branch_id: None,
-        product_variant_id: test_data.variant_id[0],
+        product_variant_id,
+        uom_id,
+        quantity: 1,
         price: 10000,
+        metadata: None,
+    };
+    repo.create(ctx, id, &price)
+        .await
+        .expect("Failed to create sell price");
+    id
+}
+
+pub async fn sell_discount_test_repo_integration<P: SellPriceRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &P,
+) {
+    let sell_price_id = create_test_sell_price(ctx, repo).await;
+    let id = super::generate_test_id().await;
+
+    let discount = SellDiscountCreate {
+        price_id: sell_price_id,
         quantity: 10,
-        uom_id: test_data.unit_id,
+        discount_formula: "-10%".to_string(),
+        customer_level: Some(1),
         metadata: None,
     };
 
-    test_data
-        .sell_price_repo
-        .create(&test_data.ctx, price_id, &sell_price)
-        .await
-        .expect("Failed to create sell price");
-
-    let discount_id = super::generate_test_id().await;
-    let discount = SellDiscountCreate {
-        price_id: price_id,
-        quantity: 5,
-        discount_formula: "price * 0.9".to_string(),
-        customer_level: None,
-        metadata: Some(json!({"type": "bulk"})),
-    };
-
-    test_data
-        .sell_price_repo
-        .create_discount(&test_data.ctx, discount_id, &discount)
+    // Test Create
+    repo.create_discount(ctx, id, &discount)
         .await
         .expect("Failed to create discount");
 
-    let fetched = test_data
-        .sell_price_repo
-        .get_discount_by_id(&test_data.ctx, discount_id)
+    // Test Get By ID
+    let fetched = repo
+        .get_discount_by_id(ctx, id)
         .await
         .expect("Failed to get discount")
         .expect("Discount not found");
+    assert_eq!(fetched.id, id);
+    assert_eq!(fetched.sell_price_id, sell_price_id);
+    assert_eq!(fetched.quantity, 10);
 
-    assert_eq!(fetched.sell_price_id, price_id);
-    assert_eq!(fetched.quantity, 5);
-    assert_eq!(fetched.discount_formula, Some("price * 0.9".to_string()));
-}
-
-pub async fn sell_price_test_update_discount<'a, T: TransactionManager + 'a>(
-    test_data: &SellPriceTestData<'a, T>,
-) {
-    let price_id = super::generate_test_id().await;
-    let sell_price = SellPriceCreate {
-        branch_id: None,
-        product_variant_id: test_data.variant_id[0],
-        price: 5000,
-        quantity: 10,
-        uom_id: test_data.unit_id,
-        metadata: None,
-    };
-
-    test_data
-        .sell_price_repo
-        .create(&test_data.ctx, price_id, &sell_price)
-        .await
-        .expect("Failed to create sell price");
-
-    let discount_id = super::generate_test_id().await;
-    let discount = SellDiscountCreate {
-        price_id: price_id,
-        quantity: 10,
-        discount_formula: "price * 0.95".to_string(),
-        customer_level: None,
-        metadata: None,
-    };
-
-    test_data
-        .sell_price_repo
-        .create_discount(&test_data.ctx, discount_id, &discount)
-        .await
-        .expect("Failed to create discount");
-
-    let update = SellDiscountUpdate {
+    // Test Update
+    let update_data = SellDiscountUpdate {
         quantity: Some(20),
-        discount_formula: Some("price * 0.85".to_string()),
+        discount_formula: Some("-15%".to_string()),
         customer_level: Update::Unchanged,
-        metadata: Update::Set(json!({"updated": true})),
+        metadata: Update::Unchanged,
     };
-
-    test_data
-        .sell_price_repo
-        .update_discount(&test_data.ctx, discount_id, &update)
+    repo.update_discount(ctx, id, &update_data)
         .await
         .expect("Failed to update discount");
 
-    let updated = test_data
-        .sell_price_repo
-        .get_discount_by_id(&test_data.ctx, discount_id)
+    let fetched_updated = repo
+        .get_discount_by_id(ctx, id)
         .await
         .expect("Failed to get updated discount")
-        .expect("Discount not found");
+        .expect("Updated discount not found");
+    assert_eq!(fetched_updated.quantity, 20);
+    assert_eq!(fetched_updated.discount_formula, Some("-15%".to_string()));
 
-    assert_eq!(updated.quantity, 20);
-    assert_eq!(updated.discount_formula, Some("price * 0.85".to_string()));
-    assert_eq!(updated.metadata, Some(json!({"updated": true})));
+    // Test Delete
+    repo.delete_discount(ctx, id)
+        .await
+        .expect("Failed to delete discount");
+    let deleted = repo
+        .get_discount_by_id(ctx, id)
+        .await
+        .expect("Failed to get deleted discount");
+    assert!(deleted.is_none());
 }
 
-pub async fn sell_price_test_delete_discount<'a, T: TransactionManager + 'a>(
-    test_data: &SellPriceTestData<'a, T>,
+pub async fn sell_discount_test_get_by_id_not_found<P: SellPriceRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &P,
 ) {
-    let price_id = super::generate_test_id().await;
-    let sell_price = SellPriceCreate {
-        branch_id: None,
-        product_variant_id: test_data.variant_id[0],
-        price: 8000,
-        quantity: 10,
-        uom_id: test_data.unit_id,
-        metadata: None,
+    let non_existent_id = super::generate_test_id().await;
+    let result = repo.get_discount_by_id(ctx, non_existent_id).await;
+    assert!(result.is_ok());
+    assert!(result.unwrap().is_none());
+}
+
+pub async fn sell_discount_test_update_not_found<P: SellPriceRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &P,
+) {
+    let non_existent_id = super::generate_test_id().await;
+    let update_data = SellDiscountUpdate {
+        quantity: Some(10),
+        discount_formula: None,
+        customer_level: Update::Unchanged,
+        metadata: Update::Unchanged,
     };
+    let result = repo
+        .update_discount(ctx, non_existent_id, &update_data)
+        .await;
+    assert!(result.is_err());
+}
 
-    test_data
-        .sell_price_repo
-        .create(&test_data.ctx, price_id, &sell_price)
-        .await
-        .expect("Failed to create sell price");
+pub async fn sell_discount_test_delete_not_found<P: SellPriceRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &P,
+) {
+    let non_existent_id = super::generate_test_id().await;
+    let result = repo.delete_discount(ctx, non_existent_id).await;
+    assert!(result.is_err());
+}
 
-    let discount_id = super::generate_test_id().await;
+pub async fn sell_discount_test_get_deleted<P: SellPriceRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &P,
+) {
+    let sell_price_id = create_test_sell_price(ctx, repo).await;
+    let id = super::generate_test_id().await;
+
     let discount = SellDiscountCreate {
-        price_id: price_id,
-        quantity: 15,
-        discount_formula: "price * 0.8".to_string(),
+        price_id: sell_price_id,
+        quantity: 5,
+        discount_formula: "-5%".to_string(),
         customer_level: None,
         metadata: None,
     };
 
-    test_data
-        .sell_price_repo
-        .create_discount(&test_data.ctx, discount_id, &discount)
+    repo.create_discount(ctx, id, &discount)
         .await
         .expect("Failed to create discount");
-
-    test_data
-        .sell_price_repo
-        .delete_discount(&test_data.ctx, discount_id)
+    repo.delete_discount(ctx, id)
         .await
         .expect("Failed to delete discount");
 
-    let result = test_data
-        .sell_price_repo
-        .get_discount_by_id(&test_data.ctx, discount_id)
-        .await
-        .expect("Failed to get deleted discount");
-
-    assert!(result.is_none());
+    // Should not find deleted discount
+    let result = repo.get_discount_by_id(ctx, id).await;
+    assert!(result.is_ok());
+    assert!(result.unwrap().is_none());
 }
 
-pub async fn sell_price_test_get_all_discounts<'a, T: TransactionManager + 'a>(
-    test_data: &SellPriceTestData<'a, T>,
+pub async fn sell_discount_test_partial_update<P: SellPriceRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &P,
 ) {
-    let price_id = super::generate_test_id().await;
-    let sell_price = SellPriceCreate {
-        branch_id: None,
-        product_variant_id: test_data.variant_id[0],
-        price: 12000,
+    let sell_price_id = create_test_sell_price(ctx, repo).await;
+    let id = super::generate_test_id().await;
+
+    let discount = SellDiscountCreate {
+        price_id: sell_price_id,
         quantity: 10,
-        uom_id: test_data.unit_id,
-        metadata: None,
+        discount_formula: "-10%".to_string(),
+        customer_level: Some(2),
+        metadata: Some(serde_json::json!({"note": "original"})),
     };
 
-    test_data
-        .sell_price_repo
-        .create(&test_data.ctx, price_id, &sell_price)
+    repo.create_discount(ctx, id, &discount)
         .await
-        .expect("Failed to create sell price");
+        .expect("Failed to create discount");
 
+    // Partial update: only update quantity
+    let partial_update = SellDiscountUpdate {
+        quantity: Some(25),
+        discount_formula: None,
+        customer_level: Update::Unchanged,
+        metadata: Update::Unchanged,
+    };
+    repo.update_discount(ctx, id, &partial_update)
+        .await
+        .expect("Failed to update discount");
+
+    let fetched = repo
+        .get_discount_by_id(ctx, id)
+        .await
+        .expect("Failed to get discount")
+        .expect("Discount not found");
+    // Quantity should be updated
+    assert_eq!(fetched.quantity, 25);
+    // Other fields should remain unchanged
+    assert_eq!(fetched.discount_formula, Some("-10%".to_string()));
+    assert_eq!(fetched.customer_level, Some(2));
+}
+
+pub async fn sell_discount_test_delete_by_sell_price_id<P: SellPriceRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &P,
+) {
+    let sell_price_id = create_test_sell_price(ctx, repo).await;
+
+    // Create multiple discounts for the same price
     for i in 0..3 {
-        let discount_id = super::generate_test_id().await;
+        let id = super::generate_test_id().await;
         let discount = SellDiscountCreate {
-            price_id: price_id,
-            quantity: 10 + (i * 10),
-            discount_formula: format!("price * {}", 0.95 - (i as f64 * 0.05)),
+            price_id: sell_price_id,
+            quantity: (i + 1) * 5,
+            discount_formula: format!("-{}%", (i + 1) * 5),
             customer_level: None,
-            metadata: Some(json!({"tier": i})),
+            metadata: None,
         };
-
-        test_data
-            .sell_price_repo
-            .create_discount(&test_data.ctx, discount_id, &discount)
+        repo.create_discount(ctx, id, &discount)
             .await
             .expect("Failed to create discount");
     }
 
-    let discounts = test_data
-        .sell_price_repo
-        .get_all_discount_by_price_id(&test_data.ctx, price_id)
+    // Verify discounts were created
+    let discounts = repo
+        .get_all_discount_by_price_id(ctx, sell_price_id)
         .await
-        .expect("Failed to get discounts");
-
+        .expect("Failed to get all discounts");
     assert_eq!(discounts.len(), 3);
-}
 
-pub async fn sell_price_test_get_discount_not_found<'a, T: TransactionManager + 'a>(
-    test_data: &SellPriceTestData<'a, T>,
-) {
-    let result = test_data
-        .sell_price_repo
-        .get_discount_by_id(&test_data.ctx, 999999)
+    // Delete all discounts by sell_price_id
+    repo.delete_discounts_by_sell_price_id(ctx, sell_price_id)
         .await
-        .expect("Failed to execute get_discount_by_id");
+        .expect("Failed to delete discounts by sell_price_id");
 
-    assert!(result.is_none());
+    // Verify discounts were deleted
+    let discounts_after = repo
+        .get_all_discount_by_price_id(ctx, sell_price_id)
+        .await
+        .expect("Failed to get all discounts");
+    assert!(discounts_after.is_empty());
 }

@@ -1,405 +1,339 @@
 use async_trait::async_trait;
-
-use serde::Serialize;
-use sqlx::{QueryBuilder, Sqlite, SqlitePool, Transaction};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect, Set,
+};
 
 use crate::{
     domain::{
-        Context, DomainResult, Error,
+        DomainResult, Error,
         model::{
             pagination::PaginationOptions,
             permission::Permission,
             user::{User, UserCreate, UserFilter, UserUpdate},
         },
     },
-    storage::user_repo::UserRepository,
+    storage::{
+        RepoCtx,
+        sqlite::entity::{
+            PermissionActiveModel, PermissionColumn, PermissionEntity, UserActiveModel, UserColumn,
+            UserEntity,
+        },
+        user_repo::UserRepository,
+    },
 };
 
 // ============================================================================
 // SQLite User Repository
 // ============================================================================
 
-const USER_COLUMNS: &str = "id, username, email, password, name, created_at, updated_at, deleted_at, is_deleted, photo, pin, address, phone";
-
-// Macro to build the create user query to avoid duplication
-macro_rules! build_create_user_query {
-    ($id:expr, $user:expr) => {
-        sqlx::query("INSERT INTO users (id, username, name, email, password, photo, pin, address, phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind($id)
-            .bind(&$user.username)
-            .bind(&$user.name)
-            .bind(&$user.email)
-            .bind(&$user.password)
-            .bind(&$user.photo)
-            .bind(&$user.pin)
-            .bind(&$user.address)
-            .bind(&$user.phone)
-    };
-}
-
-// Macro to build the delete user query to avoid duplication
-macro_rules! build_delete_user_query {
-    ($user_id:expr) => {
-        sqlx::query(
-            r#"
-            UPDATE users SET
-                is_deleted = 1,
-                deleted_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-            WHERE id = ? AND is_deleted = 0
-            "#,
-        )
-        .bind($user_id)
-    };
-}
-
-#[derive(Clone)]
-pub struct SqliteUserRepository {
-    pool: SqlitePool,
-}
+/// SQLite implementation of [`UserRepository`] using SeaORM.
+///
+/// This repository uses SeaORM's `ConnectionTrait` which allows it to work
+/// with both direct database connections and transactions seamlessly.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// // Using with direct connection
+/// let repo = SqliteUserRepository::new();
+/// let ctx = RepoCtx { ctx: Context::new(), db: &db_connection };
+/// repo.create(&ctx, id, &user).await?;
+///
+/// // Using within a transaction
+/// let txn = db.begin().await?;
+/// let ctx = RepoCtx { ctx: Context::new(), db: &txn };
+/// repo.create(&ctx, id, &user).await?;
+/// txn.commit().await?;
+/// ```
+#[derive(Clone, Default)]
+pub struct SqliteUserRepository {}
 
 impl SqliteUserRepository {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
-    }
-
-    /// Check if a query affected rows, return error if not
-    fn check_rows_affected(
-        rows: u64,
-        entity: &str,
-        id: impl std::fmt::Display,
-    ) -> DomainResult<()> {
-        if rows == 0 {
-            return Err(Error::NotFound(format!(
-                "{} with id {} not found",
-                entity, id
-            )));
-        }
-        Ok(())
+    pub fn new() -> Self {
+        SqliteUserRepository {}
     }
 }
 
-// Database model for User - SQLite
-#[derive(sqlx::FromRow, Debug, Serialize)]
-pub struct UserDbSqlite {
-    pub id: i64,
-    pub username: String,
-    pub email: Option<String>,
-    pub password: String,
-    pub name: String,
-    pub created_at: String,
-    pub updated_at: String,
-    pub deleted_at: Option<String>,
-    pub is_deleted: bool,
-    pub photo: Option<String>,
-    pub pin: Option<String>,
-    pub address: Option<String>,
-    pub phone: Option<String>,
-}
-
-impl From<UserDbSqlite> for User {
-    fn from(user_db: UserDbSqlite) -> Self {
-        User {
-            id: user_db.id,
-            username: user_db.username,
-            email: user_db.email,
-            password: user_db.password,
-            name: user_db.name,
-            created_at: super::parse_sqlite_date(&user_db.created_at),
-            updated_at: super::parse_sqlite_date(&user_db.updated_at),
-            deleted_at: user_db.deleted_at.map(|d| super::parse_sqlite_date(&d)),
-            is_deleted: user_db.is_deleted,
-            photo: user_db.photo,
-            pin: user_db.pin,
-            address: user_db.address,
-            phone: user_db.phone,
-            permissions: None,
-        }
-    }
-}
-
-#[derive(sqlx::FromRow, Debug, Serialize)]
-pub struct PermissionDbSqlite {
-    pub id: i64,
-    pub user_id: i64,
-    pub branch_id: Option<i64>,
-    pub resource: i32,
-    pub action: i32,
-}
-
-impl From<PermissionDbSqlite> for Permission {
-    fn from(permission_db: PermissionDbSqlite) -> Self {
-        Permission {
-            user_id: permission_db.user_id,
-            branch_id: permission_db.branch_id,
-            resource: permission_db.resource,
-            action: permission_db.action,
-        }
-    }
-}
-
-// Implement the UserRepository trait for SQLite
 #[async_trait]
-impl<'a> UserRepository<Transaction<'a, Sqlite>> for SqliteUserRepository {
-    async fn create_user(&self, _: &Context, id: i64, user: &UserCreate) -> DomainResult<()> {
-        build_create_user_query!(id, user)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
-
-    async fn create_user_tx(
+impl UserRepository for SqliteUserRepository {
+    async fn create(
         &self,
-        _: &Context,
+        ctx: &RepoCtx<impl ConnectionTrait>,
         id: i64,
         user: &UserCreate,
-        tx: &mut Transaction<'a, Sqlite>,
     ) -> DomainResult<()> {
-        build_create_user_query!(id, user)
-            .execute(&mut **tx)
-            .await?;
+        let user_model = UserActiveModel {
+            id: Set(id),
+            username: Set(user.username.clone()),
+            password: Set(user.password.clone()),
+            name: Set(user.name.clone()),
+            email: Set(user.email.clone()),
+            photo: Set(user.photo.clone()),
+            pin: Set(user.pin.clone()),
+            address: Set(user.address.clone()),
+            phone: Set(user.phone.clone()),
+            ..Default::default()
+        };
+
+        user_model.insert(&ctx.db).await?;
         Ok(())
     }
 
-    async fn get_user_by_username(
+    async fn get_by_username(
         &self,
-        _: &Context,
+        ctx: &RepoCtx<impl ConnectionTrait>,
         username: &str,
     ) -> DomainResult<Option<User>> {
-        let sql = format!(
-            "SELECT {} FROM users WHERE username = ? AND is_deleted = 0",
-            USER_COLUMNS
-        );
-        let query = sqlx::query_as::<_, UserDbSqlite>(&sql)
-            .bind(username)
-            .fetch_optional(&self.pool);
-
-        Ok(query.await?.map(User::from))
-    }
-
-    async fn update_user(&self, _: &Context, id: i64, user: &UserUpdate) -> DomainResult<()> {
-        let mut builder: QueryBuilder<Sqlite> = QueryBuilder::new("UPDATE users SET ");
-        let mut separated = builder.separated(", ");
-
-        if let Some(username) = &user.username {
-            separated
-                .push("username = ")
-                .push_bind_unseparated(username);
-        }
-        if let Some(name) = &user.name {
-            separated.push("name = ").push_bind_unseparated(name);
-        }
-        if user.email.should_update() {
-            separated
-                .push("email = ")
-                .push_bind_unseparated(user.email.to_bind_value());
-        }
-        if user.photo.should_update() {
-            separated
-                .push("photo = ")
-                .push_bind_unseparated(user.photo.to_bind_value());
-        }
-        if user.pin.should_update() {
-            separated
-                .push("pin = ")
-                .push_bind_unseparated(user.pin.to_bind_value());
-        }
-        if user.address.should_update() {
-            separated
-                .push("address = ")
-                .push_bind_unseparated(user.address.to_bind_value());
-        }
-        if user.phone.should_update() {
-            separated
-                .push("phone = ")
-                .push_bind_unseparated(user.phone.to_bind_value());
-        }
-        separated.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')");
-        builder.push(" WHERE id = ").push_bind(id);
-        builder.push(" AND is_deleted = 0");
-
-        let query = builder.build();
-        let result = query.execute(&self.pool).await?;
-        Self::check_rows_affected(result.rows_affected(), "User", id)
-    }
-
-    async fn update_password(&self, _: &Context, id: i64, password_hash: &str) -> DomainResult<()> {
-        let query = sqlx::query(
-            r#"
-            UPDATE users SET
-                password = ?,
-                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-            WHERE id = ?
-            "#,
-        )
-        .bind(password_hash)
-        .bind(id)
-        .execute(&self.pool);
-
-        let result = query.await?;
-        Self::check_rows_affected(result.rows_affected(), "User", id)
-    }
-
-    async fn delete_user(&self, _: &Context, user_id: i64) -> DomainResult<()> {
-        let result = build_delete_user_query!(user_id)
-            .execute(&self.pool)
+        let user = UserEntity::find()
+            .filter(UserColumn::Username.eq(username))
+            .filter(UserColumn::IsDeleted.eq(false))
+            .one(&ctx.db)
             .await?;
-        Self::check_rows_affected(result.rows_affected(), "User", user_id)
+
+        Ok(user.map(|u| u.to_domain()))
     }
 
-    async fn delete_user_tx(
+    async fn update(
         &self,
-        _: &Context,
-        user_id: i64,
-        tx: &mut Transaction<'a, Sqlite>,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        id: i64,
+        user: &UserUpdate,
     ) -> DomainResult<()> {
-        let result = build_delete_user_query!(user_id).execute(&mut **tx).await?;
-        Self::check_rows_affected(result.rows_affected(), "User", user_id)
+        use sea_orm::{UpdateMany, sea_query::Expr};
+
+        let mut update_query: UpdateMany<UserEntity> = UserEntity::update_many()
+            .filter(UserColumn::Id.eq(id))
+            .filter(UserColumn::IsDeleted.eq(false));
+
+        // Update fields if provided
+        if let Some(username) = &user.username {
+            update_query =
+                update_query.col_expr(UserColumn::Username, Expr::value(username.clone()));
+        }
+
+        if let Some(name) = &user.name {
+            update_query = update_query.col_expr(UserColumn::Name, Expr::value(name.clone()));
+        }
+
+        if user.email.should_update() {
+            update_query =
+                update_query.col_expr(UserColumn::Email, Expr::value(user.email.to_bind_value()));
+        }
+
+        if user.photo.should_update() {
+            update_query =
+                update_query.col_expr(UserColumn::Photo, Expr::value(user.photo.to_bind_value()));
+        }
+
+        if user.pin.should_update() {
+            update_query =
+                update_query.col_expr(UserColumn::Pin, Expr::value(user.pin.to_bind_value()));
+        }
+
+        if user.address.should_update() {
+            update_query = update_query.col_expr(
+                UserColumn::Address,
+                Expr::value(user.address.to_bind_value()),
+            );
+        }
+
+        if user.phone.should_update() {
+            update_query =
+                update_query.col_expr(UserColumn::Phone, Expr::value(user.phone.to_bind_value()));
+        }
+
+        // Always update the updated_at timestamp
+        update_query = update_query.col_expr(
+            UserColumn::UpdatedAt,
+            Expr::value(
+                chrono::Utc::now()
+                    .format("%Y-%m-%dT%H:%M:%S%.fZ")
+                    .to_string(),
+            ),
+        );
+
+        let result = update_query.exec(&ctx.db).await?;
+
+        if result.rows_affected == 0 {
+            return Err(Error::NotFound(format!("User with id {} not found", id)));
+        }
+
+        Ok(())
+    }
+
+    async fn update_password(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        id: i64,
+        password_hash: &str,
+    ) -> DomainResult<()> {
+        use sea_orm::sea_query::Expr;
+
+        let result = UserEntity::update_many()
+            .filter(UserColumn::Id.eq(id))
+            .col_expr(UserColumn::Password, Expr::value(password_hash))
+            .col_expr(
+                UserColumn::UpdatedAt,
+                Expr::value(
+                    chrono::Utc::now()
+                        .format("%Y-%m-%dT%H:%M:%S%.fZ")
+                        .to_string(),
+                ),
+            )
+            .exec(&ctx.db)
+            .await?;
+
+        if result.rows_affected == 0 {
+            return Err(Error::NotFound(format!("User with id {} not found", id)));
+        }
+
+        Ok(())
+    }
+
+    async fn delete(&self, ctx: &RepoCtx<impl ConnectionTrait>, id: i64) -> DomainResult<()> {
+        use sea_orm::sea_query::Expr;
+
+        let now = chrono::Utc::now()
+            .format("%Y-%m-%dT%H:%M:%S%.fZ")
+            .to_string();
+
+        let result = UserEntity::update_many()
+            .filter(UserColumn::Id.eq(id))
+            .filter(UserColumn::IsDeleted.eq(false))
+            .col_expr(UserColumn::IsDeleted, Expr::value(true))
+            .col_expr(UserColumn::DeletedAt, Expr::value(Some(now.clone())))
+            .col_expr(UserColumn::UpdatedAt, Expr::value(now))
+            .exec(&ctx.db)
+            .await?;
+
+        if result.rows_affected == 0 {
+            return Err(Error::NotFound(format!("User with id {} not found", id)));
+        }
+
+        Ok(())
     }
 
     async fn get_all(
         &self,
-        _: &Context,
-        filter: UserFilter,
-        pagination: PaginationOptions,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        filter: &UserFilter,
+        pagination: &PaginationOptions,
     ) -> DomainResult<Vec<User>> {
+        let mut query = UserEntity::find().filter(UserColumn::IsDeleted.eq(false));
+
+        // Apply filters
+        if let Some(username) = &filter.username {
+            query = query.filter(UserColumn::Username.eq(username));
+        }
+
+        if let Some(name) = &filter.name {
+            query = query.filter(UserColumn::Name.contains(name));
+        }
+
+        if let Some(email) = &filter.email {
+            query = query.filter(UserColumn::Email.eq(email));
+        }
+
+        // Apply pagination
         let limit = pagination.limit();
         let offset = pagination.offset();
 
-        let mut sql = format!("SELECT {} FROM users WHERE is_deleted = 0", USER_COLUMNS);
-        let mut bindings: Vec<String> = Vec::new();
+        let users = query
+            .limit(limit as u64)
+            .offset(offset as u64)
+            .all(&ctx.db)
+            .await?;
 
-        if let Some(ref username) = filter.username {
-            sql.push_str(" AND username  = ?");
-            bindings.push(username.to_string());
-        }
-
-        if let Some(ref name) = filter.name {
-            sql.push_str(" AND name LIKE ?");
-            bindings.push(format!("%{}%", name));
-        }
-
-        if let Some(ref email) = filter.email {
-            sql.push_str(" AND email = ?");
-            bindings.push(email.to_string());
-        }
-
-        sql.push_str(" LIMIT ? OFFSET ?");
-
-        let mut query = sqlx::query_as::<_, UserDbSqlite>(&sql);
-
-        for binding in &bindings {
-            query = query.bind(binding);
-        }
-
-        query = query.bind(limit).bind(offset);
-
-        let query = query.fetch_all(&self.pool);
-
-        let users = query.await?;
-        Ok(super::map_results(users))
+        Ok(users.into_iter().map(|u| u.to_domain()).collect())
     }
 
-    async fn get_by_id(&self, _: &Context, user_id: i64) -> DomainResult<Option<User>> {
-        let sql = format!(
-            "SELECT {} FROM users WHERE id = ? AND is_deleted = 0",
-            USER_COLUMNS
-        );
-        let query = sqlx::query_as::<_, UserDbSqlite>(&sql)
-            .bind(user_id)
-            .fetch_optional(&self.pool);
-
-        Ok(query.await?.map(User::from))
-    }
-
-    async fn save_user_permission(
+    async fn get_by_id(
         &self,
-        _: &Context,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        id: i64,
+    ) -> DomainResult<Option<User>> {
+        let user = UserEntity::find_by_id(id)
+            .filter(UserColumn::IsDeleted.eq(false))
+            .one(&ctx.db)
+            .await?;
+
+        Ok(user.map(|u| u.to_domain()))
+    }
+
+    async fn save_permission(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
         user_id: i64,
         branch_id: Option<i64>,
         resource: i32,
         action: i32,
     ) -> DomainResult<()> {
-        // First, try to delete existing permission
-        // Use proper NULL handling for comparison
-        let delete_query = sqlx::query(
-            r#"
-            DELETE FROM permissions
-            WHERE user_id = ? AND resource = ? AND (
-                (branch_id IS NULL AND ? IS NULL) OR
-                (branch_id = ? AND ? IS NOT NULL)
-            )
-            "#,
-        )
-        .bind(user_id)
-        .bind(resource)
-        .bind(branch_id)
-        .bind(branch_id)
-        .bind(branch_id)
-        .execute(&self.pool);
+        // First, delete any existing permission with the same user_id, branch_id, and resource
+        let mut delete_query = PermissionEntity::delete_many()
+            .filter(PermissionColumn::UserId.eq(user_id))
+            .filter(PermissionColumn::Resource.eq(resource));
 
-        delete_query.await.ok();
+        if let Some(bid) = branch_id {
+            delete_query = delete_query.filter(PermissionColumn::BranchId.eq(bid));
+        } else {
+            delete_query = delete_query.filter(PermissionColumn::BranchId.is_null());
+        }
 
-        let insert_query = sqlx::query(
-            r#"
-            INSERT INTO permissions (user_id, branch_id, resource, action)
-            VALUES (?, ?, ?, ?)
-            "#,
-        )
-        .bind(user_id)
-        .bind(branch_id)
-        .bind(resource)
-        .bind(action)
-        .execute(&self.pool);
+        // Execute delete (ignore result - it's OK if nothing was deleted)
+        let _ = delete_query.exec(&ctx.db).await;
 
-        insert_query.await?;
+        // Insert the new permission
+        let permission_model = PermissionActiveModel {
+            user_id: Set(user_id),
+            branch_id: Set(branch_id),
+            resource: Set(resource),
+            action: Set(action),
+            ..Default::default()
+        };
+
+        permission_model.insert(&ctx.db).await?;
         Ok(())
     }
 
-    async fn delete_user_permission(
+    async fn delete_permission(
         &self,
-        _: &Context,
+        ctx: &RepoCtx<impl ConnectionTrait>,
         user_id: i64,
         branch_id: Option<i64>,
         resource: i32,
     ) -> DomainResult<()> {
-        let query = sqlx::query(
-            r#"
-            DELETE FROM permissions
-            WHERE user_id = ? AND resource = ? AND (
-                (branch_id IS NULL AND ? IS NULL) OR
-                (branch_id = ? AND ? IS NOT NULL)
-            )
-            "#,
-        )
-        .bind(user_id)
-        .bind(resource)
-        .bind(branch_id)
-        .bind(branch_id)
-        .bind(branch_id)
-        .execute(&self.pool);
+        let mut delete_query = PermissionEntity::delete_many()
+            .filter(PermissionColumn::UserId.eq(user_id))
+            .filter(PermissionColumn::Resource.eq(resource));
 
-        let result = query.await?;
-        Self::check_rows_affected(
-            result.rows_affected(),
-            "Permission",
-            format!(
-                "user_id: {}, resource: {}, branch_id: {:?}",
+        if let Some(bid) = branch_id {
+            delete_query = delete_query.filter(PermissionColumn::BranchId.eq(bid));
+        } else {
+            delete_query = delete_query.filter(PermissionColumn::BranchId.is_null());
+        }
+
+        let result = delete_query.exec(&ctx.db).await?;
+
+        if result.rows_affected == 0 {
+            return Err(Error::NotFound(format!(
+                "Permission not found for user_id: {}, resource: {}, branch_id: {:?}",
                 user_id, resource, branch_id
-            ),
-        )
+            )));
+        }
+
+        Ok(())
     }
 
-    async fn get_user_permission(
+    async fn get_permissions(
         &self,
-        _: &Context,
+        ctx: &RepoCtx<impl ConnectionTrait>,
         user_id: i64,
     ) -> DomainResult<Vec<Permission>> {
-        let sql = "SELECT * FROM permissions WHERE user_id = ?";
-        let query = sqlx::query_as::<_, PermissionDbSqlite>(sql)
-            .bind(user_id)
-            .fetch_all(&self.pool);
+        let permissions = PermissionEntity::find()
+            .filter(PermissionColumn::UserId.eq(user_id))
+            .all(&ctx.db)
+            .await?;
 
-        let permissions_db = query.await?;
-        Ok(super::map_results(permissions_db))
+        Ok(permissions.into_iter().map(|p| p.to_domain()).collect())
     }
 }

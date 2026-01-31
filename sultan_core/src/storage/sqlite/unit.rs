@@ -1,18 +1,37 @@
 use async_trait::async_trait;
-use serde::Serialize;
-use sqlx::{QueryBuilder, Sqlite};
+use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set};
 
 use crate::{
     domain::{
-        Context, DomainResult,
+        DomainResult, Error,
         model::product::{UnitOfMeasure, UnitOfMeasureCreate, UnitOfMeasureUpdate},
     },
     storage::{
-        UnitOfMeasureRepository,
-        sqlite::{TableName, check_rows_affected, map_results, soft_delete},
+        RepoCtx,
+        sqlite::entity::{UnitActiveModel, UnitColumn, UnitEntity},
+        unit_repo::UnitOfMeasureRepository,
     },
 };
 
+/// SQLite implementation of UnitOfMeasureRepository using SeaORM.
+///
+/// This repository uses SeaORM's `ConnectionTrait` which allows it to work
+/// with both direct database connections and transactions seamlessly.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// // Using with direct connection
+/// let repo = SqliteUnitOfMeasureRepository::new();
+/// let ctx = RepoCtx { ctx: Context::new(), db: &db_connection };
+/// repo.create(&ctx, id, &uom).await?;
+///
+/// // Using within a transaction
+/// let txn = db.begin().await?;
+/// let ctx = RepoCtx { ctx: Context::new(), db: &txn };
+/// repo.create(&ctx, id, &uom).await?;
+/// txn.commit().await?;
+/// ```
 #[derive(Clone, Default)]
 pub struct SqliteUnitOfMeasureRepository {}
 
@@ -22,139 +41,118 @@ impl SqliteUnitOfMeasureRepository {
     }
 }
 
-// Database model for UnitOfMeasure - SQLite
-#[derive(sqlx::FromRow, Debug, Serialize)]
-pub struct UnitOfMeasureDbSqlite {
-    pub id: i64,
-    pub created_at: String,
-    pub updated_at: String,
-    pub deleted_at: Option<String>,
-    pub is_deleted: bool,
-    pub name: String,
-    pub description: Option<String>,
-}
-
-impl From<UnitOfMeasureDbSqlite> for UnitOfMeasure {
-    fn from(db: UnitOfMeasureDbSqlite) -> Self {
-        UnitOfMeasure {
-            id: db.id,
-            created_at: super::parse_sqlite_date(&db.created_at),
-            updated_at: super::parse_sqlite_date(&db.updated_at),
-            deleted_at: db.deleted_at.map(|d| super::parse_sqlite_date(&d)),
-            is_deleted: db.is_deleted,
-            name: db.name,
-            description: db.description,
-        }
-    }
-}
-
 #[async_trait]
-impl UnitOfMeasureRepository<Sqlite> for SqliteUnitOfMeasureRepository {
-    async fn create<'e, E>(
+impl UnitOfMeasureRepository for SqliteUnitOfMeasureRepository {
+    async fn create(
         &self,
-        _: &Context,
-        e: E,
+        ctx: &RepoCtx<impl ConnectionTrait>,
         id: i64,
         uom: &UnitOfMeasureCreate,
-    ) -> DomainResult<()>
-    where
-        E: sqlx::Executor<'e, Database = Sqlite>,
-    {
-        let query = sqlx::query(
-            r#"
-            INSERT INTO units (
-                id, name, description
-            ) VALUES (?, ?, ?)
-            "#,
-        )
-        .bind(id)
-        .bind(&uom.name)
-        .bind(&uom.description)
-        .execute(e);
+    ) -> DomainResult<()> {
+        let unit = UnitActiveModel {
+            id: Set(id),
+            name: Set(uom.name.clone()),
+            description: Set(uom.description.clone()),
+            ..Default::default()
+        };
 
-        query.await?;
+        unit.insert(&ctx.db).await?;
         Ok(())
     }
 
-    async fn update<'e, E>(
+    async fn get_by_id(
         &self,
-        _: &Context,
-        e: E,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        id: i64,
+    ) -> DomainResult<Option<UnitOfMeasure>> {
+        let unit = UnitEntity::find_by_id(id)
+            .filter(UnitColumn::IsDeleted.eq(false))
+            .one(&ctx.db)
+            .await?;
+
+        Ok(unit.map(|u| u.to_domain()))
+    }
+
+    async fn update(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
         id: i64,
         uom: &UnitOfMeasureUpdate,
-    ) -> DomainResult<()>
-    where
-        E: sqlx::Executor<'e, Database = Sqlite>,
-    {
-        let mut builder: QueryBuilder<Sqlite> = QueryBuilder::new("UPDATE units SET ");
-        let mut separated = builder.separated(", ");
+    ) -> DomainResult<()> {
+        use sea_orm::{UpdateMany, sea_query::Expr};
 
+        // Build update query with filters
+        let mut update_query: UpdateMany<UnitEntity> = UnitEntity::update_many()
+            .filter(UnitColumn::Id.eq(id))
+            .filter(UnitColumn::IsDeleted.eq(false));
+
+        // Update fields if provided
         if let Some(name) = &uom.name {
-            separated.push("name = ").push_bind_unseparated(name);
+            update_query = update_query.col_expr(UnitColumn::Name, Expr::value(name.clone()));
         }
 
         if uom.description.should_update() {
-            separated
-                .push("description = ")
-                .push_bind_unseparated(uom.description.to_bind_value());
+            update_query = update_query.col_expr(
+                UnitColumn::Description,
+                Expr::value(uom.description.to_bind_value()),
+            );
         }
 
-        separated.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')");
+        // Always update the updated_at timestamp
+        update_query = update_query.col_expr(
+            UnitColumn::UpdatedAt,
+            Expr::value(
+                chrono::Utc::now()
+                    .format("%Y-%m-%dT%H:%M:%S%.fZ")
+                    .to_string(),
+            ),
+        );
 
-        builder.push(" WHERE id = ").push_bind(id);
-        builder.push(" AND is_deleted = 0");
+        // Execute the update
+        let result = update_query.exec(&ctx.db).await?;
 
-        let query = builder.build();
-        let result = query.execute(e).await?;
-        check_rows_affected(result.rows_affected(), "Unit of measure", id)?;
+        // Check if any rows were affected
+        if result.rows_affected == 0 {
+            return Err(Error::NotFound(format!("Unit with id {} not found", id)));
+        }
 
         Ok(())
     }
 
-    async fn delete<'e, E>(&self, _: &Context, e: E, id: i64) -> DomainResult<()>
-    where
-        E: sqlx::Executor<'e, Database = Sqlite>,
-    {
-        let query = soft_delete(e, TableName::Units, id);
-        let result = query.await?;
-        check_rows_affected(result.rows_affected(), "Unit of measure", id)
+    async fn delete(&self, ctx: &RepoCtx<impl ConnectionTrait>, id: i64) -> DomainResult<()> {
+        use sea_orm::sea_query::Expr;
+
+        let now = chrono::Utc::now()
+            .format("%Y-%m-%dT%H:%M:%S%.fZ")
+            .to_string();
+
+        // Soft delete: mark as deleted with a single UPDATE query
+        let result = UnitEntity::update_many()
+            .filter(UnitColumn::Id.eq(id))
+            .filter(UnitColumn::IsDeleted.eq(false))
+            .col_expr(UnitColumn::IsDeleted, Expr::value(true))
+            .col_expr(UnitColumn::DeletedAt, Expr::value(Some(now.clone())))
+            .col_expr(UnitColumn::UpdatedAt, Expr::value(now))
+            .exec(&ctx.db)
+            .await?;
+
+        // Check if any rows were affected
+        if result.rows_affected == 0 {
+            return Err(Error::NotFound(format!("Unit with id {} not found", id)));
+        }
+
+        Ok(())
     }
 
-    async fn get_all<'e, E>(&self, _: &Context, e: E) -> DomainResult<Vec<UnitOfMeasure>>
-    where
-        E: sqlx::Executor<'e, Database = Sqlite>,
-    {
-        let query = sqlx::query_as::<_, UnitOfMeasureDbSqlite>(
-            r#"
-            SELECT id, created_at, updated_at, deleted_at, is_deleted, name, description
-            FROM units 
-            WHERE is_deleted = 0
-            "#,
-        )
-        .fetch_all(e);
-        let units = query.await?;
-        Ok(map_results(units))
-    }
-
-    async fn get_by_id<'e, E>(
+    async fn get_all(
         &self,
-        _: &Context,
-        e: E,
-        id: i64,
-    ) -> DomainResult<Option<UnitOfMeasure>>
-    where
-        E: sqlx::Executor<'e, Database = Sqlite>,
-    {
-        let query = sqlx::query_as::<_, UnitOfMeasureDbSqlite>(
-            r#"
-            SELECT id, created_at, updated_at, deleted_at, is_deleted, name, description
-            FROM units 
-            WHERE id = ? AND is_deleted = 0
-            "#,
-        )
-        .bind(id)
-        .fetch_optional(e);
+        ctx: &RepoCtx<impl ConnectionTrait>,
+    ) -> DomainResult<Vec<UnitOfMeasure>> {
+        let units = UnitEntity::find()
+            .filter(UnitColumn::IsDeleted.eq(false))
+            .all(&ctx.db)
+            .await?;
 
-        Ok(query.await?.map(UnitOfMeasure::from))
+        Ok(units.into_iter().map(|u| u.to_domain()).collect())
     }
 }

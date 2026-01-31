@@ -43,4 +43,10 @@ impl From<sqlx::Error> for Error {
     }
 }
 
+impl From<sea_orm::DbErr> for Error {
+    fn from(err: sea_orm::DbErr) -> Self {
+        Error::Database(err.to_string())
+    }
+}
+
 pub type DomainResult<T> = Result<T, Error>;

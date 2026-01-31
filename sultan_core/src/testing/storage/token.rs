@@ -1,26 +1,16 @@
+use sea_orm::DatabaseConnection;
+
 use crate::{
-    domain::{
-        Context,
-        model::{token::Token, user::UserCreate},
-    },
-    storage::{
-        SqliteUserRepository, TokenRepository, UserRepository, sqlite::SqliteTokenRepository,
-    },
+    domain::model::{token::Token, user::UserCreate},
+    storage::{RepoCtx, SqliteUserRepository, TokenRepository, UserRepository},
 };
 use chrono::{Duration, Utc};
 
-pub async fn create_sqlite_user_and_token_repo()
--> (Context, SqliteTokenRepository, SqliteUserRepository) {
-    let pool = super::init_sqlite_pool().await;
-    (
-        Context::new(),
-        crate::storage::sqlite::token::SqliteTokenRepository::new(pool.clone()),
-        crate::storage::sqlite::user::SqliteUserRepository::new(pool),
-    )
-}
-
 /// Helper to create a test user (required due to foreign key constraint)
-async fn create_test_user<R: UserRepository<Tx>, Tx>(user_repo: &R, ctx: &Context) -> i64 {
+async fn create_test_user(
+    user_repo: &SqliteUserRepository,
+    ctx: &RepoCtx<DatabaseConnection>,
+) -> i64 {
     let user_id = super::generate_test_id().await;
     let user = UserCreate {
         username: format!("token_test_user_{}", user_id),
@@ -34,20 +24,46 @@ async fn create_test_user<R: UserRepository<Tx>, Tx>(user_repo: &R, ctx: &Contex
     };
 
     user_repo
-        .create_user(ctx, user_id, &user)
+        .create(ctx, user_id, &user)
         .await
         .expect("Failed to create test user");
 
     user_id
 }
 
-pub async fn token_test_save_and_get_token<Tx, U: UserRepository<Tx>>(
-    ctx: &Context,
-    token_repo: impl TokenRepository,
-    user_repo: U,
+/// Run all token repository tests using a context factory that creates fresh contexts.
+pub async fn token_test_all<T, F, Fut>(repo: &T, ctx_factory: F)
+where
+    T: TokenRepository,
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = (RepoCtx<DatabaseConnection>, SqliteUserRepository)>,
+{
+    let (ctx, user_repo) = ctx_factory().await;
+    token_test_save_and_get_token(&ctx, &user_repo, repo).await;
+
+    let (ctx, _) = ctx_factory().await;
+    token_test_get_token_not_found(&ctx, repo).await;
+
+    let (ctx, user_repo) = ctx_factory().await;
+    token_test_delete_token(&ctx, &user_repo, repo).await;
+
+    let (ctx, _) = ctx_factory().await;
+    token_test_delete_token_not_found(&ctx, repo).await;
+
+    let (ctx, user_repo) = ctx_factory().await;
+    token_test_multiple_tokens_same_user(&ctx, &user_repo, repo).await;
+
+    let (ctx, user_repo) = ctx_factory().await;
+    token_test_token_with_expired_time(&ctx, &user_repo, repo).await;
+}
+
+pub async fn token_test_save_and_get_token<T: TokenRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    user_repo: &SqliteUserRepository,
+    token_repo: &T,
 ) {
     // Create a user first (foreign key requirement)
-    let user_id = create_test_user(&user_repo, &ctx).await;
+    let user_id = create_test_user(user_repo, ctx).await;
 
     // Create a token
     let token_id = super::generate_test_id().await;
@@ -63,13 +79,13 @@ pub async fn token_test_save_and_get_token<Tx, U: UserRepository<Tx>>(
 
     // Save the token
     token_repo
-        .save(&ctx, &token)
+        .save(ctx, &token)
         .await
         .expect("Failed to save token");
 
     // Retrieve the token by token value
     let fetched_token = token_repo
-        .get_by_token(&ctx, &token_value)
+        .get_by_token(ctx, &token_value)
         .await
         .expect("Failed to get token")
         .expect("Token not found");
@@ -85,22 +101,25 @@ pub async fn token_test_save_and_get_token<Tx, U: UserRepository<Tx>>(
     );
 }
 
-pub async fn token_test_get_token_not_found(ctx: &Context, token_repo: impl TokenRepository) {
+pub async fn token_test_get_token_not_found<T: TokenRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    token_repo: &T,
+) {
     let result = token_repo
-        .get_by_token(&ctx, "non_existent_token")
+        .get_by_token(ctx, "non_existent_token")
         .await
         .expect("Query should succeed");
 
     assert!(result.is_none(), "Token should not be found");
 }
 
-pub async fn token_test_delete_token<Tx, U: UserRepository<Tx>>(
-    ctx: &Context,
-    token_repo: impl TokenRepository,
-    user_repo: U,
+pub async fn token_test_delete_token<T: TokenRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    user_repo: &SqliteUserRepository,
+    token_repo: &T,
 ) {
     // Create a user first
-    let user_id = create_test_user(&user_repo, &ctx).await;
+    let user_id = create_test_user(user_repo, ctx).await;
 
     // Create and save a token
     let token_id = super::generate_test_id().await;
@@ -114,13 +133,13 @@ pub async fn token_test_delete_token<Tx, U: UserRepository<Tx>>(
     };
 
     token_repo
-        .save(&ctx, &token)
+        .save(ctx, &token)
         .await
         .expect("Failed to save token");
 
     // Verify token exists and get the actual database-assigned ID
     let fetched = token_repo
-        .get_by_token(&ctx, &token_value)
+        .get_by_token(ctx, &token_value)
         .await
         .expect("Failed to get token")
         .expect("Token should exist before deletion");
@@ -128,20 +147,23 @@ pub async fn token_test_delete_token<Tx, U: UserRepository<Tx>>(
 
     // Delete the token using the actual database-assigned ID
     token_repo
-        .delete(&ctx, actual_token_id)
+        .delete(ctx, actual_token_id)
         .await
         .expect("Failed to delete token");
 
     // Verify token is deleted
     let fetched_after = token_repo
-        .get_by_token(&ctx, &token_value)
+        .get_by_token(ctx, &token_value)
         .await
         .expect("Query should succeed");
     assert!(fetched_after.is_none(), "Token should be deleted");
 }
 
-pub async fn token_test_delete_token_not_found(ctx: &Context, token_repo: impl TokenRepository) {
-    let result = token_repo.delete(&ctx, 999999).await;
+pub async fn token_test_delete_token_not_found<T: TokenRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    token_repo: &T,
+) {
+    let result = token_repo.delete(ctx, 999999).await;
 
     assert!(result.is_err(), "Deleting non-existent token should fail");
     let err = result.unwrap_err();
@@ -151,13 +173,13 @@ pub async fn token_test_delete_token_not_found(ctx: &Context, token_repo: impl T
     );
 }
 
-pub async fn token_test_multiple_tokens_same_user<Tx, U: UserRepository<Tx>>(
-    ctx: &Context,
-    token_repo: impl TokenRepository,
-    user_repo: U,
+pub async fn token_test_multiple_tokens_same_user<T: TokenRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    user_repo: &SqliteUserRepository,
+    token_repo: &T,
 ) {
     // Create a user
-    let user_id = create_test_user(&user_repo, &ctx).await;
+    let user_id = create_test_user(user_repo, ctx).await;
 
     // Create multiple tokens for the same user
     let token1_id = super::generate_test_id().await;
@@ -180,17 +202,17 @@ pub async fn token_test_multiple_tokens_same_user<Tx, U: UserRepository<Tx>>(
 
     // Save both tokens
     token_repo
-        .save(&ctx, &token1)
+        .save(ctx, &token1)
         .await
         .expect("Failed to save token 1");
     token_repo
-        .save(&ctx, &token2)
+        .save(ctx, &token2)
         .await
         .expect("Failed to save token 2");
 
     // Verify both tokens can be retrieved and get their actual database-assigned IDs
     let fetched1 = token_repo
-        .get_by_token(&ctx, &token1_value)
+        .get_by_token(ctx, &token1_value)
         .await
         .expect("Failed to get token 1")
         .expect("Token 1 not found");
@@ -198,7 +220,7 @@ pub async fn token_test_multiple_tokens_same_user<Tx, U: UserRepository<Tx>>(
     assert!(actual_token1_id > 0);
 
     let fetched2 = token_repo
-        .get_by_token(&ctx, &token2_value)
+        .get_by_token(ctx, &token2_value)
         .await
         .expect("Failed to get token 2")
         .expect("Token 2 not found");
@@ -207,32 +229,32 @@ pub async fn token_test_multiple_tokens_same_user<Tx, U: UserRepository<Tx>>(
 
     // Delete one token using actual database-assigned ID
     token_repo
-        .delete(&ctx, actual_token1_id)
+        .delete(ctx, actual_token1_id)
         .await
         .expect("Failed to delete token 1");
 
     // Verify token1 is deleted but token2 still exists
     let fetched1_after = token_repo
-        .get_by_token(&ctx, &token1_value)
+        .get_by_token(ctx, &token1_value)
         .await
         .expect("Query should succeed");
     assert!(fetched1_after.is_none(), "Token 1 should be deleted");
 
     let fetched2_after = token_repo
-        .get_by_token(&ctx, &token2_value)
+        .get_by_token(ctx, &token2_value)
         .await
         .expect("Query should succeed")
         .expect("Token 2 should still exist");
     assert_eq!(fetched2_after.id, actual_token2_id);
 }
 
-pub async fn token_test_token_with_expired_time<Tx, U: UserRepository<Tx>>(
-    ctx: &Context,
-    token_repo: impl TokenRepository,
-    user_repo: U,
+pub async fn token_test_token_with_expired_time<T: TokenRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    user_repo: &SqliteUserRepository,
+    token_repo: &T,
 ) {
     // Create a user
-    let user_id = create_test_user(&user_repo, &ctx).await;
+    let user_id = create_test_user(user_repo, ctx).await;
 
     // Create an already expired token
     let token_id = super::generate_test_id().await;
@@ -248,14 +270,14 @@ pub async fn token_test_token_with_expired_time<Tx, U: UserRepository<Tx>>(
 
     // Save the expired token (repository doesn't check expiration)
     token_repo
-        .save(&ctx, &token)
+        .save(ctx, &token)
         .await
         .expect("Failed to save expired token");
 
     // Retrieve the token - it should still be retrievable
     // (expiration check is application logic, not repository logic)
     let fetched = token_repo
-        .get_by_token(&ctx, &token_value)
+        .get_by_token(ctx, &token_value)
         .await
         .expect("Failed to get token")
         .expect("Token not found");

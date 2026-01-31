@@ -1,23 +1,184 @@
 use async_trait::async_trait;
+use sea_orm::ConnectionTrait;
 
 use crate::domain::{
-    Context, DomainResult,
+    DomainResult,
     model::{
         customer::{Customer, CustomerCreate, CustomerFilter, CustomerUpdate},
         pagination::PaginationOptions,
     },
 };
 
+/// Repository trait for Customer operations.
+///
+/// This trait defines the contract for managing customers in the system.
+/// All methods accept `RepoCtx<impl ConnectionTrait>` to support both direct database
+/// access and transactional operations.
+///
+/// # Implementations
+///
+/// - SQLite: [`SqliteCustomerRepository`](crate::storage::sqlite::customer::SqliteCustomerRepository)
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use sultan_core::storage::customer_repo::{CustomerRepository, RepoCtx};
+/// use sultan_core::storage::sqlite::customer::SqliteCustomerRepository;
+///
+/// async fn example(db: &DatabaseConnection) -> DomainResult<()> {
+///     let repo = SqliteCustomerRepository::new();
+///     let ctx = RepoCtx {
+///         ctx: Context::new(),
+///         db,
+///     };
+///     
+///     // Create a new customer
+///     let customer = CustomerCreate {
+///         number: "CUST001".to_string(),
+///         name: "John Doe".to_string(),
+///         address: Some("123 Main St".to_string()),
+///         email: Some("john@example.com".to_string()),
+///         phone: Some("+1234567890".to_string()),
+///         level: 1,
+///         metadata: None,
+///     };
+///     repo.create(&ctx, 12345, &customer).await?;
+///     
+///     // Get the customer by ID
+///     let customer = repo.get_by_id(&ctx, 12345).await?;
+///     
+///     // Get customer by number
+///     let customer = repo.get_by_number(&ctx, "CUST001").await?;
+///     
+///     // List all customers with filtering
+///     let filter = CustomerFilter::default();
+///     let pagination = PaginationOptions::new(1, 20, None);
+///     let customers = repo.get_all(&ctx, &filter, &pagination).await?;
+///     
+///     Ok(())
+/// }
+/// ```
 #[async_trait]
 pub trait CustomerRepository: Send + Sync {
-    async fn create(&self, ctx: &Context, id: i64, customer: &CustomerCreate) -> DomainResult<()>;
-    async fn update(&self, ctx: &Context, id: i64, customer: &CustomerUpdate) -> DomainResult<()>;
-    async fn delete(&self, ctx: &Context, id: i64) -> DomainResult<()>;
-    async fn get_by_number(&self, ctx: &Context, number: &str) -> DomainResult<Option<Customer>>;
-    async fn get_by_id(&self, ctx: &Context, id: i64) -> DomainResult<Option<Customer>>;
+    /// Creates a new customer.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - Repository context with database connection
+    /// * `id` - Snowflake ID for the new customer
+    /// * `customer` - Customer data to create
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Customer created successfully
+    /// * `Err(Error::Conflict)` - Customer with the same number already exists
+    /// * `Err(Error)` - Database error or validation error
+    async fn create(
+        &self,
+        ctx: &super::RepoCtx<impl ConnectionTrait>,
+        id: i64,
+        customer: &CustomerCreate,
+    ) -> DomainResult<()>;
+
+    /// Updates an existing customer.
+    ///
+    /// Only provided fields in `CustomerUpdate` will be updated.
+    /// The `updated_at` timestamp is automatically updated.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - Repository context with database connection
+    /// * `id` - ID of the customer to update
+    /// * `customer` - Update data
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Customer updated successfully
+    /// * `Err(Error::NotFound)` - Customer not found or soft-deleted
+    /// * `Err(Error::Conflict)` - Updated number conflicts with existing customer
+    /// * `Err(Error)` - Database error
+    async fn update(
+        &self,
+        ctx: &super::RepoCtx<impl ConnectionTrait>,
+        id: i64,
+        customer: &CustomerUpdate,
+    ) -> DomainResult<()>;
+
+    /// Soft-deletes a customer.
+    ///
+    /// This method marks the customer as deleted instead of physically removing it.
+    /// The `is_deleted` flag is set to true, and `deleted_at` is set to the current timestamp.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - Repository context with database connection
+    /// * `id` - ID of the customer to delete
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Customer deleted successfully
+    /// * `Err(Error::NotFound)` - Customer not found or already deleted
+    /// * `Err(Error)` - Database error
+    async fn delete(&self, ctx: &super::RepoCtx<impl ConnectionTrait>, id: i64)
+    -> DomainResult<()>;
+
+    /// Retrieves a customer by their unique number.
+    ///
+    /// The search is case-sensitive and excludes soft-deleted customers.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - Repository context with database connection
+    /// * `number` - Unique customer number to search for
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(customer))` - Customer found
+    /// * `Ok(None)` - Customer not found or soft-deleted
+    /// * `Err(Error)` - Database error
+    async fn get_by_number(
+        &self,
+        ctx: &super::RepoCtx<impl ConnectionTrait>,
+        number: &str,
+    ) -> DomainResult<Option<Customer>>;
+
+    /// Retrieves a customer by ID (excluding soft-deleted records).
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - Repository context with database connection
+    /// * `id` - ID of the customer to retrieve
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(customer))` - Customer found
+    /// * `Ok(None)` - Customer not found or soft-deleted
+    /// * `Err(Error)` - Database error
+    async fn get_by_id(
+        &self,
+        ctx: &super::RepoCtx<impl ConnectionTrait>,
+        id: i64,
+    ) -> DomainResult<Option<Customer>>;
+
+    /// Retrieves all customers with filtering and pagination.
+    ///
+    /// Supports filtering by name, number, email, phone, and level.
+    /// All filters use partial matching (LIKE) except for level which uses exact matching.
+    /// Soft-deleted customers are excluded from results.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - Repository context with database connection
+    /// * `filter` - Filter criteria (all fields are optional)
+    /// * `pagination` - Pagination options (page, page_size, order)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<Customer>)` - List of customers matching the criteria
+    /// * `Err(Error)` - Database error
     async fn get_all(
         &self,
-        ctx: &Context,
+        ctx: &super::RepoCtx<impl ConnectionTrait>,
         filter: &CustomerFilter,
         pagination: &PaginationOptions,
     ) -> DomainResult<Vec<Customer>>;

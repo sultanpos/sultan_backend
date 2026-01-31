@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use sea_orm::DatabaseConnection;
 
 use crate::domain::Context;
 use crate::domain::DomainResult;
@@ -6,7 +7,7 @@ use crate::domain::model::branch::{Branch, BranchCreate, BranchUpdate};
 use crate::domain::model::permission::action;
 use crate::domain::model::permission::resource;
 use crate::snowflake::IdGenerator;
-use crate::storage::BranchRepository;
+use crate::storage::{BranchRepository, RepoCtx};
 
 #[async_trait]
 pub trait BranchServiceTrait: Send + Sync {
@@ -20,13 +21,15 @@ pub trait BranchServiceTrait: Send + Sync {
 pub struct BranchService<R, I> {
     repository: R,
     id_generator: I,
+    db: DatabaseConnection,
 }
 
 impl<R: BranchRepository, I: IdGenerator> BranchService<R, I> {
-    pub fn new(repository: R, id_generator: I) -> Self {
+    pub fn new(repository: R, id_generator: I, db: DatabaseConnection) -> Self {
         Self {
             repository,
             id_generator,
+            db,
         }
     }
 }
@@ -36,51 +39,181 @@ impl<R: BranchRepository, I: IdGenerator> BranchServiceTrait for BranchService<R
     async fn create(&self, ctx: &Context, branch: &BranchCreate) -> DomainResult<i64> {
         ctx.require_access(None, resource::BRANCH, action::CREATE)?;
         let id = self.id_generator.generate()?;
-        self.repository.create(ctx, id, branch).await?;
+        let repo_ctx = RepoCtx {
+            ctx: ctx.clone(),
+            db: self.db.clone(),
+        };
+        self.repository.create(&repo_ctx, id, branch).await?;
         Ok(id)
     }
 
     async fn update(&self, ctx: &Context, id: i64, branch: &BranchUpdate) -> DomainResult<()> {
         ctx.require_access(None, resource::BRANCH, action::UPDATE)?;
-        self.repository.update(ctx, id, branch).await
+        let repo_ctx = RepoCtx {
+            ctx: ctx.clone(),
+            db: self.db.clone(),
+        };
+        self.repository.update(&repo_ctx, id, branch).await
     }
 
     async fn delete(&self, ctx: &Context, id: i64) -> DomainResult<()> {
         ctx.require_access(None, resource::BRANCH, action::DELETE)?;
-        self.repository.delete(ctx, id).await
+        let repo_ctx = RepoCtx {
+            ctx: ctx.clone(),
+            db: self.db.clone(),
+        };
+        self.repository.delete(&repo_ctx, id).await
     }
 
     async fn get_by_id(&self, ctx: &Context, id: i64) -> DomainResult<Option<Branch>> {
         ctx.require_access(None, resource::BRANCH, action::READ)?;
-        self.repository.get_by_id(ctx, id).await
+        let repo_ctx = RepoCtx {
+            ctx: ctx.clone(),
+            db: self.db.clone(),
+        };
+        self.repository.get_by_id(&repo_ctx, id).await
     }
 
     async fn get_all(&self, ctx: &Context) -> DomainResult<Vec<Branch>> {
         ctx.require_access(None, resource::BRANCH, action::READ)?;
-        self.repository.get_all(ctx).await
+        let repo_ctx = RepoCtx {
+            ctx: ctx.clone(),
+            db: self.db.clone(),
+        };
+        self.repository.get_all(&repo_ctx).await
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::type_complexity)]
 mod tests {
     use super::*;
     use crate::application::create_mock_id_gen;
     use crate::domain::Error;
     use crate::domain::model::Update;
+    use crate::storage::RepoCtx;
     use async_trait::async_trait;
     use chrono::Utc;
-    use mockall::mock;
+    use sea_orm::{ConnectionTrait, DatabaseConnection};
     use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
 
-    mock! {
-        pub BranchRepo {}
-        #[async_trait]
-        impl BranchRepository for BranchRepo {
-            async fn create(&self, ctx: &Context, id: i64,branch: &BranchCreate) -> DomainResult<()>;
-            async fn update(&self, ctx: &Context, id: i64, branch: &BranchUpdate) -> DomainResult<()>;
-            async fn delete(&self, ctx: &Context, id: i64) -> DomainResult<()>;
-            async fn get_all(&self, ctx: &Context) -> DomainResult<Vec<Branch>>;
-            async fn get_by_id(&self, ctx: &Context, id: i64) -> DomainResult<Option<Branch>>;
+    // Manual mock implementation that works with impl Trait
+    #[derive(Clone)]
+    struct MockBranchRepo {
+        create_fn: Arc<Mutex<Option<Box<dyn Fn(i64, BranchCreate) -> DomainResult<()> + Send>>>>,
+        update_fn: Arc<Mutex<Option<Box<dyn Fn(i64, BranchUpdate) -> DomainResult<()> + Send>>>>,
+        delete_fn: Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<()> + Send>>>>,
+        get_by_id_fn: Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<Option<Branch>> + Send>>>>,
+        get_all_fn: Arc<Mutex<Option<Box<dyn Fn() -> DomainResult<Vec<Branch>> + Send>>>>,
+    }
+
+    impl MockBranchRepo {
+        fn new() -> Self {
+            Self {
+                create_fn: Arc::new(Mutex::new(None)),
+                update_fn: Arc::new(Mutex::new(None)),
+                delete_fn: Arc::new(Mutex::new(None)),
+                get_by_id_fn: Arc::new(Mutex::new(None)),
+                get_all_fn: Arc::new(Mutex::new(None)),
+            }
+        }
+
+        fn expect_create<F>(&mut self, f: F)
+        where
+            F: Fn(i64, BranchCreate) -> DomainResult<()> + Send + 'static,
+        {
+            *self.create_fn.lock().unwrap() = Some(Box::new(f));
+        }
+
+        fn expect_update<F>(&mut self, f: F)
+        where
+            F: Fn(i64, BranchUpdate) -> DomainResult<()> + Send + 'static,
+        {
+            *self.update_fn.lock().unwrap() = Some(Box::new(f));
+        }
+
+        fn expect_delete<F>(&mut self, f: F)
+        where
+            F: Fn(i64) -> DomainResult<()> + Send + 'static,
+        {
+            *self.delete_fn.lock().unwrap() = Some(Box::new(f));
+        }
+
+        fn expect_get_by_id<F>(&mut self, f: F)
+        where
+            F: Fn(i64) -> DomainResult<Option<Branch>> + Send + 'static,
+        {
+            *self.get_by_id_fn.lock().unwrap() = Some(Box::new(f));
+        }
+
+        fn expect_get_all<F>(&mut self, f: F)
+        where
+            F: Fn() -> DomainResult<Vec<Branch>> + Send + 'static,
+        {
+            *self.get_all_fn.lock().unwrap() = Some(Box::new(f));
+        }
+    }
+
+    #[async_trait]
+    impl BranchRepository for MockBranchRepo {
+        async fn create(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            id: i64,
+            branch: &BranchCreate,
+        ) -> DomainResult<()> {
+            let func = self.create_fn.lock().unwrap();
+            if let Some(f) = func.as_ref() {
+                f(id, branch.clone())
+            } else {
+                panic!("create not mocked")
+            }
+        }
+
+        async fn update(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            id: i64,
+            branch: &BranchUpdate,
+        ) -> DomainResult<()> {
+            let func = self.update_fn.lock().unwrap();
+            if let Some(f) = func.as_ref() {
+                f(id, branch.clone())
+            } else {
+                panic!("update not mocked")
+            }
+        }
+
+        async fn delete(&self, _ctx: &RepoCtx<impl ConnectionTrait>, id: i64) -> DomainResult<()> {
+            let func = self.delete_fn.lock().unwrap();
+            if let Some(f) = func.as_ref() {
+                f(id)
+            } else {
+                panic!("delete not mocked")
+            }
+        }
+
+        async fn get_by_id(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            id: i64,
+        ) -> DomainResult<Option<Branch>> {
+            let func = self.get_by_id_fn.lock().unwrap();
+            if let Some(f) = func.as_ref() {
+                f(id)
+            } else {
+                panic!("get_by_id not mocked")
+            }
+        }
+
+        async fn get_all(&self, _ctx: &RepoCtx<impl ConnectionTrait>) -> DomainResult<Vec<Branch>> {
+            let func = self.get_all_fn.lock().unwrap();
+            if let Some(f) = func.as_ref() {
+                f()
+            } else {
+                panic!("get_all not mocked")
+            }
         }
     }
     /// Creates a test context with full permissions for BRANCH resource
@@ -92,11 +225,19 @@ mod tests {
         Context::new_with_all(None, permissions, HashMap::new())
     }
 
+    /// Creates an in-memory test database connection
+    async fn create_test_db() -> DatabaseConnection {
+        sea_orm::Database::connect("sqlite::memory:")
+            .await
+            .expect("Failed to create test database")
+    }
+
     #[tokio::test]
     async fn test_create_branch() {
         let mut mock_repo = MockBranchRepo::new();
         let mock_id_gen = create_mock_id_gen(1);
         let ctx = create_test_context();
+        let db = create_test_db().await;
 
         let branch_create = BranchCreate {
             is_main: true,
@@ -108,12 +249,9 @@ mod tests {
             image: None,
         };
 
-        mock_repo
-            .expect_create()
-            .times(1)
-            .returning(|_, _, _| Ok(()));
+        mock_repo.expect_create(|_id, _branch| Ok(()));
 
-        let service = BranchService::new(mock_repo, mock_id_gen);
+        let service = BranchService::new(mock_repo, mock_id_gen, db);
         let created_id = service
             .create(&ctx, &branch_create)
             .await
@@ -127,6 +265,7 @@ mod tests {
         let mut mock_repo = MockBranchRepo::new();
         let mock_id_gen = create_mock_id_gen(1);
         let ctx = create_test_context();
+        let db = create_test_db().await;
         let branch = BranchCreate {
             is_main: true,
             name: "Test Branch".to_string(),
@@ -137,12 +276,9 @@ mod tests {
             image: None,
         };
 
-        mock_repo
-            .expect_create()
-            .times(1)
-            .returning(|_, _, _| Err(Error::Database("DB Error".to_string())));
+        mock_repo.expect_create(|_, _| Err(Error::Database("DB Error".to_string())));
 
-        let service = BranchService::new(mock_repo, mock_id_gen);
+        let service = BranchService::new(mock_repo, mock_id_gen, db);
         let result = service.create(&ctx, &branch).await;
 
         assert!(matches!(result, Err(Error::Database(msg)) if msg == "DB Error"));
@@ -153,6 +289,7 @@ mod tests {
         let mut mock_repo = MockBranchRepo::new();
         let mock_id_gen = create_mock_id_gen(1);
         let ctx = create_test_context();
+        let db = create_test_db().await;
         let branch = BranchUpdate {
             is_main: Some(true),
             name: Some("Updated Branch".to_string()),
@@ -163,17 +300,9 @@ mod tests {
             image: Update::Clear,
         };
 
-        mock_repo
-            .expect_update()
-            .with(
-                mockall::predicate::always(),
-                mockall::predicate::eq(1),
-                mockall::predicate::always(),
-            )
-            .times(1)
-            .returning(|_, _, _| Ok(()));
+        mock_repo.expect_update(|_, _| Ok(()));
 
-        let service = BranchService::new(mock_repo, mock_id_gen);
+        let service = BranchService::new(mock_repo, mock_id_gen, db);
         let result = service.update(&ctx, 1, &branch).await;
 
         assert!(result.is_ok());
@@ -184,17 +313,15 @@ mod tests {
         let mut mock_repo = MockBranchRepo::new();
         let mock_id_gen = create_mock_id_gen(1);
         let ctx = create_test_context();
+        let db = create_test_db().await;
         let update_data = BranchUpdate {
             name: Some("Updated Branch".to_string()),
             ..Default::default()
         };
 
-        mock_repo
-            .expect_update()
-            .times(1)
-            .returning(|_, _, _| Err(Error::Database("DB Error".to_string())));
+        mock_repo.expect_update(|_, _| Err(Error::Database("DB Error".to_string())));
 
-        let service = BranchService::new(mock_repo, mock_id_gen);
+        let service = BranchService::new(mock_repo, mock_id_gen, db);
         let result = service.update(&ctx, 1, &update_data).await;
 
         assert!(matches!(result, Err(Error::Database(msg)) if msg == "DB Error"));
@@ -205,14 +332,11 @@ mod tests {
         let mut mock_repo = MockBranchRepo::new();
         let mock_id_gen = create_mock_id_gen(1);
         let ctx = create_test_context();
+        let db = create_test_db().await;
 
-        mock_repo
-            .expect_delete()
-            .with(mockall::predicate::always(), mockall::predicate::eq(1))
-            .times(1)
-            .returning(|_, _| Ok(()));
+        mock_repo.expect_delete(|_| Ok(()));
 
-        let service = BranchService::new(mock_repo, mock_id_gen);
+        let service = BranchService::new(mock_repo, mock_id_gen, db);
         let result = service.delete(&ctx, 1).await;
 
         assert!(result.is_ok());
@@ -223,13 +347,11 @@ mod tests {
         let mut mock_repo = MockBranchRepo::new();
         let mock_id_gen = create_mock_id_gen(1);
         let ctx = create_test_context();
+        let db = create_test_db().await;
 
-        mock_repo
-            .expect_delete()
-            .times(1)
-            .returning(|_, _| Err(Error::Database("DB Error".to_string())));
+        mock_repo.expect_delete(|_| Err(Error::Database("DB Error".to_string())));
 
-        let service = BranchService::new(mock_repo, mock_id_gen);
+        let service = BranchService::new(mock_repo, mock_id_gen, db);
         let result = service.delete(&ctx, 1).await;
 
         assert!(matches!(result, Err(Error::Database(msg)) if msg == "DB Error"));
@@ -240,6 +362,7 @@ mod tests {
         let mut mock_repo = MockBranchRepo::new();
         let mock_id_gen = create_mock_id_gen(1);
         let ctx = create_test_context();
+        let db = create_test_db().await;
         let branch = Branch {
             id: 1,
             created_at: Utc::now(),
@@ -256,13 +379,9 @@ mod tests {
         };
 
         let branch_clone = branch.clone();
-        mock_repo
-            .expect_get_by_id()
-            .with(mockall::predicate::always(), mockall::predicate::eq(1))
-            .times(1)
-            .returning(move |_, _| Ok(Some(branch_clone.clone())));
+        mock_repo.expect_get_by_id(move |_| Ok(Some(branch_clone.clone())));
 
-        let service = BranchService::new(mock_repo, mock_id_gen);
+        let service = BranchService::new(mock_repo, mock_id_gen, db);
         let result = service.get_by_id(&ctx, 1).await;
 
         assert!(result.is_ok());
@@ -276,13 +395,11 @@ mod tests {
         let mut mock_repo = MockBranchRepo::new();
         let mock_id_gen = create_mock_id_gen(1);
         let ctx = create_test_context();
+        let db = create_test_db().await;
 
-        mock_repo
-            .expect_get_by_id()
-            .times(1)
-            .returning(|_, _| Ok(None));
+        mock_repo.expect_get_by_id(|_| Ok(None));
 
-        let service = BranchService::new(mock_repo, mock_id_gen);
+        let service = BranchService::new(mock_repo, mock_id_gen, db);
         let result = service.get_by_id(&ctx, 1).await;
 
         assert!(result.is_ok());
@@ -294,13 +411,11 @@ mod tests {
         let mut mock_repo = MockBranchRepo::new();
         let mock_id_gen = create_mock_id_gen(1);
         let ctx = create_test_context();
+        let db = create_test_db().await;
 
-        mock_repo
-            .expect_get_by_id()
-            .times(1)
-            .returning(|_, _| Err(Error::Database("DB Error".to_string())));
+        mock_repo.expect_get_by_id(|_| Err(Error::Database("DB Error".to_string())));
 
-        let service = BranchService::new(mock_repo, mock_id_gen);
+        let service = BranchService::new(mock_repo, mock_id_gen, db);
         let result = service.get_by_id(&ctx, 1).await;
 
         assert!(matches!(result, Err(Error::Database(msg)) if msg == "DB Error"));
@@ -311,6 +426,7 @@ mod tests {
         let mut mock_repo = MockBranchRepo::new();
         let mock_id_gen = create_mock_id_gen(1);
         let ctx = create_test_context();
+        let db = create_test_db().await;
         let branch = Branch {
             id: 1,
             created_at: Utc::now(),
@@ -326,12 +442,9 @@ mod tests {
             image: None,
         };
 
-        mock_repo
-            .expect_get_all()
-            .times(1)
-            .returning(move |_| Ok(vec![branch.clone()]));
+        mock_repo.expect_get_all(move || Ok(vec![branch.clone()]));
 
-        let service = BranchService::new(mock_repo, mock_id_gen);
+        let service = BranchService::new(mock_repo, mock_id_gen, db);
         let result = service.get_all(&ctx).await;
 
         assert!(result.is_ok());
@@ -345,13 +458,11 @@ mod tests {
         let mut mock_repo = MockBranchRepo::new();
         let mock_id_gen = create_mock_id_gen(1);
         let ctx = create_test_context();
+        let db = create_test_db().await;
 
-        mock_repo
-            .expect_get_all()
-            .times(1)
-            .returning(|_| Err(Error::Database("DB Error".to_string())));
+        mock_repo.expect_get_all(|| Err(Error::Database("DB Error".to_string())));
 
-        let service = BranchService::new(mock_repo, mock_id_gen);
+        let service = BranchService::new(mock_repo, mock_id_gen, db);
         let result = service.get_all(&ctx).await;
 
         assert!(matches!(result, Err(Error::Database(msg)) if msg == "DB Error"));

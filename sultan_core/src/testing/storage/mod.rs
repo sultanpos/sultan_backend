@@ -2,6 +2,7 @@
 pub mod branch;
 pub mod category;
 pub mod customer;
+pub mod number;
 pub mod product;
 pub mod sell_price;
 pub mod supplier;

@@ -1,197 +1,244 @@
 use async_trait::async_trait;
-use serde::Serialize;
-use sqlx::{QueryBuilder, Sqlite, SqlitePool};
-
-use super::{
-    QueryBuilderExt, TableName, check_rows_affected, map_results, serialize_metadata_update,
-    soft_delete,
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter,
+    QuerySelect, Set,
 };
+
+use super::entity::{SupplierActiveModel, SupplierColumn, SupplierEntity};
 use crate::{
     domain::{
-        Context, DomainResult,
+        DomainResult,
+        error::Error,
         model::{
             pagination::PaginationOptions,
             supplier::{Supplier, SupplierCreate, SupplierFilter, SupplierUpdate},
         },
     },
-    storage::SupplierRepository,
+    storage::{RepoCtx, SupplierRepository},
 };
 
-#[derive(Clone)]
-pub struct SqliteSupplierRepository {
-    pool: SqlitePool,
-}
+/// SQLite implementation of [`SupplierRepository`] using SeaORM.
+///
+/// This repository handles all supplier-related database operations
+/// including CRUD operations, soft-delete, and filtered queries.
+#[derive(Clone, Default)]
+pub struct SqliteSupplierRepository {}
 
 impl SqliteSupplierRepository {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
-    }
-}
-
-// Database model for Supplier - SQLite
-#[derive(sqlx::FromRow, Debug, Serialize)]
-pub struct SupplierDbSqlite {
-    pub id: i64,
-    pub created_at: String,
-    pub updated_at: String,
-    pub deleted_at: Option<String>,
-    pub is_deleted: bool,
-    pub name: String,
-    pub code: Option<String>,
-    pub email: Option<String>,
-    pub address: Option<String>,
-    pub phone: Option<String>,
-    pub npwp: Option<String>,
-    pub npwp_name: Option<String>,
-    pub metadata: Option<String>,
-}
-
-impl From<SupplierDbSqlite> for Supplier {
-    fn from(supplier_db: SupplierDbSqlite) -> Self {
-        Supplier {
-            id: supplier_db.id,
-            created_at: super::parse_sqlite_date(&supplier_db.created_at),
-            updated_at: super::parse_sqlite_date(&supplier_db.updated_at),
-            deleted_at: supplier_db.deleted_at.map(|d| super::parse_sqlite_date(&d)),
-            is_deleted: supplier_db.is_deleted,
-            name: supplier_db.name,
-            code: supplier_db.code,
-            address: supplier_db.address,
-            phone: supplier_db.phone,
-            npwp: supplier_db.npwp,
-            npwp_name: supplier_db.npwp_name,
-            email: supplier_db.email,
-            metadata: supplier_db
-                .metadata
-                .and_then(|m| serde_json::from_str(&m).ok()),
-        }
+    pub fn new() -> Self {
+        SqliteSupplierRepository {}
     }
 }
 
 #[async_trait]
 impl SupplierRepository for SqliteSupplierRepository {
-    async fn create(&self, _: &Context, id: i64, supplier: &SupplierCreate) -> DomainResult<()> {
-        let metadata_json = super::serialize_metadata(&supplier.metadata);
+    async fn create(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        id: i64,
+        supplier: &SupplierCreate,
+    ) -> DomainResult<()> {
+        let metadata_json = supplier
+            .metadata
+            .as_ref()
+            .map(|m| serde_json::to_string(m).unwrap_or_default());
 
-        let query = sqlx::query(
-            r#"
-            INSERT INTO suppliers (
-                id, name, code, email, address, phone, npwp, npwp_name, metadata
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(id)
-        .bind(&supplier.name)
-        .bind(&supplier.code)
-        .bind(&supplier.email)
-        .bind(&supplier.address)
-        .bind(&supplier.phone)
-        .bind(&supplier.npwp)
-        .bind(&supplier.npwp_name)
-        .bind(&metadata_json)
-        .execute(&self.pool);
+        let now = chrono::Utc::now()
+            .format("%Y-%m-%dT%H:%M:%S%.fZ")
+            .to_string();
 
-        query.await?;
+        let supplier_model = SupplierActiveModel {
+            id: Set(id),
+            created_at: Set(now.clone()),
+            updated_at: Set(now),
+            deleted_at: Set(None),
+            is_deleted: Set(false),
+            name: Set(supplier.name.clone()),
+            code: Set(supplier.code.clone()),
+            email: Set(supplier.email.clone()),
+            address: Set(supplier.address.clone()),
+            phone: Set(supplier.phone.clone()),
+            npwp: Set(supplier.npwp.clone()),
+            npwp_name: Set(supplier.npwp_name.clone()),
+            metadata: Set(metadata_json),
+        };
+
+        supplier_model.insert(&ctx.db).await?;
         Ok(())
     }
 
-    async fn update(&self, _: &Context, id: i64, supplier: &SupplierUpdate) -> DomainResult<()> {
-        let mut builder: QueryBuilder<Sqlite> = QueryBuilder::new("UPDATE suppliers SET ");
-        let mut separated = builder.separated(", ");
+    async fn update(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        id: i64,
+        supplier: &SupplierUpdate,
+    ) -> DomainResult<()> {
+        use sea_orm::sea_query::Expr;
 
+        let mut update_query = SupplierEntity::update_many()
+            .filter(SupplierColumn::Id.eq(id))
+            .filter(SupplierColumn::IsDeleted.eq(false));
+
+        // Update fields if provided
         if let Some(name) = &supplier.name {
-            separated.push("name = ").push_bind_unseparated(name);
+            update_query = update_query.col_expr(SupplierColumn::Name, Expr::value(name.clone()));
         }
+
         if supplier.code.should_update() {
-            separated
-                .push("code = ")
-                .push_bind_unseparated(supplier.code.to_bind_value());
+            update_query = update_query.col_expr(
+                SupplierColumn::Code,
+                Expr::value(supplier.code.to_bind_value()),
+            );
         }
+
         if supplier.email.should_update() {
-            separated
-                .push("email = ")
-                .push_bind_unseparated(supplier.email.to_bind_value());
+            update_query = update_query.col_expr(
+                SupplierColumn::Email,
+                Expr::value(supplier.email.to_bind_value()),
+            );
         }
+
         if supplier.address.should_update() {
-            separated
-                .push("address = ")
-                .push_bind_unseparated(supplier.address.to_bind_value());
+            update_query = update_query.col_expr(
+                SupplierColumn::Address,
+                Expr::value(supplier.address.to_bind_value()),
+            );
         }
+
         if supplier.phone.should_update() {
-            separated
-                .push("phone = ")
-                .push_bind_unseparated(supplier.phone.to_bind_value());
+            update_query = update_query.col_expr(
+                SupplierColumn::Phone,
+                Expr::value(supplier.phone.to_bind_value()),
+            );
         }
+
         if supplier.npwp.should_update() {
-            separated
-                .push("npwp = ")
-                .push_bind_unseparated(supplier.npwp.to_bind_value());
+            update_query = update_query.col_expr(
+                SupplierColumn::Npwp,
+                Expr::value(supplier.npwp.to_bind_value()),
+            );
         }
+
         if supplier.npwp_name.should_update() {
-            separated
-                .push("npwp_name = ")
-                .push_bind_unseparated(supplier.npwp_name.to_bind_value());
+            update_query = update_query.col_expr(
+                SupplierColumn::NpwpName,
+                Expr::value(supplier.npwp_name.to_bind_value()),
+            );
         }
+
         if supplier.metadata.should_update() {
-            let metadata_json = serialize_metadata_update(&supplier.metadata);
-            separated
-                .push("metadata = ")
-                .push_bind_unseparated(metadata_json);
+            let metadata_json = supplier
+                .metadata
+                .as_value()
+                .map(|m| serde_json::to_string(m).unwrap_or_default());
+            update_query =
+                update_query.col_expr(SupplierColumn::Metadata, Expr::value(metadata_json));
         }
 
-        separated.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')");
-        builder.push(" WHERE id = ").push_bind(id);
-        builder.push(" AND is_deleted = 0");
+        // Always update the updated_at timestamp
+        update_query = update_query.col_expr(
+            SupplierColumn::UpdatedAt,
+            Expr::value(
+                chrono::Utc::now()
+                    .format("%Y-%m-%dT%H:%M:%S%.fZ")
+                    .to_string(),
+            ),
+        );
 
-        let query = builder.build();
-        let result = query.execute(&self.pool).await?;
-        check_rows_affected(result.rows_affected(), "Supplier", id)
+        // Execute the update
+        let result = update_query.exec(&ctx.db).await?;
+
+        // Check if any rows were affected
+        if result.rows_affected == 0 {
+            return Err(Error::NotFound(format!(
+                "Supplier with id {} not found",
+                id
+            )));
+        }
+
+        Ok(())
     }
 
-    async fn delete(&self, _: &Context, id: i64) -> DomainResult<()> {
-        let query = soft_delete(&self.pool, TableName::Suppliers, id);
-        let result = query.await?;
-        check_rows_affected(result.rows_affected(), "Supplier", id)
+    async fn delete(&self, ctx: &RepoCtx<impl ConnectionTrait>, id: i64) -> DomainResult<()> {
+        use sea_orm::sea_query::Expr;
+
+        let now = chrono::Utc::now()
+            .format("%Y-%m-%dT%H:%M:%S%.fZ")
+            .to_string();
+
+        let result = SupplierEntity::update_many()
+            .filter(SupplierColumn::Id.eq(id))
+            .filter(SupplierColumn::IsDeleted.eq(false))
+            .col_expr(SupplierColumn::IsDeleted, Expr::value(true))
+            .col_expr(SupplierColumn::DeletedAt, Expr::value(Some(now.clone())))
+            .col_expr(SupplierColumn::UpdatedAt, Expr::value(now))
+            .exec(&ctx.db)
+            .await?;
+
+        if result.rows_affected == 0 {
+            return Err(Error::NotFound(format!(
+                "Supplier with id {} not found",
+                id
+            )));
+        }
+
+        Ok(())
     }
 
     async fn get_all(
         &self,
-        _: &Context,
+        ctx: &RepoCtx<impl ConnectionTrait>,
         filter: &SupplierFilter,
         pagination: &PaginationOptions,
     ) -> DomainResult<Vec<Supplier>> {
-        let mut builder: QueryBuilder<Sqlite> = QueryBuilder::new(
-            "SELECT id, created_at, updated_at, deleted_at, is_deleted, name, code, email, address, phone, npwp, npwp_name, metadata FROM suppliers WHERE is_deleted = 0",
-        );
+        let mut query = SupplierEntity::find();
 
-        builder
-            .push_like_filter("name", &filter.name)
-            .push_like_filter("code", &filter.code)
-            .push_like_filter("email", &filter.email)
-            .push_like_filter("phone", &filter.phone)
-            .push_like_filter("npwp", &filter.npwp);
+        // Build filter conditions
+        let mut condition = Condition::all();
 
-        builder.push(" ORDER BY id DESC");
-        builder.push(" LIMIT ");
-        builder.push_bind(pagination.limit());
-        builder.push(" OFFSET ");
-        builder.push_bind(pagination.offset());
+        if let Some(name) = &filter.name {
+            condition = condition.add(SupplierColumn::Name.contains(name));
+        }
 
-        let query = builder.build_query_as::<SupplierDbSqlite>();
-        let suppliers = query.fetch_all(&self.pool).await?;
-        Ok(map_results(suppliers))
+        if let Some(code) = &filter.code {
+            condition = condition.add(SupplierColumn::Code.contains(code));
+        }
+
+        if let Some(email) = &filter.email {
+            condition = condition.add(SupplierColumn::Email.contains(email));
+        }
+
+        if let Some(phone) = &filter.phone {
+            condition = condition.add(SupplierColumn::Phone.contains(phone));
+        }
+
+        if let Some(npwp) = &filter.npwp {
+            condition = condition.add(SupplierColumn::Npwp.contains(npwp));
+        }
+
+        query = query.filter(condition);
+
+        // Apply pagination
+        let suppliers = query
+            .filter(SupplierColumn::IsDeleted.eq(false))
+            .limit(pagination.limit() as u64)
+            .offset(pagination.offset() as u64)
+            .all(&ctx.db)
+            .await?;
+
+        Ok(suppliers.into_iter().map(|s| s.to_domain()).collect())
     }
 
-    async fn get_by_id(&self, _: &Context, id: i64) -> DomainResult<Option<Supplier>> {
-        let query = sqlx::query_as::<_, SupplierDbSqlite>(
-            r#"
-            SELECT id, created_at, updated_at, deleted_at, is_deleted, name, code, email, address, phone, npwp, npwp_name, metadata
-            FROM suppliers WHERE id = ? AND is_deleted = 0
-            "#,
-        )
-        .bind(id)
-        .fetch_optional(&self.pool);
+    async fn get_by_id(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        id: i64,
+    ) -> DomainResult<Option<Supplier>> {
+        let supplier = SupplierEntity::find_by_id(id)
+            .filter(SupplierColumn::IsDeleted.eq(false))
+            .one(&ctx.db)
+            .await?;
 
-        Ok(query.await?.map(Supplier::from))
+        Ok(supplier.map(|s| s.to_domain()))
     }
 }

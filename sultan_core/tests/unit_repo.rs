@@ -1,81 +1,56 @@
 mod common;
-use sqlx::SqlitePool;
-use sultan_core::{
-    domain::Context, storage::sqlite::SqliteUnitOfMeasureRepository, testing::storage::unit,
+use sea_orm::TransactionTrait;
+use sultan_core::domain::Context;
+use sultan_core::domain::model::product::UnitOfMeasureCreate;
+use sultan_core::storage::{
+    RepoCtx, UnitOfMeasureRepository, sqlite::SqliteUnitOfMeasureRepository,
 };
+use sultan_core::testing::storage::unit;
 
-pub async fn create_sqlite_unit_repo() -> (Context, SqliteUnitOfMeasureRepository, SqlitePool) {
-    let pool = common::init_sqlite_pool().await;
+#[tokio::test]
+async fn test_unit_of_measure_repository() {
     let repo = SqliteUnitOfMeasureRepository::new();
-    (Context::new(), repo, pool)
-}
-
-// =============================================================================
-// Basic CRUD Tests
-// =============================================================================
-
-#[tokio::test]
-async fn test_create_unit_of_measure() {
-    let (ctx, repo, pool) = create_sqlite_unit_repo().await;
-    unit::unit_test_create(&ctx, &repo, &pool).await;
+    unit::test_unit_all(&repo, || async { common::init_sqlite_repo_ctx().await }).await;
 }
 
 #[tokio::test]
-async fn test_create_unit_without_description() {
-    let (ctx, repo, pool) = create_sqlite_unit_repo().await;
-    unit::unit_test_create_without_description(&ctx, &repo, &pool).await;
-}
+pub async fn test_unit_of_measure_repository_with_transaction() {
+    let db = common::init_sqlite_db().await;
+    let tx = db.begin().await.unwrap();
+    let id = common::generate_test_id().await;
+    let unit = UnitOfMeasureCreate {
+        name: "Kilogram".to_string(),
+        description: Some("Unit of mass".to_string()),
+    };
+    let ctx = RepoCtx {
+        ctx: Context::new(),
+        db: tx,
+    };
+    let repo = SqliteUnitOfMeasureRepository::new();
+    repo.create(&ctx, id, &unit)
+        .await
+        .expect("Failed to create unit of measure");
 
-#[tokio::test]
-async fn test_update_unit_name() {
-    let (ctx, repo, pool) = create_sqlite_unit_repo().await;
-    unit::unit_test_update_name(&ctx, &repo, &pool).await;
-}
+    let ctx_non_tx = RepoCtx {
+        ctx: Context::new(),
+        db: db.clone(),
+    };
+    let unit = repo
+        .get_by_id(&ctx_non_tx, id)
+        .await
+        .expect("Failed to get unit of measure");
+    assert!(unit.is_none());
 
-#[tokio::test]
-async fn test_update_unit_description() {
-    let (ctx, repo, pool) = create_sqlite_unit_repo().await;
-    unit::unit_test_update_description(&ctx, &repo, &pool).await;
-}
+    ctx.db.commit().await.unwrap();
 
-#[tokio::test]
-async fn test_update_clear_description() {
-    let (ctx, repo, pool) = create_sqlite_unit_repo().await;
-    unit::unit_test_update_clear_description(&ctx, &repo, &pool).await;
-}
+    let unit = repo
+        .get_by_id(&ctx_non_tx, id)
+        .await
+        .expect("Failed to get unit of measure")
+        .expect("Unit of measure not found");
 
-#[tokio::test]
-async fn test_update_non_existent_unit() {
-    let (ctx, repo, pool) = create_sqlite_unit_repo().await;
-    unit::unit_test_update_non_existent(&ctx, &repo, &pool).await;
-}
-
-#[tokio::test]
-async fn test_delete_unit() {
-    let (ctx, repo, pool) = create_sqlite_unit_repo().await;
-    unit::unit_test_delete(&ctx, &repo, &pool).await;
-}
-
-#[tokio::test]
-async fn test_delete_non_existent_unit() {
-    let (ctx, repo, pool) = create_sqlite_unit_repo().await;
-    unit::unit_test_delete_non_existent(&ctx, &repo, &pool).await;
-}
-
-#[tokio::test]
-async fn test_get_all_units() {
-    let (ctx, repo, pool) = create_sqlite_unit_repo().await;
-    unit::unit_test_get_all(&ctx, &repo, &pool).await;
-}
-
-#[tokio::test]
-async fn test_get_all_excludes_deleted() {
-    let (ctx, repo, pool) = create_sqlite_unit_repo().await;
-    unit::unit_test_get_all_excludes_deleted(&ctx, &repo, &pool).await;
-}
-
-#[tokio::test]
-async fn test_get_by_id_non_existent() {
-    let (ctx, repo, pool) = create_sqlite_unit_repo().await;
-    unit::unit_test_get_by_id_non_existent(&ctx, &repo, &pool).await;
+    assert_eq!(unit.id, id);
+    assert_eq!(unit.name, "Kilogram".to_string());
+    assert_eq!(unit.description, Some("Unit of mass".to_string()));
+    assert!(!unit.is_deleted);
 }
