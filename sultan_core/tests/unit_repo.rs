@@ -1,5 +1,5 @@
 mod common;
-use sea_orm::{DatabaseConnection, TransactionTrait};
+use sea_orm::TransactionTrait;
 use sultan_core::domain::Context;
 use sultan_core::domain::model::product::UnitOfMeasureCreate;
 use sultan_core::storage::{
@@ -7,16 +7,10 @@ use sultan_core::storage::{
 };
 use sultan_core::testing::storage::unit;
 
-async fn create_sqlite_unit_repo() -> (RepoCtx<DatabaseConnection>, SqliteUnitOfMeasureRepository) {
-    let repo_ctx = common::init_sqlite_repo_ctx().await;
-    let repo = SqliteUnitOfMeasureRepository::new();
-    (repo_ctx, repo)
-}
-
 #[tokio::test]
 async fn test_unit_of_measure_repository() {
-    let (ctx, repo) = create_sqlite_unit_repo().await;
-    unit::test_unit_all(&ctx, &repo).await;
+    let repo = SqliteUnitOfMeasureRepository::new();
+    unit::test_unit_all(&repo, || async { common::init_sqlite_repo_ctx().await }).await;
 }
 
 #[tokio::test]

@@ -7,13 +7,40 @@ use crate::{
 };
 use sea_orm::DatabaseConnection;
 
+pub async fn category_test_all<C, F, Fut>(repo: &C, ctx_factory: F)
+where
+    C: CategoryRepository,
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = RepoCtx<DatabaseConnection>>,
+{
+    category_test_create(&ctx_factory().await, repo).await;
+    category_test_create_without_description(&ctx_factory().await, repo).await;
+    category_test_update_name(&ctx_factory().await, repo).await;
+    category_test_update_description(&ctx_factory().await, repo).await;
+    category_test_update_non_existent(&ctx_factory().await, repo).await;
+    category_test_delete(&ctx_factory().await, repo).await;
+    category_test_delete_non_existent(&ctx_factory().await, repo).await;
+    category_test_get_by_id_not_found(&ctx_factory().await, repo).await;
+    category_test_get_all_empty(&ctx_factory().await, repo).await;
+    category_test_get_all_multiple(&ctx_factory().await, repo).await;
+    category_test_create_with_parent(&ctx_factory().await, repo).await;
+    category_test_create_nested(&ctx_factory().await, repo).await;
+    category_test_get_all_tree_structure(&ctx_factory().await, repo).await;
+    category_test_update_parent(&ctx_factory().await, repo).await;
+    category_test_multiple_children(&ctx_factory().await, repo).await;
+    category_test_create_at_max_depth(&ctx_factory().await, repo).await;
+    category_test_create_exceeds_max_depth(&ctx_factory().await, repo).await;
+    category_test_move_exceeds_max_depth(&ctx_factory().await, repo).await;
+    category_test_move_within_depth_limit(&ctx_factory().await, repo).await;
+}
+
 // =============================================================================
 // Basic CRUD Tests
 // =============================================================================
 
 pub async fn category_test_create<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     let id = super::generate_test_id().await;
     let category = CategoryCreate {
@@ -39,7 +66,7 @@ pub async fn category_test_create<C: CategoryRepository>(
 
 pub async fn category_test_create_without_description<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     let id = super::generate_test_id().await;
     let category = CategoryCreate {
@@ -63,7 +90,7 @@ pub async fn category_test_create_without_description<C: CategoryRepository>(
 
 pub async fn category_test_update_name<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     let id = super::generate_test_id().await;
     let category = CategoryCreate {
@@ -100,7 +127,7 @@ pub async fn category_test_update_name<C: CategoryRepository>(
 
 pub async fn category_test_update_description<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     let id = super::generate_test_id().await;
     let category = CategoryCreate {
@@ -133,7 +160,7 @@ pub async fn category_test_update_description<C: CategoryRepository>(
 
 pub async fn category_test_update_non_existent<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     let update = CategoryUpdate {
         name: Some("Name".to_string()),
@@ -147,7 +174,7 @@ pub async fn category_test_update_non_existent<C: CategoryRepository>(
 
 pub async fn category_test_delete<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     let id = super::generate_test_id().await;
     let category = CategoryCreate {
@@ -169,7 +196,7 @@ pub async fn category_test_delete<C: CategoryRepository>(
 
 pub async fn category_test_delete_non_existent<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     let result = repo.delete(ctx, 999999).await;
 
@@ -178,7 +205,7 @@ pub async fn category_test_delete_non_existent<C: CategoryRepository>(
 
 pub async fn category_test_get_by_id_not_found<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     let result = repo
         .get_by_id(ctx, 999999)
@@ -190,7 +217,7 @@ pub async fn category_test_get_by_id_not_found<C: CategoryRepository>(
 
 pub async fn category_test_get_all_empty<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     let categories = repo.get_all(ctx).await.expect("Failed to get all");
     // Fresh database should have no categories
@@ -199,7 +226,7 @@ pub async fn category_test_get_all_empty<C: CategoryRepository>(
 
 pub async fn category_test_get_all_multiple<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     let id1 = super::generate_test_id().await;
     let id2 = super::generate_test_id().await;
@@ -249,7 +276,7 @@ pub async fn category_test_get_all_multiple<C: CategoryRepository>(
 
 pub async fn category_test_create_with_parent<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     let parent_id = super::generate_test_id().await;
     let child_id = super::generate_test_id().await;
@@ -294,7 +321,7 @@ pub async fn category_test_create_with_parent<C: CategoryRepository>(
 
 pub async fn category_test_create_nested<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     let level1 = super::generate_test_id().await;
     let level2 = super::generate_test_id().await;
@@ -352,7 +379,7 @@ pub async fn category_test_create_nested<C: CategoryRepository>(
 
 pub async fn category_test_get_all_tree_structure<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     let root1 = super::generate_test_id().await;
     let root2 = super::generate_test_id().await;
@@ -418,7 +445,7 @@ pub async fn category_test_get_all_tree_structure<C: CategoryRepository>(
 
 pub async fn category_test_update_parent<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     let parent1 = super::generate_test_id().await;
     let parent2 = super::generate_test_id().await;
@@ -491,7 +518,7 @@ pub async fn category_test_update_parent<C: CategoryRepository>(
 
 pub async fn category_test_multiple_children<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     let parent = super::generate_test_id().await;
     let child1 = super::generate_test_id().await;
@@ -559,7 +586,7 @@ pub async fn category_test_multiple_children<C: CategoryRepository>(
 
 pub async fn category_test_create_at_max_depth<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     // Create 5 levels (max allowed)
     let mut parent_id = None;
@@ -598,7 +625,7 @@ pub async fn category_test_create_at_max_depth<C: CategoryRepository>(
 
 pub async fn category_test_create_exceeds_max_depth<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     // Create 5 levels (max allowed)
     let mut parent_id = None;
@@ -639,7 +666,7 @@ pub async fn category_test_create_exceeds_max_depth<C: CategoryRepository>(
 
 pub async fn category_test_move_exceeds_max_depth<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     // Create chain of 4 levels
     let level1 = super::generate_test_id().await;
@@ -735,7 +762,7 @@ pub async fn category_test_move_exceeds_max_depth<C: CategoryRepository>(
 
 pub async fn category_test_move_within_depth_limit<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     // Create chain of 3 levels
     let level1 = super::generate_test_id().await;
@@ -837,7 +864,7 @@ pub async fn category_test_move_within_depth_limit<C: CategoryRepository>(
 
 pub async fn category_test_deleted_not_in_get_all<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     let id1 = super::generate_test_id().await;
     let id2 = super::generate_test_id().await;
@@ -876,7 +903,7 @@ pub async fn category_test_deleted_not_in_get_all<C: CategoryRepository>(
 
 pub async fn category_test_deleted_child_not_returned<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     let parent = super::generate_test_id().await;
     let child1 = super::generate_test_id().await;
@@ -933,7 +960,7 @@ pub async fn category_test_deleted_child_not_returned<C: CategoryRepository>(
 
 pub async fn category_test_cannot_delete_already_deleted<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     let id = super::generate_test_id().await;
     repo.create(
@@ -959,7 +986,7 @@ pub async fn category_test_cannot_delete_already_deleted<C: CategoryRepository>(
 
 pub async fn category_test_cannot_update_deleted<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     let id = super::generate_test_id().await;
     repo.create(
@@ -993,7 +1020,7 @@ pub async fn category_test_cannot_update_deleted<C: CategoryRepository>(
 
 pub async fn category_test_get_child_by_id<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     let parent = super::generate_test_id().await;
     let child = super::generate_test_id().await;
@@ -1048,7 +1075,7 @@ pub async fn category_test_get_child_by_id<C: CategoryRepository>(
 
 pub async fn category_test_without_children<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     let id = super::generate_test_id().await;
     repo.create(
@@ -1075,7 +1102,7 @@ pub async fn category_test_without_children<C: CategoryRepository>(
 
 pub async fn category_test_deep_nested_tree_retrieval<C: CategoryRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: C,
+    repo: &C,
 ) {
     // Create max depth tree
     let level1 = super::generate_test_id().await;

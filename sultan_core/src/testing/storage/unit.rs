@@ -8,21 +8,23 @@ use crate::{
     storage::{RepoCtx, unit_repo::UnitOfMeasureRepository},
 };
 
-pub async fn test_unit_all<U: UnitOfMeasureRepository>(
-    ctx: &RepoCtx<DatabaseConnection>,
-    repo: &U,
-) {
-    test_create(ctx, repo).await;
-    unit_test_create_without_description(ctx, repo).await;
-    unit_test_update_name(ctx, repo).await;
-    unit_test_update_description(ctx, repo).await;
-    unit_test_update_clear_description(ctx, repo).await;
-    unit_test_update_non_existent(ctx, repo).await;
-    unit_test_delete(ctx, repo).await;
-    unit_test_delete_non_existent(ctx, repo).await;
-    unit_test_get_all(ctx, repo).await;
-    unit_test_get_all_excludes_deleted(ctx, repo).await;
-    unit_test_get_by_id_non_existent(ctx, repo).await;
+pub async fn test_unit_all<C, F, Fut>(repo: &C, ctx_factory: F)
+where
+    C: UnitOfMeasureRepository,
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = RepoCtx<DatabaseConnection>>,
+{
+    test_create(&ctx_factory().await, repo).await;
+    unit_test_create_without_description(&ctx_factory().await, repo).await;
+    unit_test_update_name(&ctx_factory().await, repo).await;
+    unit_test_update_description(&ctx_factory().await, repo).await;
+    unit_test_update_clear_description(&ctx_factory().await, repo).await;
+    unit_test_update_non_existent(&ctx_factory().await, repo).await;
+    unit_test_delete(&ctx_factory().await, repo).await;
+    unit_test_delete_non_existent(&ctx_factory().await, repo).await;
+    unit_test_get_all(&ctx_factory().await, repo).await;
+    unit_test_get_all_excludes_deleted(&ctx_factory().await, repo).await;
+    unit_test_get_by_id_non_existent(&ctx_factory().await, repo).await;
 }
 
 // =============================================================================

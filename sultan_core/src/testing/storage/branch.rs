@@ -8,9 +8,27 @@ use crate::{
     storage::{BranchRepository, RepoCtx},
 };
 
+pub async fn branch_test_all<C, F, Fut>(repo: &C, ctx_factory: F)
+where
+    C: BranchRepository,
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = RepoCtx<DatabaseConnection>>,
+{
+    branch_test_repo_integration(&ctx_factory().await, repo).await;
+    branch_test_partial_update(&ctx_factory().await, repo).await;
+    branch_test_non_existent(&ctx_factory().await, repo).await;
+    branch_test_delete_non_existent(&ctx_factory().await, repo).await;
+    branch_test_get_deleted(&ctx_factory().await, repo).await;
+    branch_test_get_by_id_not_found(&ctx_factory().await, repo).await;
+    branch_test_get_all_branches(&ctx_factory().await, repo).await;
+    branch_test_update_branch_not_found(&ctx_factory().await, repo).await;
+    branch_test_create_branch_with_all_fields(&ctx_factory().await, repo).await;
+    branch_test_update_address_scenarios(&ctx_factory().await, repo).await;
+}
+
 pub async fn branch_test_repo_integration<B: BranchRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: B,
+    repo: &B,
 ) {
     let id = super::generate_test_id().await;
     let branch = BranchCreate {
@@ -69,7 +87,7 @@ pub async fn branch_test_repo_integration<B: BranchRepository>(
 
 pub async fn branch_test_partial_update<B: BranchRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: B,
+    repo: &B,
 ) {
     let id = super::generate_test_id().await;
     let branch = BranchCreate {
@@ -138,7 +156,7 @@ pub async fn branch_test_partial_update<B: BranchRepository>(
 
 pub async fn branch_test_non_existent<B: BranchRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: B,
+    repo: &B,
 ) {
     let update_data = BranchUpdate {
         name: Some("Non-existent".to_string()),
@@ -151,7 +169,7 @@ pub async fn branch_test_non_existent<B: BranchRepository>(
 
 pub async fn branch_test_delete_non_existent<B: BranchRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: B,
+    repo: &B,
 ) {
     let result = repo.delete(ctx, 999).await;
     assert!(matches!(result, Err(crate::domain::Error::NotFound(_))));
@@ -159,7 +177,7 @@ pub async fn branch_test_delete_non_existent<B: BranchRepository>(
 
 pub async fn branch_test_get_deleted<B: BranchRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: B,
+    repo: &B,
 ) {
     let id = super::generate_test_id().await;
     let branch = BranchCreate {
@@ -183,7 +201,7 @@ pub async fn branch_test_get_deleted<B: BranchRepository>(
 
 pub async fn branch_test_get_by_id_not_found<B: BranchRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: B,
+    repo: &B,
 ) {
     let result = repo
         .get_by_id(ctx, 9999)
@@ -194,7 +212,7 @@ pub async fn branch_test_get_by_id_not_found<B: BranchRepository>(
 
 pub async fn branch_test_get_all_branches<B: BranchRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: B,
+    repo: &B,
 ) {
     // Create multiple branches
     for i in 0..3 {
@@ -222,7 +240,7 @@ pub async fn branch_test_get_all_branches<B: BranchRepository>(
 
 pub async fn branch_test_update_branch_not_found<B: BranchRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: B,
+    repo: &B,
 ) {
     let update_data = BranchUpdate {
         name: Some("Non-existent".to_string()),
@@ -235,7 +253,7 @@ pub async fn branch_test_update_branch_not_found<B: BranchRepository>(
 
 pub async fn branch_test_create_branch_with_all_fields<B: BranchRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: B,
+    repo: &B,
 ) {
     let id = super::generate_test_id().await;
     let branch = BranchCreate {
@@ -268,7 +286,7 @@ pub async fn branch_test_create_branch_with_all_fields<B: BranchRepository>(
 
 pub async fn branch_test_update_address_scenarios<B: BranchRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    repo: B,
+    repo: &B,
 ) {
     let id = super::generate_test_id().await;
     let branch = BranchCreate {
