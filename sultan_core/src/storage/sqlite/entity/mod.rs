@@ -2,6 +2,7 @@ pub mod branch;
 pub mod category;
 pub mod customer;
 pub mod supplier;
+pub mod token;
 pub mod unit;
 
 pub use branch::ActiveModel as BranchActiveModel;
@@ -23,6 +24,11 @@ pub use supplier::ActiveModel as SupplierActiveModel;
 pub use supplier::Column as SupplierColumn;
 pub use supplier::Entity as SupplierEntity;
 pub use supplier::Model as SupplierModel;
+
+pub use token::ActiveModel as TokenActiveModel;
+pub use token::Column as TokenColumn;
+pub use token::Entity as TokenEntity;
+pub use token::Model as TokenModel;
 
 pub use unit::ActiveModel as UnitActiveModel;
 pub use unit::Column as UnitColumn;

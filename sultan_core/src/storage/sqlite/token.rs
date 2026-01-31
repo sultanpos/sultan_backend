@@ -1,90 +1,68 @@
 use async_trait::async_trait;
-use sqlx::SqlitePool;
+use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set};
 
+use super::entity::{TokenColumn, TokenEntity};
 use crate::{
-    domain::{Context, DomainResult, Error, model::token::Token},
-    storage::token_repo::TokenRepository,
+    domain::{DomainResult, Error, model::token::Token},
+    storage::{RepoCtx, TokenRepository},
 };
 
-// Database model for Token - SQLite
-#[derive(sqlx::FromRow, Debug)]
-pub struct TokenDbSqlite {
-    pub id: i64,
-    pub user_id: i64,
-    pub expired_at: String,
-    pub token: String,
-}
-
-impl TryFrom<TokenDbSqlite> for Token {
-    type Error = Error;
-
-    fn try_from(db: TokenDbSqlite) -> Result<Self, Self::Error> {
-        let expired_at = chrono::DateTime::parse_from_rfc3339(&db.expired_at)
-            .map_err(|e| Error::Internal(format!("Failed to parse expired_at: {}", e)))?
-            .with_timezone(&chrono::Utc);
-
-        Ok(Token {
-            id: db.id,
-            user_id: db.user_id,
-            expired_at,
-            token: db.token,
-        })
-    }
-}
-
-#[derive(Clone)]
-pub struct SqliteTokenRepository {
-    pool: SqlitePool,
-}
+/// SQLite implementation of [`TokenRepository`] using SeaORM.
+///
+/// This repository handles all refresh token-related database operations
+/// including save, delete, and retrieval by token value.
+///
+/// Unlike most repositories, this uses:
+/// - Auto-increment primary key (not Snowflake ID)
+/// - Physical deletion (not soft-delete)
+#[derive(Clone, Default)]
+pub struct SqliteTokenRepository {}
 
 impl SqliteTokenRepository {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub fn new() -> Self {
+        SqliteTokenRepository {}
     }
 }
 
 #[async_trait]
 impl TokenRepository for SqliteTokenRepository {
-    async fn save(&self, _: &Context, token: &Token) -> DomainResult<()> {
+    async fn save(&self, ctx: &RepoCtx<impl ConnectionTrait>, token: &Token) -> DomainResult<()> {
         let expired_at = token.expired_at.to_rfc3339();
 
-        let query = sqlx::query(
-            r#"
-            INSERT INTO refresh_tokens (user_id, expired_at, token)
-            VALUES (?, ?, ?)
-            "#,
-        )
-        .bind(token.user_id)
-        .bind(&expired_at)
-        .bind(&token.token);
+        let token_model = super::entity::TokenActiveModel {
+            id: Set(token.id), // Will be ignored due to auto-increment
+            user_id: Set(token.user_id),
+            expired_at: Set(expired_at),
+            token: Set(token.token.clone()),
+        };
 
-        query.execute(&self.pool).await?;
-
+        // Use insert with returning to handle auto-increment
+        token_model.insert(&ctx.db).await?;
         Ok(())
     }
 
-    async fn delete(&self, _: &Context, id: i64) -> DomainResult<()> {
-        let query = sqlx::query("DELETE FROM refresh_tokens WHERE id = ?").bind(id);
+    async fn delete(&self, ctx: &RepoCtx<impl ConnectionTrait>, id: i64) -> DomainResult<()> {
+        let result = TokenEntity::delete_by_id(id).exec(&ctx.db).await?;
 
-        let result = query.execute(&self.pool).await?;
-
-        if result.rows_affected() == 0 {
+        if result.rows_affected == 0 {
             return Err(Error::NotFound(format!("Token with id {} not found", id)));
         }
 
         Ok(())
     }
 
-    async fn get_by_token(&self, _: &Context, token: &str) -> DomainResult<Option<Token>> {
-        let query = sqlx::query_as::<_, TokenDbSqlite>(
-            "SELECT id, user_id, expired_at, token FROM refresh_tokens WHERE token = ?",
-        )
-        .bind(token);
-
-        let result = query.fetch_optional(&self.pool).await?;
+    async fn get_by_token(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        token: &str,
+    ) -> DomainResult<Option<Token>> {
+        let result = TokenEntity::find()
+            .filter(TokenColumn::Token.eq(token))
+            .one(&ctx.db)
+            .await?;
 
         match result {
-            Some(db_token) => Ok(Some(db_token.try_into()?)),
+            Some(model) => Ok(Some(model.to_domain()?)),
             None => Ok(None),
         }
     }

@@ -77,9 +77,9 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
 
     let branch_repository = SqliteBranchRepository::new();
     let user_repository = SqliteUserRepository::new(pool.clone());
-    let token_repository = SqliteTokenRepository::new(pool.clone());
+    let token_repository = SqliteTokenRepository::new();
     let category_repository = SqliteCategoryRepository::new();
-    let supplier_repository = SqliteSupplierRepository::new(pool.clone());
+    let supplier_repository = SqliteSupplierRepository::new();
     let customer_repository = SqliteCustomerRepository::new();
     let number_repository = SqliteNumberRepository::new(pool.clone());
 
@@ -94,6 +94,7 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
         token_repository,
         password_hasher,
         jwt_manager.clone(),
+        db_connection.clone(),
     );
 
     let number_service = Arc::new(NumberService::new(
@@ -112,7 +113,11 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
         number_service,
         db_connection.clone(),
     );
-    let supplier_service = SupplierService::new(supplier_repository, SnowflakeGenerator::new(1)?);
+    let supplier_service = SupplierService::new(
+        supplier_repository,
+        SnowflakeGenerator::new(1)?,
+        db_connection.clone(),
+    );
     let user_service = UserService::new(
         user_repository.clone(),
         Arc::new(Argon2PasswordHasher::default()),

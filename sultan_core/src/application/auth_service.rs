@@ -1,11 +1,12 @@
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use rand::RngCore;
+use sea_orm::DatabaseConnection;
 
 use crate::crypto::{JwtManager, PasswordHash};
 use crate::domain::model::token::Token;
 use crate::domain::{Context, DomainResult, Error};
-use crate::storage::{TokenRepository, UserRepository};
+use crate::storage::{RepoCtx, TokenRepository, UserRepository};
 
 /// Default refresh token expiry in days
 const DEFAULT_REFRESH_TOKEN_EXPIRY_DAYS: i64 = 30;
@@ -43,6 +44,7 @@ where
     password_hasher: P,
     jwt_manager: J,
     refresh_token_expiry_days: i64,
+    db: DatabaseConnection,
     _phantom: std::marker::PhantomData<Tx>,
 }
 
@@ -57,13 +59,20 @@ where
     /// Creates a new AuthService with default configuration.
     ///
     /// The default refresh token expiry is [`DEFAULT_REFRESH_TOKEN_EXPIRY_DAYS`] (30 days).
-    pub fn new(user_repo: U, token_repo: T, password_hasher: P, jwt_manager: J) -> Self {
+    pub fn new(
+        user_repo: U,
+        token_repo: T,
+        password_hasher: P,
+        jwt_manager: J,
+        db: DatabaseConnection,
+    ) -> Self {
         Self {
             user_repo,
             token_repo,
             password_hasher,
             jwt_manager,
             refresh_token_expiry_days: DEFAULT_REFRESH_TOKEN_EXPIRY_DAYS,
+            db,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -104,7 +113,13 @@ where
             expired_at,
         };
 
-        self.token_repo.save(ctx, &token).await?;
+        // Create RepoCtx for token repository
+        let repo_ctx = RepoCtx {
+            ctx: ctx.clone(),
+            db: self.db.clone(),
+        };
+
+        self.token_repo.save(&repo_ctx, &token).await?;
 
         Ok(AuthTokens {
             access_token,
@@ -173,17 +188,23 @@ where
         // Hash the refresh token for lookup
         let token_hash = Self::hash_token(refresh_token);
 
+        // Create RepoCtx for token repository
+        let repo_ctx = RepoCtx {
+            ctx: ctx.clone(),
+            db: self.db.clone(),
+        };
+
         // Find the token in database
         let stored_token = self
             .token_repo
-            .get_by_token(ctx, &token_hash)
+            .get_by_token(&repo_ctx, &token_hash)
             .await?
             .ok_or_else(|| Error::Unauthorized("Invalid refresh token".to_string()))?;
 
         // Check if token is expired
         if stored_token.expired_at < Utc::now() {
             // Delete expired token
-            self.token_repo.delete(ctx, stored_token.id).await?;
+            self.token_repo.delete(&repo_ctx, stored_token.id).await?;
             return Err(Error::Unauthorized("Refresh token has expired".to_string()));
         }
 
@@ -195,7 +216,7 @@ where
             .ok_or_else(|| Error::Unauthorized("User not found".to_string()))?;
 
         // Delete old refresh token
-        self.token_repo.delete(ctx, stored_token.id).await?;
+        self.token_repo.delete(&repo_ctx, stored_token.id).await?;
 
         // Generate new tokens
         self.generate_tokens(ctx, user.id, &user.username).await
@@ -205,8 +226,14 @@ where
     async fn logout(&self, ctx: &Context, refresh_token: &str) -> DomainResult<()> {
         let token_hash = Self::hash_token(refresh_token);
 
-        if let Some(stored_token) = self.token_repo.get_by_token(ctx, &token_hash).await? {
-            self.token_repo.delete(ctx, stored_token.id).await?;
+        // Create RepoCtx for token repository
+        let repo_ctx = RepoCtx {
+            ctx: ctx.clone(),
+            db: self.db.clone(),
+        };
+
+        if let Some(stored_token) = self.token_repo.get_by_token(&repo_ctx, &token_hash).await? {
+            self.token_repo.delete(&repo_ctx, stored_token.id).await?;
         } else {
             return Err(Error::Unauthorized("Invalid refresh token".to_string()));
         }
@@ -221,6 +248,7 @@ mod tests {
     use crate::crypto::password::PasswordHash;
     use crate::domain::model::user::{User, UserCreate, UserUpdate};
     use async_trait::async_trait;
+    use sea_orm::ConnectionTrait;
 
     // Mock User Repository
     struct MockUserRepo {
@@ -346,17 +374,25 @@ mod tests {
 
     #[async_trait]
     impl TokenRepository for MockTokenRepo {
-        async fn save(&self, _ctx: &Context, token: &Token) -> DomainResult<()> {
+        async fn save(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            token: &Token,
+        ) -> DomainResult<()> {
             *self.stored_token.lock().unwrap() = Some(token.clone());
             Ok(())
         }
 
-        async fn delete(&self, _ctx: &Context, _id: i64) -> DomainResult<()> {
+        async fn delete(&self, _ctx: &RepoCtx<impl ConnectionTrait>, _id: i64) -> DomainResult<()> {
             *self.stored_token.lock().unwrap() = None;
             Ok(())
         }
 
-        async fn get_by_token(&self, _ctx: &Context, token: &str) -> DomainResult<Option<Token>> {
+        async fn get_by_token(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            token: &str,
+        ) -> DomainResult<Option<Token>> {
             let stored = self.stored_token.lock().unwrap();
             Ok(stored.as_ref().filter(|t| t.token == token).cloned())
         }
@@ -415,6 +451,13 @@ mod tests {
         }
     }
 
+    async fn create_test_db() -> DatabaseConnection {
+        use sea_orm::Database;
+        Database::connect("sqlite::memory:")
+            .await
+            .expect("Failed to create test database")
+    }
+
     #[tokio::test]
     async fn test_login_success() {
         let user = create_test_user("hashed_password123");
@@ -424,8 +467,9 @@ mod tests {
             valid_password: "password123".to_string(),
         };
         let jwt_manager = MockJwtManager;
+        let db = create_test_db().await;
 
-        let service = AuthService::new(user_repo, token_repo, password_hasher, jwt_manager);
+        let service = AuthService::new(user_repo, token_repo, password_hasher, jwt_manager, db);
 
         let ctx = Context::new();
         let result = service.login(&ctx, "testuser", "password123").await;
@@ -444,8 +488,9 @@ mod tests {
             valid_password: "password123".to_string(),
         };
         let jwt_manager = MockJwtManager;
+        let db = create_test_db().await;
 
-        let service = AuthService::new(user_repo, token_repo, password_hasher, jwt_manager);
+        let service = AuthService::new(user_repo, token_repo, password_hasher, jwt_manager, db);
 
         let ctx = Context::new();
         let result = service.login(&ctx, "nonexistent", "password123").await;
@@ -462,8 +507,9 @@ mod tests {
             valid_password: "password123".to_string(),
         };
         let jwt_manager = MockJwtManager;
+        let db = create_test_db().await;
 
-        let service = AuthService::new(user_repo, token_repo, password_hasher, jwt_manager);
+        let service = AuthService::new(user_repo, token_repo, password_hasher, jwt_manager, db);
 
         let ctx = Context::new();
         let result = service.login(&ctx, "testuser", "wrong_password").await;
@@ -482,8 +528,9 @@ mod tests {
             valid_password: "password".to_string(),
         };
         let jwt_manager = MockJwtManager;
+        let db = create_test_db().await;
 
-        let service = AuthService::new(user_repo, token_repo, password_hasher, jwt_manager);
+        let service = AuthService::new(user_repo, token_repo, password_hasher, jwt_manager, db);
 
         let ctx = Context::new();
 
@@ -507,8 +554,9 @@ mod tests {
             valid_password: "password".to_string(),
         };
         let jwt_manager = MockJwtManager;
+        let db = create_test_db().await;
 
-        let service = AuthService::new(user_repo, token_repo, password_hasher, jwt_manager);
+        let service = AuthService::new(user_repo, token_repo, password_hasher, jwt_manager, db);
 
         let ctx = Context::new();
         let result = service.refresh(&ctx, "invalid_refresh_token").await;
@@ -525,8 +573,9 @@ mod tests {
             valid_password: "password".to_string(),
         };
         let jwt_manager = MockJwtManager;
+        let db = create_test_db().await;
 
-        let service = AuthService::new(user_repo, token_repo, password_hasher, jwt_manager);
+        let service = AuthService::new(user_repo, token_repo, password_hasher, jwt_manager, db);
 
         let ctx = Context::new();
 
