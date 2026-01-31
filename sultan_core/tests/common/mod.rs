@@ -180,6 +180,42 @@ pub async fn create_test_branch(pool: &SqlitePool, id: i64, code: &str) -> i64 {
     id
 }
 
+/// Initialize a SQLite database and return both the SqlitePool (for SQLx transaction tests)
+/// and a SeaORM DatabaseConnection pointing to the same physical database file.
+/// This allows transaction tests to insert data via SQLx and verify via SeaORM repositories.
+pub async fn init_sqlite_pool_with_seaorm() -> (SqlitePool, DatabaseConnection) {
+    // Create an isolated file-based database shared between SQLx and SeaORM
+    let temp_file = format!("/tmp/test_{}.db", Uuid::new_v4());
+    let connection_string = format!("sqlite://{}?mode=rwc", temp_file);
+
+    let new_pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .min_connections(1)
+        .connect(&connection_string)
+        .await
+        .expect("Failed to create SQLite database");
+
+    let crate_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let migrations = std::path::Path::new(&crate_dir).join("../migrations");
+    print!(
+        "migration folder {}",
+        migrations.as_path().to_string_lossy()
+    );
+
+    sqlx::migrate::Migrator::new(migrations)
+        .await
+        .expect("Failed to load migrations")
+        .run(&new_pool)
+        .await
+        .expect("Failed to run SQLite migrations");
+
+    // Create SeaORM connection to the same database
+    let db_connection = Database::connect(&connection_string)
+        .await
+        .expect("unable to connect sqlite");
+
+    (new_pool, db_connection)
+}
+
 /*
 pub async fn init_postgres_pool() -> PgPool {
     let mut pool = POSTGRES_POOL.lock().await;

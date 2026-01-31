@@ -76,7 +76,7 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
     //let db_connection =
 
     let branch_repository = SqliteBranchRepository::new();
-    let user_repository = SqliteUserRepository::new(pool.clone());
+    let user_repository = SqliteUserRepository::new();
     let token_repository = SqliteTokenRepository::new();
     let category_repository = SqliteCategoryRepository::new();
     let supplier_repository = SqliteSupplierRepository::new();
@@ -123,6 +123,7 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
         Arc::new(Argon2PasswordHasher::default()),
         SnowflakeGenerator::new(1)?,
         Arc::new(permission_cache),
+        db_connection.clone(),
     );
 
     // init data when not available
@@ -166,7 +167,7 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
             .await?;
 
         user_repository
-            .save_user_permission(&ctx, user_id, None, resource::ADMIN, 0)
+            .save_permission(&repo_ctx, user_id, None, resource::ADMIN, 0)
             .await?
     }
 

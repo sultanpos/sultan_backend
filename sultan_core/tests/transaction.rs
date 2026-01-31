@@ -1,12 +1,13 @@
 mod common;
 
-use common::init_sqlite_pool;
+use common::init_sqlite_pool_with_seaorm;
+use sea_orm::DatabaseConnection;
 use sultan_core::domain::Context;
 use sultan_core::snowflake::SnowflakeGenerator;
-use sultan_core::storage::UserRepository;
 use sultan_core::storage::sqlite::transaction::SqliteTransactionManager;
 use sultan_core::storage::sqlite::user::SqliteUserRepository;
 use sultan_core::storage::transaction::TransactionManager;
+use sultan_core::storage::{RepoCtx, UserRepository};
 
 fn generate_test_id() -> i64 {
     thread_local! {
@@ -15,13 +16,21 @@ fn generate_test_id() -> i64 {
     GENERATOR.with(|g| g.generate().unwrap())
 }
 
+/// Helper to create a RepoCtx for use in tests
+fn create_repo_ctx(db: DatabaseConnection) -> RepoCtx<DatabaseConnection> {
+    RepoCtx {
+        ctx: Context::new(),
+        db,
+    }
+}
+
 // =============================================================================
 // Transaction Basic Operations Tests
 // =============================================================================
 
 #[tokio::test]
 async fn test_begin_transaction() {
-    let pool = init_sqlite_pool().await;
+    let (pool, _db) = init_sqlite_pool_with_seaorm().await;
     let tx_manager = SqliteTransactionManager::new(pool);
 
     let tx = tx_manager.begin().await;
@@ -30,10 +39,10 @@ async fn test_begin_transaction() {
 
 #[tokio::test]
 async fn test_commit_transaction() {
-    let pool = init_sqlite_pool().await;
-    let tx_manager = SqliteTransactionManager::new(pool.clone());
-    let user_repo = SqliteUserRepository::new(pool);
-    let ctx = Context::new();
+    let (pool, db) = init_sqlite_pool_with_seaorm().await;
+    let tx_manager = SqliteTransactionManager::new(pool);
+    let user_repo = SqliteUserRepository::new();
+    let ctx = create_repo_ctx(db);
 
     let user_id = generate_test_id();
 
@@ -43,7 +52,7 @@ async fn test_commit_transaction() {
         .await
         .expect("Failed to begin transaction");
 
-    // Insert user within transaction
+    // Insert user within transaction (using raw SQL since we're testing SQLx transaction)
     sqlx::query(
         r#"
         INSERT INTO users (id, username, password, name, email, phone)
@@ -77,10 +86,10 @@ async fn test_commit_transaction() {
 
 #[tokio::test]
 async fn test_rollback_transaction() {
-    let pool = init_sqlite_pool().await;
-    let tx_manager = SqliteTransactionManager::new(pool.clone());
-    let user_repo = SqliteUserRepository::new(pool);
-    let ctx = Context::new();
+    let (pool, db) = init_sqlite_pool_with_seaorm().await;
+    let tx_manager = SqliteTransactionManager::new(pool);
+    let user_repo = SqliteUserRepository::new();
+    let ctx = create_repo_ctx(db);
 
     let user_id = generate_test_id();
 
@@ -123,10 +132,10 @@ async fn test_rollback_transaction() {
 
 #[tokio::test]
 async fn test_implicit_rollback_on_drop() {
-    let pool = init_sqlite_pool().await;
-    let tx_manager = SqliteTransactionManager::new(pool.clone());
-    let user_repo = SqliteUserRepository::new(pool);
-    let ctx = Context::new();
+    let (pool, db) = init_sqlite_pool_with_seaorm().await;
+    let tx_manager = SqliteTransactionManager::new(pool);
+    let user_repo = SqliteUserRepository::new();
+    let ctx = create_repo_ctx(db);
 
     let user_id = generate_test_id();
 
@@ -171,10 +180,10 @@ async fn test_implicit_rollback_on_drop() {
 
 #[tokio::test]
 async fn test_multiple_operations_in_transaction() {
-    let pool = init_sqlite_pool().await;
-    let tx_manager = SqliteTransactionManager::new(pool.clone());
-    let user_repo = SqliteUserRepository::new(pool);
-    let ctx = Context::new();
+    let (pool, db) = init_sqlite_pool_with_seaorm().await;
+    let tx_manager = SqliteTransactionManager::new(pool);
+    let user_repo = SqliteUserRepository::new();
+    let ctx = create_repo_ctx(db);
 
     let user_id1 = generate_test_id();
     let user_id2 = generate_test_id();
@@ -243,10 +252,10 @@ async fn test_multiple_operations_in_transaction() {
 
 #[tokio::test]
 async fn test_rollback_multiple_operations() {
-    let pool = init_sqlite_pool().await;
-    let tx_manager = SqliteTransactionManager::new(pool.clone());
-    let user_repo = SqliteUserRepository::new(pool);
-    let ctx = Context::new();
+    let (pool, db) = init_sqlite_pool_with_seaorm().await;
+    let tx_manager = SqliteTransactionManager::new(pool);
+    let user_repo = SqliteUserRepository::new();
+    let ctx = create_repo_ctx(db);
 
     let user_id1 = generate_test_id();
     let user_id2 = generate_test_id();
@@ -317,10 +326,10 @@ async fn test_rollback_multiple_operations() {
 
 #[tokio::test]
 async fn test_transaction_with_error_requires_rollback() {
-    let pool = init_sqlite_pool().await;
-    let tx_manager = SqliteTransactionManager::new(pool.clone());
-    let user_repo = SqliteUserRepository::new(pool);
-    let ctx = Context::new();
+    let (pool, db) = init_sqlite_pool_with_seaorm().await;
+    let tx_manager = SqliteTransactionManager::new(pool);
+    let user_repo = SqliteUserRepository::new();
+    let ctx = create_repo_ctx(db);
 
     let user_id1 = generate_test_id();
     let user_id2 = generate_test_id();
@@ -387,10 +396,10 @@ async fn test_transaction_with_error_requires_rollback() {
 
 #[tokio::test]
 async fn test_transaction_commit_makes_data_visible() {
-    let pool = init_sqlite_pool().await;
-    let tx_manager = SqliteTransactionManager::new(pool.clone());
-    let user_repo = SqliteUserRepository::new(pool);
-    let ctx = Context::new();
+    let (pool, db) = init_sqlite_pool_with_seaorm().await;
+    let tx_manager = SqliteTransactionManager::new(pool);
+    let user_repo = SqliteUserRepository::new();
+    let ctx = create_repo_ctx(db);
 
     let user_id = generate_test_id();
 
@@ -438,10 +447,11 @@ async fn test_transaction_commit_makes_data_visible() {
 
 #[tokio::test]
 async fn test_transaction_manager_pool_access() {
-    let pool = init_sqlite_pool().await;
-    let tx_manager = SqliteTransactionManager::new(pool.clone());
+    let (pool, _db) = init_sqlite_pool_with_seaorm().await;
+    let pool_clone = pool.clone();
+    let tx_manager = SqliteTransactionManager::new(pool);
 
     // Verify we can access the pool
     let pool_ref = tx_manager.pool();
-    assert_eq!(pool_ref.size() as u32, pool.size() as u32);
+    assert_eq!(pool_ref.size() as u32, pool_clone.size() as u32);
 }

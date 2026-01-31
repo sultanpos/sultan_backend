@@ -1,9 +1,11 @@
 pub mod branch;
 pub mod category;
 pub mod customer;
+pub mod permission;
 pub mod supplier;
 pub mod token;
 pub mod unit;
+pub mod user;
 
 pub use branch::ActiveModel as BranchActiveModel;
 pub use branch::Column as BranchColumn;
@@ -20,6 +22,11 @@ pub use customer::Column as CustomerColumn;
 pub use customer::Entity as CustomerEntity;
 pub use customer::Model as CustomerModel;
 
+pub use permission::ActiveModel as PermissionActiveModel;
+pub use permission::Column as PermissionColumn;
+pub use permission::Entity as PermissionEntity;
+pub use permission::Model as PermissionModel;
+
 pub use supplier::ActiveModel as SupplierActiveModel;
 pub use supplier::Column as SupplierColumn;
 pub use supplier::Entity as SupplierEntity;
@@ -34,3 +41,8 @@ pub use unit::ActiveModel as UnitActiveModel;
 pub use unit::Column as UnitColumn;
 pub use unit::Entity as UnitEntity;
 pub use unit::Model as UnitModel;
+
+pub use user::ActiveModel as UserActiveModel;
+pub use user::Column as UserColumn;
+pub use user::Entity as UserEntity;
+pub use user::Model as UserModel;

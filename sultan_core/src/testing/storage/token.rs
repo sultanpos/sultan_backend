@@ -1,16 +1,16 @@
 use sea_orm::DatabaseConnection;
 
 use crate::{
-    domain::{
-        Context,
-        model::{token::Token, user::UserCreate},
-    },
+    domain::model::{token::Token, user::UserCreate},
     storage::{RepoCtx, SqliteUserRepository, TokenRepository, UserRepository},
 };
 use chrono::{Duration, Utc};
 
 /// Helper to create a test user (required due to foreign key constraint)
-async fn create_test_user<R: UserRepository<Tx>, Tx>(user_repo: &R, ctx: &Context) -> i64 {
+async fn create_test_user(
+    user_repo: &SqliteUserRepository,
+    ctx: &RepoCtx<DatabaseConnection>,
+) -> i64 {
     let user_id = super::generate_test_id().await;
     let user = UserCreate {
         username: format!("token_test_user_{}", user_id),
@@ -24,7 +24,7 @@ async fn create_test_user<R: UserRepository<Tx>, Tx>(user_repo: &R, ctx: &Contex
     };
 
     user_repo
-        .create_user(ctx, user_id, &user)
+        .create(ctx, user_id, &user)
         .await
         .expect("Failed to create test user");
 
@@ -57,13 +57,13 @@ where
     token_test_token_with_expired_time(&ctx, &user_repo, repo).await;
 }
 
-pub async fn token_test_save_and_get_token<T: TokenRepository, Tx, U: UserRepository<Tx>>(
+pub async fn token_test_save_and_get_token<T: TokenRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    user_repo: &U,
+    user_repo: &SqliteUserRepository,
     token_repo: &T,
 ) {
     // Create a user first (foreign key requirement)
-    let user_id = create_test_user(user_repo, &ctx.ctx).await;
+    let user_id = create_test_user(user_repo, ctx).await;
 
     // Create a token
     let token_id = super::generate_test_id().await;
@@ -113,13 +113,13 @@ pub async fn token_test_get_token_not_found<T: TokenRepository>(
     assert!(result.is_none(), "Token should not be found");
 }
 
-pub async fn token_test_delete_token<T: TokenRepository, Tx, U: UserRepository<Tx>>(
+pub async fn token_test_delete_token<T: TokenRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    user_repo: &U,
+    user_repo: &SqliteUserRepository,
     token_repo: &T,
 ) {
     // Create a user first
-    let user_id = create_test_user(user_repo, &ctx.ctx).await;
+    let user_id = create_test_user(user_repo, ctx).await;
 
     // Create and save a token
     let token_id = super::generate_test_id().await;
@@ -173,13 +173,13 @@ pub async fn token_test_delete_token_not_found<T: TokenRepository>(
     );
 }
 
-pub async fn token_test_multiple_tokens_same_user<T: TokenRepository, Tx, U: UserRepository<Tx>>(
+pub async fn token_test_multiple_tokens_same_user<T: TokenRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    user_repo: &U,
+    user_repo: &SqliteUserRepository,
     token_repo: &T,
 ) {
     // Create a user
-    let user_id = create_test_user(user_repo, &ctx.ctx).await;
+    let user_id = create_test_user(user_repo, ctx).await;
 
     // Create multiple tokens for the same user
     let token1_id = super::generate_test_id().await;
@@ -248,13 +248,13 @@ pub async fn token_test_multiple_tokens_same_user<T: TokenRepository, Tx, U: Use
     assert_eq!(fetched2_after.id, actual_token2_id);
 }
 
-pub async fn token_test_token_with_expired_time<T: TokenRepository, Tx, U: UserRepository<Tx>>(
+pub async fn token_test_token_with_expired_time<T: TokenRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
-    user_repo: &U,
+    user_repo: &SqliteUserRepository,
     token_repo: &T,
 ) {
     // Create a user
-    let user_id = create_test_user(user_repo, &ctx.ctx).await;
+    let user_id = create_test_user(user_repo, ctx).await;
 
     // Create an already expired token
     let token_id = super::generate_test_id().await;

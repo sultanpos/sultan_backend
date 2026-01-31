@@ -31,13 +31,12 @@ pub trait AuthServiceTrait: Send + Sync {
 }
 
 /// Auth service handles authentication operations
-pub struct AuthService<U, T, P, J, Tx>
+pub struct AuthService<U, T, P, J>
 where
-    U: UserRepository<Tx>,
+    U: UserRepository,
     T: TokenRepository,
     P: PasswordHash,
     J: JwtManager,
-    Tx: Send + Sync,
 {
     user_repo: U,
     token_repo: T,
@@ -45,16 +44,14 @@ where
     jwt_manager: J,
     refresh_token_expiry_days: i64,
     db: DatabaseConnection,
-    _phantom: std::marker::PhantomData<Tx>,
 }
 
-impl<U, T, P, J, Tx> AuthService<U, T, P, J, Tx>
+impl<U, T, P, J> AuthService<U, T, P, J>
 where
-    U: UserRepository<Tx>,
+    U: UserRepository,
     T: TokenRepository,
     P: PasswordHash,
     J: JwtManager,
-    Tx: Send + Sync,
 {
     /// Creates a new AuthService with default configuration.
     ///
@@ -73,7 +70,6 @@ where
             jwt_manager,
             refresh_token_expiry_days: DEFAULT_REFRESH_TOKEN_EXPIRY_DAYS,
             db,
-            _phantom: std::marker::PhantomData,
         }
     }
 
@@ -143,13 +139,12 @@ where
 }
 
 #[async_trait]
-impl<U, T, P, J, Tx> AuthServiceTrait for AuthService<U, T, P, J, Tx>
+impl<U, T, P, J> AuthServiceTrait for AuthService<U, T, P, J>
 where
-    U: UserRepository<Tx>,
+    U: UserRepository,
     T: TokenRepository,
     P: PasswordHash + Send + Sync,
     J: JwtManager + Send + Sync,
-    Tx: Send + Sync,
 {
     /// Login with username and password
     /// Returns JWT access token and a refresh token
@@ -159,10 +154,16 @@ where
         username: &str,
         password: &str,
     ) -> DomainResult<AuthTokens> {
+        // Create RepoCtx for user repository
+        let repo_ctx = RepoCtx {
+            ctx: ctx.clone(),
+            db: self.db.clone(),
+        };
+
         // Get user by username
         let user = self
             .user_repo
-            .get_user_by_username(ctx, username)
+            .get_by_username(&repo_ctx, username)
             .await?
             .ok_or(Error::Unauthorized(
                 "Invalid username or password".to_string(),
@@ -188,7 +189,7 @@ where
         // Hash the refresh token for lookup
         let token_hash = Self::hash_token(refresh_token);
 
-        // Create RepoCtx for token repository
+        // Create RepoCtx for repository operations
         let repo_ctx = RepoCtx {
             ctx: ctx.clone(),
             db: self.db.clone(),
@@ -211,7 +212,7 @@ where
         // Get user
         let user = self
             .user_repo
-            .get_by_id(ctx, stored_token.user_id)
+            .get_by_id(&repo_ctx, stored_token.user_id)
             .await?
             .ok_or_else(|| Error::Unauthorized("User not found".to_string()))?;
 
@@ -242,52 +243,52 @@ where
     }
 }
 
+// =============================================================================
+// Tests use manual mock implementations since mockall doesn't work with
+// `impl ConnectionTrait` parameters in the trait.
+// =============================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::crypto::password::PasswordHash;
-    use crate::domain::model::user::{User, UserCreate, UserUpdate};
-    use async_trait::async_trait;
+    use crate::domain::model::pagination::PaginationOptions;
+    use crate::domain::model::permission::Permission;
+    use crate::domain::model::user::{User, UserCreate, UserFilter, UserUpdate};
     use sea_orm::ConnectionTrait;
+    use std::sync::Mutex;
 
-    // Mock User Repository
+    // ==========================================================================
+    // Manual Mock Implementations
+    // ==========================================================================
+
+    /// Manual mock for UserRepository
     struct MockUserRepo {
         user: Option<User>,
     }
 
-    // Use a unit type for mock transaction since mocks don't use real transactions
     #[async_trait]
-    impl UserRepository<()> for MockUserRepo {
-        async fn create_user(
+    impl UserRepository for MockUserRepo {
+        async fn create(
             &self,
-            _ctx: &Context,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
             _id: i64,
             _user: &UserCreate,
         ) -> DomainResult<()> {
             Ok(())
         }
 
-        async fn create_user_tx(
+        async fn get_by_username(
             &self,
-            _ctx: &Context,
-            _id: i64,
-            _user: &UserCreate,
-            _tx: &mut (),
-        ) -> DomainResult<()> {
-            Ok(())
-        }
-
-        async fn get_user_by_username(
-            &self,
-            _ctx: &Context,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
             _username: &str,
         ) -> DomainResult<Option<User>> {
             Ok(self.user.clone())
         }
 
-        async fn update_user(
+        async fn update(
             &self,
-            _ctx: &Context,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
             _id: i64,
             _user: &UserUpdate,
         ) -> DomainResult<()> {
@@ -296,42 +297,41 @@ mod tests {
 
         async fn update_password(
             &self,
-            _ctx: &Context,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
             _id: i64,
             _password_hash: &str,
         ) -> DomainResult<()> {
             Ok(())
         }
 
-        async fn delete_user(&self, _ctx: &Context, _user_id: i64) -> DomainResult<()> {
-            Ok(())
-        }
-
-        async fn delete_user_tx(
+        async fn delete(
             &self,
-            _ctx: &Context,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
             _user_id: i64,
-            _tx: &mut (),
         ) -> DomainResult<()> {
             Ok(())
         }
 
         async fn get_all(
             &self,
-            _ctx: &Context,
-            _filter: crate::domain::model::user::UserFilter,
-            _pagination: crate::domain::model::pagination::PaginationOptions,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            _filter: &UserFilter,
+            _pagination: &PaginationOptions,
         ) -> DomainResult<Vec<User>> {
             Ok(vec![])
         }
 
-        async fn get_by_id(&self, _ctx: &Context, _user_id: i64) -> DomainResult<Option<User>> {
+        async fn get_by_id(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            _user_id: i64,
+        ) -> DomainResult<Option<User>> {
             Ok(self.user.clone())
         }
 
-        async fn save_user_permission(
+        async fn save_permission(
             &self,
-            _ctx: &Context,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
             _user_id: i64,
             _branch_id: Option<i64>,
             _permission: i32,
@@ -340,9 +340,9 @@ mod tests {
             Ok(())
         }
 
-        async fn delete_user_permission(
+        async fn delete_permission(
             &self,
-            _ctx: &Context,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
             _user_id: i64,
             _branch_id: Option<i64>,
             _permission: i32,
@@ -350,24 +350,24 @@ mod tests {
             Ok(())
         }
 
-        async fn get_user_permission(
+        async fn get_permissions(
             &self,
-            _ctx: &Context,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
             _user_id: i64,
-        ) -> DomainResult<Vec<crate::domain::model::permission::Permission>> {
+        ) -> DomainResult<Vec<Permission>> {
             Ok(vec![])
         }
     }
 
-    // Mock Token Repository
+    /// Manual mock for TokenRepository
     struct MockTokenRepo {
-        stored_token: std::sync::Mutex<Option<Token>>,
+        stored_token: Mutex<Option<Token>>,
     }
 
     impl MockTokenRepo {
         fn new() -> Self {
             Self {
-                stored_token: std::sync::Mutex::new(None),
+                stored_token: Mutex::new(None),
             }
         }
     }
@@ -398,7 +398,7 @@ mod tests {
         }
     }
 
-    // Mock Password Hasher
+    /// Mock Password Hasher
     struct MockPasswordHasher {
         valid_password: String,
     }
@@ -413,7 +413,7 @@ mod tests {
         }
     }
 
-    // Mock JWT Manager
+    /// Mock JWT Manager
     struct MockJwtManager;
 
     impl JwtManager for MockJwtManager {
@@ -431,6 +431,10 @@ mod tests {
             })
         }
     }
+
+    // ==========================================================================
+    // Test Helpers
+    // ==========================================================================
 
     fn create_test_user(password_hash: &str) -> User {
         User {
@@ -457,6 +461,10 @@ mod tests {
             .await
             .expect("Failed to create test database")
     }
+
+    // ==========================================================================
+    // Login Tests
+    // ==========================================================================
 
     #[tokio::test]
     async fn test_login_success() {
@@ -517,6 +525,10 @@ mod tests {
         assert!(matches!(result, Err(Error::Unauthorized(_))));
     }
 
+    // ==========================================================================
+    // Refresh Token Tests
+    // ==========================================================================
+
     #[tokio::test]
     async fn test_refresh_token() {
         let user = create_test_user("hashed_password");
@@ -564,6 +576,10 @@ mod tests {
         assert!(matches!(result, Err(Error::Unauthorized(_))));
     }
 
+    // ==========================================================================
+    // Logout Tests
+    // ==========================================================================
+
     #[tokio::test]
     async fn test_logout() {
         let user = create_test_user("hashed_password");
@@ -591,23 +607,21 @@ mod tests {
         assert!(matches!(refresh_result, Err(Error::Unauthorized(_))));
     }
 
+    // ==========================================================================
+    // Hash Token Tests
+    // ==========================================================================
+
     #[test]
     fn test_hash_token() {
         let token = "test_token";
-        let hash1 = AuthService::<
-            MockUserRepo,
-            MockTokenRepo,
-            MockPasswordHasher,
-            MockJwtManager,
-            (),
-        >::hash_token(token);
-        let hash2 = AuthService::<
-            MockUserRepo,
-            MockTokenRepo,
-            MockPasswordHasher,
-            MockJwtManager,
-            (),
-        >::hash_token(token);
+        let hash1 =
+            AuthService::<MockUserRepo, MockTokenRepo, MockPasswordHasher, MockJwtManager>::hash_token(
+                token,
+            );
+        let hash2 =
+            AuthService::<MockUserRepo, MockTokenRepo, MockPasswordHasher, MockJwtManager>::hash_token(
+                token,
+            );
 
         // Same token should produce same hash
         assert_eq!(hash1, hash2);
