@@ -50,19 +50,19 @@ async fn create_sell_price_test_data() -> SellPriceTestData<'static, SqliteTrans
     let mut tx = tx_manager.begin().await.unwrap();
 
     let unit_id = sultan_core::testing::storage::generate_test_id().await;
-    unit_repo
-        .create(
-            &ctx,
-            &pool,
-            unit_id,
-            &UnitOfMeasureCreate {
-                name: "Piece".to_string(),
-                description: Some("Unit for pieces".to_string()),
-            },
-        )
-        .await
-        .expect("unable to create unit");
-
+    /*unit_repo
+            .create(
+                &ctx,
+                &pool,
+                unit_id,
+                &UnitOfMeasureCreate {
+                    name: "Piece".to_string(),
+                    description: Some("Unit for pieces".to_string()),
+                },
+            )
+            .await
+            .expect("unable to create unit");
+    */
     let product_id = sultan_core::testing::storage::generate_test_id().await;
     product_repo
         .create_product(&ctx, product_id, &product, &mut tx)

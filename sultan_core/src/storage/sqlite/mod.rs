@@ -9,7 +9,6 @@ pub mod supplier;
 pub mod token;
 pub mod transaction;
 pub mod unit;
-pub mod unit_repo;
 pub mod user;
 
 pub use branch::SqliteBranchRepository;
@@ -21,7 +20,6 @@ pub use sell_price::SqliteSellPriceRepository;
 pub use supplier::SqliteSupplierRepository;
 pub use token::SqliteTokenRepository;
 pub use unit::SqliteUnitOfMeasureRepository;
-pub use unit_repo::SqliteUnitOfMeasureRepository as SqliteUnitRepo;
 pub use user::SqliteUserRepository;
 
 use chrono::{DateTime, NaiveDateTime, Utc};

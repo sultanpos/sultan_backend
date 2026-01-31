@@ -1,45 +1,9 @@
 use crate::domain::{
-    Context, DomainResult,
+    DomainResult,
     model::product::{UnitOfMeasure, UnitOfMeasureCreate, UnitOfMeasureUpdate},
 };
 use async_trait::async_trait;
 use sea_orm::ConnectionTrait;
-
-/// Repository context that wraps both the domain context and database connection.
-///
-/// The `RepoCtx` provides a unified way to pass both business context (authorization, cancellation)
-/// and database access (connection or transaction) to repository methods.
-///
-/// # Generic Parameter
-///
-/// * `T: ConnectionTrait` - Any SeaORM connection type (DatabaseConnection, DatabaseTransaction, etc.)
-///
-/// # Usage with Direct Connection
-///
-/// ```rust,ignore
-/// let ctx = RepoCtx {
-///     ctx: Context::new(),
-///     db: &database_connection,
-/// };
-/// repo.create(&ctx, id, &data).await?;
-/// ```
-///
-/// # Usage with Transaction
-///
-/// ```rust,ignore
-/// let txn = database_connection.begin().await?;
-/// let ctx = RepoCtx {
-///     ctx: Context::new(),
-///     db: &txn,
-/// };
-/// repo.create(&ctx, id, &data).await?;
-/// repo.update(&ctx, id, &update_data).await?;
-/// txn.commit().await?;
-/// ```
-pub struct RepoCtx<T: ConnectionTrait> {
-    pub ctx: Context,
-    pub db: T,
-}
 
 /// Repository trait for Unit of Measure operations.
 ///
@@ -96,7 +60,7 @@ pub trait UnitOfMeasureRepository: Send + Sync {
     /// * `Err(Error)` - Database error or validation error
     async fn create(
         &self,
-        ctx: &RepoCtx<impl ConnectionTrait>,
+        ctx: &super::RepoCtx<impl ConnectionTrait>,
         id: i64,
         uom: &UnitOfMeasureCreate,
     ) -> DomainResult<()>;
@@ -115,7 +79,7 @@ pub trait UnitOfMeasureRepository: Send + Sync {
     /// * `Err(Error)` - Database error
     async fn get_by_id(
         &self,
-        ctx: &RepoCtx<impl ConnectionTrait>,
+        ctx: &super::RepoCtx<impl ConnectionTrait>,
         id: i64,
     ) -> DomainResult<Option<UnitOfMeasure>>;
 
@@ -137,7 +101,7 @@ pub trait UnitOfMeasureRepository: Send + Sync {
     /// * `Err(Error)` - Database error
     async fn update(
         &self,
-        ctx: &RepoCtx<impl ConnectionTrait>,
+        ctx: &super::RepoCtx<impl ConnectionTrait>,
         id: i64,
         uom: &UnitOfMeasureUpdate,
     ) -> DomainResult<()>;
@@ -157,7 +121,8 @@ pub trait UnitOfMeasureRepository: Send + Sync {
     /// * `Ok(())` - Unit deleted successfully
     /// * `Err(Error::NotFound)` - Unit not found or already deleted
     /// * `Err(Error)` - Database error
-    async fn delete(&self, ctx: &RepoCtx<impl ConnectionTrait>, id: i64) -> DomainResult<()>;
+    async fn delete(&self, ctx: &super::RepoCtx<impl ConnectionTrait>, id: i64)
+    -> DomainResult<()>;
 
     /// Lists all non-deleted units of measure.
     ///
@@ -169,5 +134,8 @@ pub trait UnitOfMeasureRepository: Send + Sync {
     ///
     /// * `Ok(Vec<unit>)` - List of all active units
     /// * `Err(Error)` - Database error
-    async fn list(&self, ctx: &RepoCtx<impl ConnectionTrait>) -> DomainResult<Vec<UnitOfMeasure>>;
+    async fn get_all(
+        &self,
+        ctx: &super::RepoCtx<impl ConnectionTrait>,
+    ) -> DomainResult<Vec<UnitOfMeasure>>;
 }
