@@ -82,6 +82,44 @@ pub async fn init_sqlite_repo_ctx() -> RepoCtx<DatabaseConnection> {
     }
 }
 
+pub async fn init_sqlite_db() -> DatabaseConnection {
+    // Create an isolated in-memory database for each test to avoid schema conflicts
+    let temp_file = format!("/tmp/test_{}.db", Uuid::new_v4());
+    let connection_string = format!("sqlite://{}?mode=rwc", temp_file);
+
+    let new_pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .min_connections(1)
+        .connect(&connection_string)
+        .await
+        .expect("Failed to create in-memory SQLite database");
+
+    let crate_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let migrations = std::path::Path::new(&crate_dir).join("../migrations");
+    print!(
+        "migration folder {}",
+        migrations.as_path().to_string_lossy()
+    );
+
+    sqlx::migrate::Migrator::new(migrations)
+        .await
+        .expect("Failed to load migrations")
+        .run(&new_pool)
+        .await
+        .expect("Failed to run SQLite migrations");
+
+    // Configure connection pool with multiple connections for transaction testing
+    let mut opt = sea_orm::ConnectOptions::new(connection_string);
+    opt.max_connections(5)
+        .min_connections(1)
+        .sqlx_logging(false);
+
+    let db_connection = Database::connect(opt)
+        .await
+        .expect("unable to connect sqlite");
+
+    db_connection
+}
+
 pub async fn setup_test_db() -> SqlitePool {
     init_sqlite_pool().await
 }
