@@ -22,6 +22,28 @@ pub fn default_filter() -> CustomerFilter {
     }
 }
 
+pub async fn customer_test_all<C, F, Fut>(repo: &C, ctx_factory: F)
+where
+    C: CustomerRepository,
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = RepoCtx<DatabaseConnection>>,
+{
+    customer_test_repo_integration(&ctx_factory().await, repo).await;
+    customer_test_create_with_all_fields(&ctx_factory().await, repo).await;
+    customer_test_create_minimal_fields(&ctx_factory().await, repo).await;
+    customer_test_partial_update(&ctx_factory().await, repo).await;
+    customer_test_update_address_scenarios(&ctx_factory().await, repo).await;
+    customer_test_update_metadata(&ctx_factory().await, repo).await;
+    customer_test_update_email_scenarios(&ctx_factory().await, repo).await;
+    customer_test_update_level(&ctx_factory().await, repo).await;
+    customer_test_update_non_existent(&ctx_factory().await, repo).await;
+    customer_test_delete_non_existent(&ctx_factory().await, repo).await;
+    customer_test_get_deleted(&ctx_factory().await, repo).await;
+    customer_test_deleted_not_in_get_all(&ctx_factory().await, repo).await;
+    customer_test_get_by_number_success(&ctx_factory().await, repo).await;
+    customer_test_get_by_number_not_found(&ctx_factory().await, repo).await;
+}
+
 // =============================================================================
 // Basic CRUD Tests
 // =============================================================================
