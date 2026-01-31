@@ -5,7 +5,8 @@ use axum::{
     response::IntoResponse,
 };
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
-use sqlx::{Sqlite, SqlitePool, migrate::MigrateDatabase, sqlite::SqlitePoolOptions};
+use sea_orm::{Database, DatabaseConnection};
+use sqlx::{Sqlite, SqlitePool, database, migrate::MigrateDatabase, sqlite::SqlitePoolOptions};
 use std::{fs::File, sync::Arc};
 use sultan_core::{
     application::{
@@ -19,7 +20,7 @@ use sultan_core::{
     },
     snowflake::SnowflakeGenerator,
     storage::{
-        BranchRepository, SqliteUserRepository, UserRepository,
+        BranchRepository, RepoCtx, SqliteUserRepository, UserRepository,
         sqlite::{
             SqliteBranchRepository, SqliteCategoryRepository, SqliteCustomerRepository,
             SqliteNumberRepository, SqliteSupplierRepository, SqliteTokenRepository,
@@ -45,7 +46,7 @@ use sultan_web::{
     supplier_routes::SupplierApiDoc,
 };
 
-async fn init_sqlite_db(config: &AppConfig) -> anyhow::Result<SqlitePool> {
+async fn init_sqlite_db(config: &AppConfig) -> anyhow::Result<(SqlitePool, DatabaseConnection)> {
     let database_url = &config.database_url;
 
     // Create database if it doesn't exist
@@ -64,13 +65,17 @@ async fn init_sqlite_db(config: &AppConfig) -> anyhow::Result<SqlitePool> {
     sqlx::migrate!("../migrations").run(&pool).await?;
 
     tracing::info!("Connected to SQLite database");
-    Ok(pool)
+
+    let database = Database::connect(database_url).await?;
+
+    Ok((pool, database))
 }
 
 async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
-    let pool = init_sqlite_db(config).await?;
+    let (pool, db_connection) = init_sqlite_db(config).await?;
+    //let db_connection =
 
-    let branch_repository = SqliteBranchRepository::new(pool.clone());
+    let branch_repository = SqliteBranchRepository::new();
     let user_repository = SqliteUserRepository::new(pool.clone());
     let token_repository = SqliteTokenRepository::new(pool.clone());
     let category_repository = SqliteCategoryRepository::new(pool.clone());
@@ -94,6 +99,7 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
     let number_service = Arc::new(NumberService::new(
         number_repository,
         branch_repository.clone(),
+        db_connection.clone(),
     ));
     let category_service = CategoryService::new(category_repository, SnowflakeGenerator::new(1)?);
     let customer_service = CustomerService::new(
@@ -111,7 +117,11 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
 
     // init data when not available
     let ctx = Context::new_internal();
-    let branches = branch_repository.get_all(&ctx).await?;
+    let repo_ctx = RepoCtx {
+        ctx: ctx.clone(),
+        db: db_connection.clone(),
+    };
+    let branches = branch_repository.get_all(&repo_ctx).await?;
     if branches.is_empty() {
         let id_generator = SnowflakeGenerator::new(1)?;
         let id = id_generator.generate()?;
@@ -124,7 +134,9 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
             npwp: None,
             image: None,
         };
-        branch_repository.create(&ctx, id, &default_branch).await?;
+        branch_repository
+            .create(&repo_ctx, id, &default_branch)
+            .await?;
         tracing::info!("Created default branch");
 
         let user_id = user_service
