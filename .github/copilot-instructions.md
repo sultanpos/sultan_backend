@@ -48,11 +48,239 @@ sultan_backend/
 - **JSON Error Responses**: All errors return consistent JSON format
 - **Structured Logging**: Use `tracing` for observability
 
-### 3. **Web Layer** (`sultan/`)
+### 3. **Domain Layer** (`sultan_core/`)
+
+#### Repository Pattern with SeaORM
+
+All data access is abstracted through repository traits using SeaORM ORM. Repositories work with both direct database connections and transactions through the `RepoCtx` wrapper.
+
+**RepoCtx Pattern**:
+```rust
+/// Repository context combines domain context with database connection
+pub struct RepoCtx<T: ConnectionTrait> {
+    pub ctx: Context,        // Business context (user, permissions, etc.)
+    pub db: T,               // Database connection or transaction
+}
+
+// Usage with direct connection
+let repo_ctx = RepoCtx {
+    ctx: context.clone(),
+    db: database_connection.clone(),
+};
+repo.create(&repo_ctx, id, &data).await?;
+
+// Usage with transaction
+let txn = database_connection.begin().await?;
+let repo_ctx = RepoCtx {
+    ctx: context.clone(),
+    db: &txn,
+};
+repo.create(&repo_ctx, id, &data).await?;
+repo.update(&repo_ctx, id, &update).await?;
+txn.commit().await?;
+```
+
+**Repository Trait Pattern**:
+```rust
+#[async_trait]
+pub trait BranchRepository: Send + Sync {
+    // Use impl ConnectionTrait for flexibility
+    async fn create(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        id: i64,
+        branch: &BranchCreate,
+    ) -> DomainResult<()>;
+    
+    async fn get_by_id(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        id: i64,
+    ) -> DomainResult<Option<Branch>>;
+    
+    // ... other methods
+}
+```
+
+**SeaORM Entity Pattern** (`sultan_core/src/storage/sqlite/entity/`):
+```rust
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
+#[sea_orm(table_name = "branches")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: i64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub deleted_at: Option<String>,
+    pub is_deleted: bool,
+    // Entity-specific fields
+    pub name: String,
+    // ...
+}
+
+impl Model {
+    /// Convert SeaORM model to domain model
+    pub fn to_domain(&self) -> crate::domain::model::branch::Branch {
+        Branch {
+            id: self.id,
+            created_at: parse_sqlite_date(&self.created_at),
+            // ... map all fields
+        }
+    }
+}
+```
+
+**Repository Implementation Pattern** (`sultan_core/src/storage/sqlite/`):
+```rust
+use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set};
+
+#[derive(Clone, Default)]
+pub struct SqliteBranchRepository {}
+
+impl SqliteBranchRepository {
+    pub fn new() -> Self {
+        SqliteBranchRepository {}
+    }
+}
+
+#[async_trait]
+impl BranchRepository for SqliteBranchRepository {
+    // CREATE: Use ActiveModel pattern
+    async fn create(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        id: i64,
+        branch: &BranchCreate,
+    ) -> DomainResult<()> {
+        let model = BranchActiveModel {
+            id: Set(id),
+            name: Set(branch.name.clone()),
+            // ... set other fields
+            ..Default::default()
+        };
+        model.insert(&ctx.db).await?;
+        Ok(())
+    }
+    
+    // READ: Use Entity::find() with filters
+    async fn get_by_id(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        id: i64,
+    ) -> DomainResult<Option<Branch>> {
+        let branch = BranchEntity::find_by_id(id)
+            .filter(BranchColumn::IsDeleted.eq(false))
+            .one(&ctx.db)
+            .await?;
+        Ok(branch.map(|b| b.to_domain()))
+    }
+    
+    // UPDATE: Use update_many() with dynamic columns
+    async fn update(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        id: i64,
+        branch: &BranchUpdate,
+    ) -> DomainResult<()> {
+        use sea_orm::{UpdateMany, sea_query::Expr};
+        
+        let mut update_query: UpdateMany<BranchEntity> = BranchEntity::update_many()
+            .filter(BranchColumn::Id.eq(id))
+            .filter(BranchColumn::IsDeleted.eq(false));
+        
+        // Update only provided fields
+        if let Some(name) = &branch.name {
+            update_query = update_query.col_expr(BranchColumn::Name, Expr::value(name.clone()));
+        }
+        
+        // Handle Update<T> types for optional fields
+        if branch.address.should_update() {
+            update_query = update_query.col_expr(
+                BranchColumn::Address,
+                Expr::value(branch.address.to_bind_value()),
+            );
+        }
+        
+        // Always update timestamp
+        update_query = update_query.col_expr(
+            BranchColumn::UpdatedAt,
+            Expr::value(chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.fZ").to_string()),
+        );
+        
+        let result = update_query.exec(&ctx.db).await?;
+        if result.rows_affected == 0 {
+            return Err(Error::NotFound(format!("Branch with id {} not found", id)));
+        }
+        Ok(())
+    }
+    
+    // DELETE: Soft delete with update_many()
+    async fn delete(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        id: i64,
+    ) -> DomainResult<()> {
+        use sea_orm::sea_query::Expr;
+        
+        let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.fZ").to_string();
+        let result = BranchEntity::update_many()
+            .filter(BranchColumn::Id.eq(id))
+            .filter(BranchColumn::IsDeleted.eq(false))
+            .col_expr(BranchColumn::IsDeleted, Expr::value(true))
+            .col_expr(BranchColumn::DeletedAt, Expr::value(Some(now.clone())))
+            .col_expr(BranchColumn::UpdatedAt, Expr::value(now))
+            .exec(&ctx.db)
+            .await?;
+        
+        if result.rows_affected == 0 {
+            return Err(Error::NotFound(format!("Branch with id {} not found", id)));
+        }
+        Ok(())
+    }
+    
+    // LIST: Use Entity::find() with filters
+    async fn get_all(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+    ) -> DomainResult<Vec<Branch>> {
+        let branches = BranchEntity::find()
+            .filter(BranchColumn::IsDeleted.eq(false))
+            .all(&ctx.db)
+            .await?;
+        Ok(branches.into_iter().map(|b| b.to_domain()).collect())
+    }
+}
+```
+
+**Service Layer Integration**:
+```rust
+pub struct BranchService<R: BranchRepository> {
+    repository: R,
+    db: DatabaseConnection,  // Hold connection for creating RepoCtx
+}
+
+impl<R: BranchRepository> BranchService<R> {
+    pub async fn create_branch(
+        &self,
+        ctx: &Context,
+        id: i64,
+        branch: &BranchCreate,
+    ) -> DomainResult<()> {
+        // Create RepoCtx combining domain context and database
+        let repo_ctx = RepoCtx {
+            ctx: ctx.clone(),
+            db: self.db.clone(),
+        };
+        self.repository.create(&repo_ctx, id, branch).await
+    }
+}
+```
+
+### 4. **Web Layer** (`sultan/`)
 
 #### Technology Stack
 - **Web Framework**: Axum 0.8
-- **Database**: SQLite with SQLx (async, compile-time query checking)
+- **Database**: SQLite with SeaORM (async ORM with query builder)
 - **Authentication**: JWT tokens (access + refresh)
 - **Password Hashing**: Argon2
 - **Validation**: validator crate with derive macros
@@ -131,9 +359,107 @@ impl IntoResponse for Error {
 }
 ```
 
-### 4. **Testing Strategy**
+### 5. **Testing Strategy**
 
-#### Integration Tests (`sultan/tests/`)
+#### Unit Tests with Manual Mocks
+
+**IMPORTANT**: Mockall doesn't work with `impl Trait` parameters. Use manual mock implementations:
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sea_orm::{ConnectionTrait, Database};
+    use std::sync::{Arc, Mutex};
+    
+    // Manual mock for repositories with impl Trait
+    struct MockBranchRepo {
+        get_by_id_fn: Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<Option<Branch>> + Send>>>>,
+    }
+    
+    impl MockBranchRepo {
+        fn new() -> Self {
+            Self {
+                get_by_id_fn: Arc::new(Mutex::new(None)),
+            }
+        }
+        
+        fn expect_get_by_id<F>(&self, f: F)
+        where
+            F: Fn(i64) -> DomainResult<Option<Branch>> + Send + 'static,
+        {
+            *self.get_by_id_fn.lock().unwrap() = Some(Box::new(f));
+        }
+    }
+    
+    #[async_trait]
+    impl BranchRepository for MockBranchRepo {
+        async fn get_by_id(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            id: i64,
+        ) -> DomainResult<Option<Branch>> {
+            let lock = self.get_by_id_fn.lock().unwrap();
+            if let Some(f) = lock.as_ref() {
+                f(id)
+            } else {
+                panic!("get_by_id not mocked");
+            }
+        }
+        // ... implement other methods with panic! for unmocked methods
+    }
+    
+    async fn create_test_db() -> DatabaseConnection {
+        Database::connect("sqlite::memory:").await.unwrap()
+    }
+    
+    #[tokio::test]
+    async fn test_service_method() {
+        let mock_repo = MockBranchRepo::new();
+        let db = create_test_db().await;
+        
+        // Set up expectations
+        mock_repo.expect_get_by_id(|_| Ok(Some(create_test_branch())));
+        
+        let service = BranchService::new(mock_repo, db);
+        let result = service.get_branch(&Context::new(), 1).await;
+        
+        assert!(result.is_ok());
+    }
+}
+```
+
+#### Integration Tests (`sultan/tests/` and `sultan_core/tests/`)
+
+**Repository Integration Tests** (`sultan_core/tests/`):
+```rust
+use sultan_core::{
+    domain::Context,
+    storage::{BranchRepository, RepoCtx},
+    testing::storage::init_sqlite_repo_ctx,
+};
+
+#[tokio::test]
+async fn test_branch_repo_integration() {
+    // Create test database with migrations
+    let repo_ctx = init_sqlite_repo_ctx().await;
+    let repo = SqliteBranchRepository::new();
+    
+    // Test create
+    let branch = BranchCreate {
+        name: "Test Branch".to_string(),
+        code: "TEST".to_string(),
+        // ...
+    };
+    repo.create(&repo_ctx, 1, &branch).await.unwrap();
+    
+    // Test read
+    let result = repo.get_by_id(&repo_ctx, 1).await.unwrap();
+    assert!(result.is_some());
+}
+```
+
+#### Web Integration Tests (`sultan/tests/`)
 
 **Test Structure**:
 ```rust
@@ -194,12 +520,14 @@ async fn test_login_success() {
 ```
 
 #### Mock Pattern
-- Create trait implementations that return predefined values
-- Use `Arc<dyn Trait>` for dependency injection
+- **For traits with `impl Trait` parameters**: Use manual mock implementations with closures
+- **For traits without `impl Trait`**: Mockall can be used
+- Use `Arc<dyn Trait>` for dependency injection in services
 - Test both success and failure scenarios
 - Validate HTTP status codes and response bodies
+- Use `Database::connect("sqlite::memory:")` for in-memory test databases
 
-### 5. **Configuration**
+### 6. **Configuration**
 
 Environment variables (`.env`):
 ```env
@@ -211,14 +539,25 @@ WRITE_LOG_TO_FILE=0
 DATABASE_MAX_CONNECTIONS=5
 ```
 
-### 6. **Database Migrations**
+### 7. **Database Migrations**
 
-Migrations are in `sultan_core/migrations/` and run automatically on startup:
-```rust
-sqlx::migrate!("../sultan_core/migrations")
-    .run(&pool)
-    .await?;
+Migrations are raw SQL files in the root `migrations/` directory (not in sultan_core). They are applied using SeaORM migration tools or SQLx migrations. Migration files follow the pattern:
+
 ```
+migrations/
+├── 20251123020602_branch.sql
+├── 20251123021242_user.sql
+├── 20251123022025_permission.sql
+└── ...
+```
+
+Each migration creates tables with the standard Sultan schema:
+- `id BIGINT PRIMARY KEY` - Snowflake ID
+- `created_at TEXT NOT NULL` - ISO 8601 timestamp
+- `updated_at TEXT NOT NULL` - ISO 8601 timestamp
+- `deleted_at TEXT` - ISO 8601 timestamp for soft delete
+- `is_deleted BOOLEAN DEFAULT 0` - Soft delete flag
+- Entity-specific columns
 
 ## Development Workflow
 
@@ -252,6 +591,17 @@ These three commands are **mandatory** and will be checked in CI/CD. Never skip 
 3. **After EVERY change**: Run `cargo fmt --package sultan`, `cargo clippy --package sultan`, `cargo test --package sultan`
 4. **Write tests**: Add integration tests for new endpoints
 5. **Update documentation**: Keep README and comments current
+
+### Adding New Repositories
+
+1. **Create entity** in `sultan_core/src/storage/sqlite/entity/` with SeaORM derives
+2. **Export entity** in `sultan_core/src/storage/sqlite/entity/mod.rs`
+3. **Create repository trait** in `sultan_core/src/storage/` with `impl ConnectionTrait`
+4. **Implement repository** in `sultan_core/src/storage/sqlite/` using SeaORM queries
+5. **Write integration tests** in `sultan_core/tests/`
+6. **Create domain models** in `sultan_core/src/domain/model/`
+7. **Add `to_domain()` method** on entity Model
+8. **Run tests**: `cargo test --package sultan_core`
 
 ### Adding New Endpoints
 
@@ -292,16 +642,35 @@ GitHub Actions workflow (`.github/workflows/pr.yml`):
 
 ## Common Issues & Solutions
 
-### Issue: `AuthServiceTrait` not found
-**Solution**: Update sultan_core submodule:
-```bash
-git submodule update --init --recursive
+### Issue: `impl Trait` in trait causes mockall errors
+**Solution**: Use manual mock implementations with closures instead of mockall:
+```rust
+struct MockRepo {
+    method_fn: Arc<Mutex<Option<Box<dyn Fn(...) -> Result + Send>>>>,
+}
 ```
 
-### Issue: Migration directory not found
-**Solution**: Path is relative to `sultan/` crate:
+### Issue: Repository method needs transaction
+**Solution**: Use `RepoCtx` with transaction instead of direct connection:
 ```rust
-sqlx::migrate!("../sultan_core/migrations")
+let txn = db.begin().await?;
+let repo_ctx = RepoCtx { ctx: context.clone(), db: &txn };
+repo.create(&repo_ctx, id, &data).await?;
+txn.commit().await?;
+```
+
+### Issue: SeaORM entity not found
+**Solution**: Ensure entity is exported in `storage/sqlite/entity/mod.rs`:
+```rust
+pub use branch::{Entity as BranchEntity, Model as BranchModel, ...};
+```
+
+### Issue: Service tests fail with "method not mocked"
+**Solution**: Implement all trait methods in mock, use `panic!()` for unused ones:
+```rust
+async fn unused_method(...) -> DomainResult<()> {
+    panic!("unused_method not mocked");
+}
 ```
 
 ### Issue: Test fails with JSON parse error
@@ -312,8 +681,16 @@ sqlx::migrate!("../sultan_core/migrations")
 
 ## Key Dependencies
 
+**sultan_core** (domain layer):
+- `sea-orm = { version = "1.1", features = ["sqlx-sqlite", "runtime-tokio-rustls", "macros"] }` - ORM
+- `sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }` - For migrations
+- `async-trait = "0.1"` - Async traits
+- `chrono = "0.4"` - DateTime handling
+- `tokio = { version = "1", features = ["full"] }`
+- `validator = { version = "0.18", features = ["derive"] }`
+
+**sultan** (web layer):
 - `axum = "0.8"` - Web framework
-- `sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "macros"] }`
 - `tokio = { version = "1", features = ["full"] }`
 - `validator = { version = "0.18", features = ["derive"] }`
 - `tracing = "0.1"` - Structured logging
