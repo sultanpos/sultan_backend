@@ -49,8 +49,9 @@ async fn test_create_product_without_optional_fields() {
 
 #[tokio::test]
 async fn test_create_product_with_categories() {
-    let (ctx, tx_manager, repo, category_repo, _) = create_sqlite_product_repo().await;
-    product::test_create_product_with_categories(&ctx, &tx_manager, &repo, &category_repo).await;
+    let (ctx, tx_manager, repo, category_repo, pool) = create_sqlite_product_repo().await;
+    product::test_create_product_with_categories(&ctx, &tx_manager, &repo, &category_repo, &pool)
+        .await;
 }
 
 #[tokio::test]
@@ -76,9 +77,9 @@ async fn test_update_product_all_fields() {
 
 #[tokio::test]
 async fn test_update_product_categories() {
-    let (ctx, tx_manager, repo, category_repo, _) = create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, category_repo, pool) = create_sqlite_product_repo().await;
     product::test_create_product_without_optional_fields(&ctx, &tx_manager, &repo).await;
-    product::test_update_product_categories(&ctx, &tx_manager, &repo, &category_repo).await;
+    product::test_update_product_categories(&ctx, &tx_manager, &repo, &category_repo, &pool).await;
 }
 
 #[tokio::test]
@@ -363,20 +364,28 @@ async fn test_get_variant_by_barcode_when_product_deleted() {
 
 #[tokio::test]
 async fn test_update_product_with_empty_category_update() {
-    let (ctx, tx_manager, repo, category_repo, _) = product::create_sqlite_product_repo().await;
+    let (ctx, tx_manager, repo, category_repo, pool) = product::create_sqlite_product_repo().await;
     product::test_update_product_with_empty_category_update(
         &ctx,
         &tx_manager,
         &repo,
         &category_repo,
+        &pool,
     )
     .await;
 }
 
 #[tokio::test]
 async fn test_update_product_replace_categories() {
-    let (ctx, tx_manager, repo, category_repo, _) = product::create_sqlite_product_repo().await;
-    product::test_update_product_replace_categories(&ctx, &tx_manager, &repo, &category_repo).await;
+    let (ctx, tx_manager, repo, category_repo, pool) = product::create_sqlite_product_repo().await;
+    product::test_update_product_replace_categories(
+        &ctx,
+        &tx_manager,
+        &repo,
+        &category_repo,
+        &pool,
+    )
+    .await;
 }
 
 #[tokio::test]

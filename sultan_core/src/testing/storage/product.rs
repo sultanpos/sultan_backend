@@ -9,7 +9,7 @@ use crate::{
         },
     },
     storage::{
-        CategoryRepository, ProductRepository,
+        CategoryRepository, ProductRepository, RepoCtx,
         sqlite::{
             SqliteCategoryRepository, SqliteProductRepository,
             transaction::SqliteTransactionManager,
@@ -32,7 +32,7 @@ pub async fn create_sqlite_product_repo() -> (
         Context::new(),
         SqliteTransactionManager::new(pool.clone()),
         SqliteProductRepository::new(pool.clone()),
-        SqliteCategoryRepository::new(pool.clone()),
+        SqliteCategoryRepository::new(),
         pool.clone(),
     )
 }
@@ -149,6 +149,7 @@ pub async fn test_create_product_with_categories<'a, T, P, C>(
     tx_manager: &'a T,
     repo: &'a P,
     category_repo: &'a C,
+    pool: &SqlitePool,
 ) where
     T: TransactionManager,
     P: ProductRepository<T::Transaction<'a>>,
@@ -158,12 +159,24 @@ pub async fn test_create_product_with_categories<'a, T, P, C>(
     let category_id1 = super::generate_test_id().await;
     let category_id2 = super::generate_test_id().await;
 
+    let category_repo_ctx: RepoCtx<sea_orm::DatabaseConnection> = RepoCtx {
+        ctx: ctx.clone(),
+        db: pool.clone().into(),
+    };
     category_repo
-        .create(ctx, category_id1, &category_create_with_name("Category 1"))
+        .create(
+            &category_repo_ctx,
+            category_id1,
+            &category_create_with_name("Category 1"),
+        )
         .await
         .expect("Failed to create category 1");
     category_repo
-        .create(ctx, category_id2, &category_create_with_name("Category 2"))
+        .create(
+            &category_repo_ctx,
+            category_id2,
+            &category_create_with_name("Category 2"),
+        )
         .await
         .expect("Failed to create category 2");
 
@@ -346,6 +359,7 @@ pub async fn test_update_product_categories<'a, T, P, C>(
     tx_manager: &'a T,
     repo: &'a P,
     category_repo: &'a C,
+    pool: &SqlitePool,
 ) where
     T: TransactionManager,
     P: ProductRepository<T::Transaction<'a>>,
@@ -356,16 +370,32 @@ pub async fn test_update_product_categories<'a, T, P, C>(
     let cat_id2 = super::generate_test_id().await;
     let cat_id3 = super::generate_test_id().await;
 
+    let category_repo_ctx: RepoCtx<sea_orm::DatabaseConnection> = RepoCtx {
+        ctx: ctx.clone(),
+        db: pool.clone().into(),
+    };
     category_repo
-        .create(ctx, cat_id1, &category_create_with_name("Cat 1"))
+        .create(
+            &category_repo_ctx,
+            cat_id1,
+            &category_create_with_name("Cat 1"),
+        )
         .await
         .expect("Failed to create category 1");
     category_repo
-        .create(ctx, cat_id2, &category_create_with_name("Cat 2"))
+        .create(
+            &category_repo_ctx,
+            cat_id2,
+            &category_create_with_name("Cat 2"),
+        )
         .await
         .expect("Failed to create category 2");
     category_repo
-        .create(ctx, cat_id3, &category_create_with_name("Cat 3"))
+        .create(
+            &category_repo_ctx,
+            cat_id3,
+            &category_create_with_name("Cat 3"),
+        )
         .await
         .expect("Failed to create category 3");
 
@@ -1433,6 +1463,7 @@ pub async fn test_update_product_with_empty_category_update<'a, T, P, C>(
     tx_manager: &'a T,
     repo: &'a P,
     category_repo: &'a C,
+    pool: &SqlitePool,
 ) where
     T: TransactionManager,
     P: ProductRepository<T::Transaction<'a>>,
@@ -1442,12 +1473,25 @@ pub async fn test_update_product_with_empty_category_update<'a, T, P, C>(
     let category_id1 = super::generate_test_id().await;
     let category_id2 = super::generate_test_id().await;
 
+    let repo_ctx: RepoCtx<sea_orm::DatabaseConnection> = RepoCtx {
+        ctx: ctx.clone(),
+        db: pool.clone().into(),
+    };
+
     category_repo
-        .create(ctx, category_id1, &category_create_with_name("Category 1"))
+        .create(
+            &repo_ctx,
+            category_id1,
+            &category_create_with_name("Category 1"),
+        )
         .await
         .expect("Failed to create category 1");
     category_repo
-        .create(ctx, category_id2, &category_create_with_name("Category 2"))
+        .create(
+            &repo_ctx,
+            category_id2,
+            &category_create_with_name("Category 2"),
+        )
         .await
         .expect("Failed to create category 2");
 
@@ -1497,6 +1541,7 @@ pub async fn test_update_product_replace_categories<'a, T, P, C>(
     tx_manager: &'a T,
     repo: &'a P,
     category_repo: &'a C,
+    pool: &SqlitePool,
 ) where
     T: TransactionManager,
     P: ProductRepository<T::Transaction<'a>>,
@@ -1507,16 +1552,33 @@ pub async fn test_update_product_replace_categories<'a, T, P, C>(
     let category_id2 = super::generate_test_id().await;
     let category_id3 = super::generate_test_id().await;
 
+    let repo_ctx: RepoCtx<sea_orm::DatabaseConnection> = RepoCtx {
+        ctx: ctx.clone(),
+        db: pool.clone().into(),
+    };
+
     category_repo
-        .create(ctx, category_id1, &category_create_with_name("Category 1"))
+        .create(
+            &repo_ctx,
+            category_id1,
+            &category_create_with_name("Category 1"),
+        )
         .await
         .expect("Failed to create category 1");
     category_repo
-        .create(ctx, category_id2, &category_create_with_name("Category 2"))
+        .create(
+            &repo_ctx,
+            category_id2,
+            &category_create_with_name("Category 2"),
+        )
         .await
         .expect("Failed to create category 2");
     category_repo
-        .create(ctx, category_id3, &category_create_with_name("Category 3"))
+        .create(
+            &repo_ctx,
+            category_id3,
+            &category_create_with_name("Category 3"),
+        )
         .await
         .expect("Failed to create category 3");
 

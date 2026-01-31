@@ -1,7 +1,5 @@
 pub mod common;
 use serde_json::json;
-use sultan_core::domain::model::product::UnitOfMeasureCreate;
-use sultan_core::storage::UnitOfMeasureRepository;
 use sultan_core::storage::sqlite::transaction::SqliteTransactionManager;
 use sultan_core::storage::sqlite::{
     SqliteProductRepository, SqliteSellPriceRepository, SqliteUnitOfMeasureRepository,
@@ -46,7 +44,7 @@ async fn create_sell_price_test_data() -> SellPriceTestData<'static, SqliteTrans
     let product_repo = SqliteProductRepository::new(pool.clone());
 
     let product = create_test_product();
-    let unit_repo = SqliteUnitOfMeasureRepository::new();
+    let _unit_repo = SqliteUnitOfMeasureRepository::new();
     let mut tx = tx_manager.begin().await.unwrap();
 
     let unit_id = sultan_core::testing::storage::generate_test_id().await;

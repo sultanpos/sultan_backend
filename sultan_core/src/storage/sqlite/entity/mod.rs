@@ -1,10 +1,16 @@
 pub mod branch;
+pub mod category;
 pub mod unit;
 
 pub use branch::ActiveModel as BranchActiveModel;
 pub use branch::Column as BranchColumn;
 pub use branch::Entity as BranchEntity;
 pub use branch::Model as BranchModel;
+
+pub use category::ActiveModel as CategoryActiveModel;
+pub use category::Column as CategoryColumn;
+pub use category::Entity as CategoryEntity;
+pub use category::Model as CategoryModel;
 
 pub use unit::ActiveModel as UnitActiveModel;
 pub use unit::Column as UnitColumn;

@@ -1,7 +1,5 @@
-use std::sync::Arc;
 use sultan_core::{
     domain::{Context, model::number::NumberGenerateParams},
-    snowflake::SnowflakeGenerator,
     storage::{NumberRepository, sqlite::SqliteNumberRepository},
 };
 

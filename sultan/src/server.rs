@@ -78,7 +78,7 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
     let branch_repository = SqliteBranchRepository::new();
     let user_repository = SqliteUserRepository::new(pool.clone());
     let token_repository = SqliteTokenRepository::new(pool.clone());
-    let category_repository = SqliteCategoryRepository::new(pool.clone());
+    let category_repository = SqliteCategoryRepository::new();
     let supplier_repository = SqliteSupplierRepository::new(pool.clone());
     let customer_repository = SqliteCustomerRepository::new(pool.clone());
     let number_repository = SqliteNumberRepository::new(pool.clone());
@@ -101,7 +101,11 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
         branch_repository.clone(),
         db_connection.clone(),
     ));
-    let category_service = CategoryService::new(category_repository, SnowflakeGenerator::new(1)?);
+    let category_service = CategoryService::new(
+        category_repository,
+        SnowflakeGenerator::new(1)?,
+        db_connection.clone(),
+    );
     let customer_service = CustomerService::new(
         customer_repository,
         SnowflakeGenerator::new(1)?,

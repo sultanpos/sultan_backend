@@ -5,7 +5,7 @@ use sultan_core::{
     testing::storage::branch,
 };
 
-pub async fn create_sqlite_branch_repo() -> (RepoCtx<DatabaseConnection>, impl BranchRepository) {
+async fn create_sqlite_branch_repo() -> (RepoCtx<DatabaseConnection>, impl BranchRepository) {
     let repo_ctx = common::init_sqlite_repo_ctx().await;
     (
         repo_ctx,
