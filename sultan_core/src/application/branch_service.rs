@@ -103,8 +103,7 @@ mod tests {
         create_fn: Arc<Mutex<Option<Box<dyn Fn(i64, BranchCreate) -> DomainResult<()> + Send>>>>,
         update_fn: Arc<Mutex<Option<Box<dyn Fn(i64, BranchUpdate) -> DomainResult<()> + Send>>>>,
         delete_fn: Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<()> + Send>>>>,
-        get_by_id_fn:
-            Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<Option<Branch>> + Send>>>>,
+        get_by_id_fn: Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<Option<Branch>> + Send>>>>,
         get_all_fn: Arc<Mutex<Option<Box<dyn Fn() -> DomainResult<Vec<Branch>> + Send>>>>,
     }
 
@@ -185,11 +184,7 @@ mod tests {
             }
         }
 
-        async fn delete(
-            &self,
-            _ctx: &RepoCtx<impl ConnectionTrait>,
-            id: i64,
-        ) -> DomainResult<()> {
+        async fn delete(&self, _ctx: &RepoCtx<impl ConnectionTrait>, id: i64) -> DomainResult<()> {
             let func = self.delete_fn.lock().unwrap();
             if let Some(f) = func.as_ref() {
                 f(id)
@@ -211,10 +206,7 @@ mod tests {
             }
         }
 
-        async fn get_all(
-            &self,
-            _ctx: &RepoCtx<impl ConnectionTrait>,
-        ) -> DomainResult<Vec<Branch>> {
+        async fn get_all(&self, _ctx: &RepoCtx<impl ConnectionTrait>) -> DomainResult<Vec<Branch>> {
             let func = self.get_all_fn.lock().unwrap();
             if let Some(f) = func.as_ref() {
                 f()

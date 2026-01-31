@@ -143,222 +143,280 @@ where
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::domain::model::branch::Branch;
-//     use async_trait::async_trait;
-//     use chrono::Utc;
-//     use mockall::mock;
-// 
-//     mock! {
-//         pub NumberRepo {}
-//         #[async_trait]
-//         impl NumberRepository for NumberRepo {
-//             async fn generate_next(&self, ctx: &Context, params: &NumberGenerateParams) -> DomainResult<i32>;
-//             async fn get_sequence(&self, ctx: &Context, params: &NumberGenerateParams) -> DomainResult<Option<crate::domain::model::number::NumberSequence>>;
-//         }
-//     }
-// 
-//     mock! {
-//         pub BranchRepo {}
-//         #[async_trait]
-//         impl BranchRepository for BranchRepo {
-//             async fn create(&self, ctx: &Context, id: i64, branch: &crate::domain::model::branch::BranchCreate) -> DomainResult<()>;
-//             async fn update(&self, ctx: &Context, id: i64, branch: &crate::domain::model::branch::BranchUpdate) -> DomainResult<()>;
-//             async fn delete(&self, ctx: &Context, id: i64) -> DomainResult<()>;
-//             async fn get_by_id(&self, ctx: &Context, id: i64) -> DomainResult<Option<Branch>>;
-//             async fn get_all(&self, ctx: &Context) -> DomainResult<Vec<Branch>>;
-//         }
-//     }
-// 
-//     fn create_test_context() -> Context {
-//         Context::new()
-//     }
-// 
-//     fn create_test_branch(id: i64, code: &str) -> Branch {
-//         Branch {
-//             id,
-//             created_at: Utc::now(),
-//             updated_at: Utc::now(),
-//             deleted_at: None,
-//             is_deleted: false,
-//             is_main: false,
-//             name: "Test Branch".to_string(),
-//             code: code.to_string(),
-//             address: None,
-//             phone: None,
-//             npwp: None,
-//             image: None,
-//         }
-//     }
-// 
-//     #[tokio::test]
-//     async fn test_generate_global_number() {
-//         let mut number_repo = MockNumberRepo::new();
-//         let branch_repo = MockBranchRepo::new();
-// 
-//         number_repo.expect_generate_next().returning(|_, _| Ok(1));
-// 
-//         let service = NumberService::new(number_repo, branch_repo);
-//         let ctx = create_test_context();
-// 
-//         let result = service.generate(&ctx, "CUS", None, None).await;
-// 
-//         assert!(result.is_ok());
-//         let number = result.unwrap();
-//         // Should match pattern: CUS-YYNNNNN
-//         assert!(number.starts_with("CUS-"));
-//         assert_eq!(number.len(), 11); // CUS-YYNNNNN = 11 chars
-//     }
-// 
-//     #[tokio::test]
-//     async fn test_generate_with_month() {
-//         let mut number_repo = MockNumberRepo::new();
-//         let branch_repo = MockBranchRepo::new();
-// 
-//         number_repo.expect_generate_next().returning(|_, _| Ok(1));
-// 
-//         let service = NumberService::new(number_repo, branch_repo);
-//         let ctx = create_test_context();
-// 
-//         let result = service.generate(&ctx, "CUS", None, Some(12)).await;
-// 
-//         assert!(result.is_ok());
-//         let number = result.unwrap();
-//         // Should match pattern: CUS-YYMMNNNN
-//         assert!(number.starts_with("CUS-"));
-//         assert!(number.contains("12")); // Month included
-//         // CUS-26120001 = 12 chars (not 13)
-//         assert_eq!(number.len(), 12); // CUS-YYMMNNNN = 12 chars
-//     }
-// 
-//     #[tokio::test]
-//     async fn test_generate_with_branch() {
-//         let mut number_repo = MockNumberRepo::new();
-//         let mut branch_repo = MockBranchRepo::new();
-// 
-//         number_repo.expect_generate_next().returning(|_, _| Ok(1));
-// 
-//         branch_repo
-//             .expect_get_by_id()
-//             .returning(|_, _| Ok(Some(create_test_branch(1, "BR01"))));
-// 
-//         let service = NumberService::new(number_repo, branch_repo);
-//         let ctx = create_test_context();
-// 
-//         let result = service.generate(&ctx, "CUS", Some(1), None).await;
-// 
-//         assert!(result.is_ok());
-//         let number = result.unwrap();
-//         // Should match pattern: BRANCH-CUS-YYNNNNN
-//         assert!(number.starts_with("BR01-CUS-"));
-//     }
-// 
-//     #[tokio::test]
-//     async fn test_generate_with_branch_and_month() {
-//         let mut number_repo = MockNumberRepo::new();
-//         let mut branch_repo = MockBranchRepo::new();
-// 
-//         number_repo.expect_generate_next().returning(|_, _| Ok(1));
-// 
-//         branch_repo
-//             .expect_get_by_id()
-//             .returning(|_, _| Ok(Some(create_test_branch(1, "BR01"))));
-// 
-//         let service = NumberService::new(number_repo, branch_repo);
-//         let ctx = create_test_context();
-// 
-//         let result = service.generate(&ctx, "CUS", Some(1), Some(6)).await;
-// 
-//         assert!(result.is_ok());
-//         let number = result.unwrap();
-//         // Should match pattern: BRANCH-CUS-YYMMNNNN
-//         assert!(number.starts_with("BR01-CUS-"));
-//         assert!(number.contains("06")); // Month included
-//     }
-// 
-//     #[tokio::test]
-//     async fn test_invalid_month() {
-//         let number_repo = MockNumberRepo::new();
-//         let branch_repo = MockBranchRepo::new();
-// 
-//         let service = NumberService::new(number_repo, branch_repo);
-//         let ctx = create_test_context();
-// 
-//         let result = service.generate(&ctx, "CUS", None, Some(13)).await;
-// 
-//         assert!(result.is_err());
-//         match result.unwrap_err() {
-//             Error::ValidationError(msg) => {
-//                 assert!(msg.contains("Month must be between 1 and 12"));
-//             }
-//             _ => panic!("Expected ValidationError"),
-//         }
-//     }
-// 
-//     #[tokio::test]
-//     async fn test_branch_not_found() {
-//         let number_repo = MockNumberRepo::new();
-//         let mut branch_repo = MockBranchRepo::new();
-// 
-//         branch_repo.expect_get_by_id().returning(|_, _| Ok(None));
-// 
-//         let service = NumberService::new(number_repo, branch_repo);
-//         let ctx = create_test_context();
-// 
-//         let result = service.generate(&ctx, "CUS", Some(999), None).await;
-// 
-//         assert!(result.is_err());
-//         match result.unwrap_err() {
-//             Error::NotFound(msg) => {
-//                 assert!(msg.contains("Branch with id 999 not found"));
-//             }
-//             _ => panic!("Expected NotFound error"),
-//         }
-//     }
-// 
-//     #[test]
-//     fn test_format_number_global() {
-//         let result = NumberService::<MockNumberRepo, MockBranchRepo>::format_number(
-//             None, "CUS", 2025, None, 1,
-//         );
-//         assert_eq!(result, "CUS-2500001");
-//     }
-// 
-//     #[test]
-//     fn test_format_number_with_month() {
-//         let result = NumberService::<MockNumberRepo, MockBranchRepo>::format_number(
-//             None,
-//             "CUS",
-//             2025,
-//             Some(12),
-//             1,
-//         );
-//         assert_eq!(result, "CUS-25120001");
-//     }
-// 
-//     #[test]
-//     fn test_format_number_with_branch() {
-//         let result = NumberService::<MockNumberRepo, MockBranchRepo>::format_number(
-//             Some("BR01".to_string()),
-//             "CUS",
-//             2025,
-//             None,
-//             1,
-//         );
-//         assert_eq!(result, "BR01-CUS-2500001");
-//     }
-// 
-//     #[test]
-//     fn test_format_number_with_branch_and_month() {
-//         let result = NumberService::<MockNumberRepo, MockBranchRepo>::format_number(
-//             Some("BR01".to_string()),
-//             "CUS",
-//             2025,
-//             Some(6),
-//             1,
-//         );
-//         assert_eq!(result, "BR01-CUS-25060001");
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::model::branch::Branch;
+    use async_trait::async_trait;
+    use chrono::Utc;
+    use mockall::mock;
+    use sea_orm::{ConnectionTrait, Database};
+    use std::sync::{Arc, Mutex};
+
+    mock! {
+        pub NumberRepo {}
+        #[async_trait]
+        impl NumberRepository for NumberRepo {
+            async fn generate_next(&self, ctx: &Context, params: &NumberGenerateParams) -> DomainResult<i32>;
+            async fn get_sequence(&self, ctx: &Context, params: &NumberGenerateParams) -> DomainResult<Option<crate::domain::model::number::NumberSequence>>;
+        }
+    }
+
+    // Manual mock for BranchRepository (mockall doesn't support impl Trait)
+    struct MockBranchRepo {
+        get_by_id_fn: Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<Option<Branch>> + Send>>>>,
+    }
+
+    impl MockBranchRepo {
+        fn new() -> Self {
+            Self {
+                get_by_id_fn: Arc::new(Mutex::new(None)),
+            }
+        }
+
+        fn expect_get_by_id<F>(&self, f: F)
+        where
+            F: Fn(i64) -> DomainResult<Option<Branch>> + Send + 'static,
+        {
+            *self.get_by_id_fn.lock().unwrap() = Some(Box::new(f));
+        }
+    }
+
+    #[async_trait]
+    impl BranchRepository for MockBranchRepo {
+        async fn create(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            _id: i64,
+            _branch: &crate::domain::model::branch::BranchCreate,
+        ) -> DomainResult<()> {
+            panic!("create not mocked");
+        }
+
+        async fn update(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            _id: i64,
+            _branch: &crate::domain::model::branch::BranchUpdate,
+        ) -> DomainResult<()> {
+            panic!("update not mocked");
+        }
+
+        async fn delete(&self, _ctx: &RepoCtx<impl ConnectionTrait>, _id: i64) -> DomainResult<()> {
+            panic!("delete not mocked");
+        }
+
+        async fn get_by_id(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            id: i64,
+        ) -> DomainResult<Option<Branch>> {
+            let lock = self.get_by_id_fn.lock().unwrap();
+            if let Some(f) = lock.as_ref() {
+                f(id)
+            } else {
+                panic!("get_by_id not mocked");
+            }
+        }
+
+        async fn get_all(&self, _ctx: &RepoCtx<impl ConnectionTrait>) -> DomainResult<Vec<Branch>> {
+            panic!("get_all not mocked");
+        }
+    }
+
+    fn create_test_context() -> Context {
+        Context::new()
+    }
+
+    async fn create_test_db() -> DatabaseConnection {
+        Database::connect("sqlite::memory:").await.unwrap()
+    }
+
+    fn create_test_branch(id: i64, code: &str) -> Branch {
+        Branch {
+            id,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            deleted_at: None,
+            is_deleted: false,
+            is_main: false,
+            name: "Test Branch".to_string(),
+            code: code.to_string(),
+            address: None,
+            phone: None,
+            npwp: None,
+            image: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_generate_global_number() {
+        let mut number_repo = MockNumberRepo::new();
+        let branch_repo = MockBranchRepo::new();
+        let db = create_test_db().await;
+
+        number_repo.expect_generate_next().returning(|_, _| Ok(1));
+
+        let service = NumberService::new(number_repo, branch_repo, db);
+        let ctx = create_test_context();
+
+        let result = service.generate(&ctx, "CUS", None, None).await;
+
+        assert!(result.is_ok());
+        let number = result.unwrap();
+        // Should match pattern: CUS-YYNNNNN
+        assert!(number.starts_with("CUS-"));
+        assert_eq!(number.len(), 11); // CUS-YYNNNNN = 11 chars
+    }
+
+    #[tokio::test]
+    async fn test_generate_with_month() {
+        let mut number_repo = MockNumberRepo::new();
+        let branch_repo = MockBranchRepo::new();
+        let db = create_test_db().await;
+
+        number_repo.expect_generate_next().returning(|_, _| Ok(1));
+
+        let service = NumberService::new(number_repo, branch_repo, db);
+        let ctx = create_test_context();
+
+        let result = service.generate(&ctx, "CUS", None, Some(12)).await;
+
+        assert!(result.is_ok());
+        let number = result.unwrap();
+        // Should match pattern: CUS-YYMMNNNN
+        assert!(number.starts_with("CUS-"));
+        assert!(number.contains("12")); // Month included
+        // CUS-26120001 = 12 chars (not 13)
+        assert_eq!(number.len(), 12); // CUS-YYMMNNNN = 12 chars
+    }
+
+    #[tokio::test]
+    async fn test_generate_with_branch() {
+        let mut number_repo = MockNumberRepo::new();
+        let branch_repo = MockBranchRepo::new();
+        let db = create_test_db().await;
+
+        number_repo.expect_generate_next().returning(|_, _| Ok(1));
+
+        branch_repo.expect_get_by_id(|_| Ok(Some(create_test_branch(1, "BR01"))));
+
+        let service = NumberService::new(number_repo, branch_repo, db);
+        let ctx = create_test_context();
+
+        let result = service.generate(&ctx, "CUS", Some(1), None).await;
+
+        assert!(result.is_ok());
+        let number = result.unwrap();
+        // Should match pattern: BRANCH-CUS-YYNNNNN
+        assert!(number.starts_with("BR01-CUS-"));
+    }
+
+    #[tokio::test]
+    async fn test_generate_with_branch_and_month() {
+        let mut number_repo = MockNumberRepo::new();
+        let branch_repo = MockBranchRepo::new();
+        let db = create_test_db().await;
+
+        number_repo.expect_generate_next().returning(|_, _| Ok(1));
+
+        branch_repo.expect_get_by_id(|_| Ok(Some(create_test_branch(1, "BR01"))));
+
+        let service = NumberService::new(number_repo, branch_repo, db);
+        let ctx = create_test_context();
+
+        let result = service.generate(&ctx, "CUS", Some(1), Some(6)).await;
+
+        assert!(result.is_ok());
+        let number = result.unwrap();
+        // Should match pattern: BRANCH-CUS-YYMMNNNN
+        assert!(number.starts_with("BR01-CUS-"));
+        assert!(number.contains("06")); // Month included
+    }
+
+    #[tokio::test]
+    async fn test_invalid_month() {
+        let number_repo = MockNumberRepo::new();
+        let branch_repo = MockBranchRepo::new();
+        let db = create_test_db().await;
+
+        let service = NumberService::new(number_repo, branch_repo, db);
+        let ctx = create_test_context();
+
+        let result = service.generate(&ctx, "CUS", None, Some(13)).await;
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            Error::ValidationError(msg) => {
+                assert!(msg.contains("Month must be between 1 and 12"));
+            }
+            _ => panic!("Expected ValidationError"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_branch_not_found() {
+        let number_repo = MockNumberRepo::new();
+        let branch_repo = MockBranchRepo::new();
+        let db = create_test_db().await;
+
+        branch_repo.expect_get_by_id(|_| Ok(None));
+
+        let service = NumberService::new(number_repo, branch_repo, db);
+        let ctx = create_test_context();
+
+        let result = service.generate(&ctx, "CUS", Some(999), None).await;
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            Error::NotFound(msg) => {
+                assert!(msg.contains("Branch with id 999 not found"));
+            }
+            _ => panic!("Expected NotFound error"),
+        }
+    }
+
+    #[test]
+    fn test_format_number_global() {
+        let result = NumberService::<MockNumberRepo, MockBranchRepo>::format_number(
+            None, "CUS", 2025, None, 1,
+        );
+        assert_eq!(result, "CUS-2500001");
+    }
+
+    #[test]
+    fn test_format_number_with_month() {
+        let result = NumberService::<MockNumberRepo, MockBranchRepo>::format_number(
+            None,
+            "CUS",
+            2025,
+            Some(12),
+            1,
+        );
+        assert_eq!(result, "CUS-25120001");
+    }
+
+    #[test]
+    fn test_format_number_with_branch() {
+        let result = NumberService::<MockNumberRepo, MockBranchRepo>::format_number(
+            Some("BR01".to_string()),
+            "CUS",
+            2025,
+            None,
+            1,
+        );
+        assert_eq!(result, "BR01-CUS-2500001");
+    }
+
+    #[test]
+    fn test_format_number_with_branch_and_month() {
+        let result = NumberService::<MockNumberRepo, MockBranchRepo>::format_number(
+            Some("BR01".to_string()),
+            "CUS",
+            2025,
+            Some(6),
+            1,
+        );
+        assert_eq!(result, "BR01-CUS-25060001");
+    }
+}

@@ -6,7 +6,7 @@ use axum::{
 };
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use sea_orm::{Database, DatabaseConnection};
-use sqlx::{Sqlite, SqlitePool, database, migrate::MigrateDatabase, sqlite::SqlitePoolOptions};
+use sqlx::{Sqlite, SqlitePool, migrate::MigrateDatabase, sqlite::SqlitePoolOptions};
 use std::{fs::File, sync::Arc};
 use sultan_core::{
     application::{
