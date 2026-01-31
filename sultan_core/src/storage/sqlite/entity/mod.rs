@@ -2,6 +2,8 @@ pub mod branch;
 pub mod category;
 pub mod customer;
 pub mod permission;
+pub mod sell_discount;
+pub mod sell_price;
 pub mod supplier;
 pub mod token;
 pub mod unit;
@@ -26,6 +28,16 @@ pub use permission::ActiveModel as PermissionActiveModel;
 pub use permission::Column as PermissionColumn;
 pub use permission::Entity as PermissionEntity;
 pub use permission::Model as PermissionModel;
+
+pub use sell_discount::ActiveModel as SellDiscountActiveModel;
+pub use sell_discount::Column as SellDiscountColumn;
+pub use sell_discount::Entity as SellDiscountEntity;
+pub use sell_discount::Model as SellDiscountModel;
+
+pub use sell_price::ActiveModel as SellPriceActiveModel;
+pub use sell_price::Column as SellPriceColumn;
+pub use sell_price::Entity as SellPriceEntity;
+pub use sell_price::Model as SellPriceModel;
 
 pub use supplier::ActiveModel as SupplierActiveModel;
 pub use supplier::Column as SupplierColumn;
