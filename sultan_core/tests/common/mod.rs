@@ -6,6 +6,7 @@ use sultan_core::{
     domain::model::pagination::PaginationOptions, snowflake::SnowflakeGenerator, storage::RepoCtx,
 };
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 pub static ID_GENERATOR: Lazy<Mutex<SnowflakeGenerator>> =
     Lazy::new(|| Mutex::new(SnowflakeGenerator::new(1).unwrap()));
@@ -48,7 +49,8 @@ pub async fn init_sqlite_pool() -> SqlitePool {
 
 pub async fn init_sqlite_repo_ctx() -> RepoCtx<DatabaseConnection> {
     // Create an isolated in-memory database for each test to avoid schema conflicts
-    let connection_string = "sqlite:file::memory:?cache=shared".to_string();
+    let temp_file = format!("/tmp/test_{}.db", Uuid::new_v4());
+    let connection_string = format!("sqlite://{}?mode=rwc", temp_file);
 
     let new_pool = sqlx::sqlite::SqlitePoolOptions::new()
         .min_connections(1)
