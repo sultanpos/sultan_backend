@@ -3,6 +3,9 @@ pub mod category;
 pub mod customer;
 pub mod number_sequence;
 pub mod permission;
+pub mod product;
+pub mod product_category;
+pub mod product_variant;
 pub mod sell_discount;
 pub mod sell_price;
 pub mod supplier;
@@ -64,3 +67,18 @@ pub use user::ActiveModel as UserActiveModel;
 pub use user::Column as UserColumn;
 pub use user::Entity as UserEntity;
 pub use user::Model as UserModel;
+
+pub use product::ActiveModel as ProductActiveModel;
+pub use product::Column as ProductColumn;
+pub use product::Entity as ProductEntity;
+pub use product::Model as ProductModel;
+
+pub use product_variant::ActiveModel as ProductVariantActiveModel;
+pub use product_variant::Column as ProductVariantColumn;
+pub use product_variant::Entity as ProductVariantEntity;
+pub use product_variant::Model as ProductVariantModel;
+
+pub use product_category::ActiveModel as ProductCategoryActiveModel;
+pub use product_category::Column as ProductCategoryColumn;
+pub use product_category::Entity as ProductCategoryEntity;
+pub use product_category::Model as ProductCategoryModel;
