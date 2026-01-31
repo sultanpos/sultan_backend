@@ -6,7 +6,7 @@ use axum::{
 };
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use sea_orm::{Database, DatabaseConnection};
-use sqlx::{Sqlite, SqlitePool, migrate::MigrateDatabase, sqlite::SqlitePoolOptions};
+use sqlx::{Sqlite, migrate::MigrateDatabase, sqlite::SqlitePoolOptions};
 use std::{fs::File, sync::Arc};
 use sultan_core::{
     application::{
@@ -46,7 +46,7 @@ use sultan_web::{
     supplier_routes::SupplierApiDoc,
 };
 
-async fn init_sqlite_db(config: &AppConfig) -> anyhow::Result<(SqlitePool, DatabaseConnection)> {
+async fn init_sqlite_db(config: &AppConfig) -> anyhow::Result<DatabaseConnection> {
     let database_url = &config.database_url;
 
     // Create database if it doesn't exist
@@ -68,12 +68,11 @@ async fn init_sqlite_db(config: &AppConfig) -> anyhow::Result<(SqlitePool, Datab
 
     let database = Database::connect(database_url).await?;
 
-    Ok((pool, database))
+    Ok(database)
 }
 
 async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
-    let (pool, db_connection) = init_sqlite_db(config).await?;
-    //let db_connection =
+    let db_connection = init_sqlite_db(config).await?;
 
     let branch_repository = SqliteBranchRepository::new();
     let user_repository = SqliteUserRepository::new();
@@ -81,7 +80,7 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
     let category_repository = SqliteCategoryRepository::new();
     let supplier_repository = SqliteSupplierRepository::new();
     let customer_repository = SqliteCustomerRepository::new();
-    let number_repository = SqliteNumberRepository::new(pool.clone());
+    let number_repository = SqliteNumberRepository::new();
 
     let password_hasher = Argon2PasswordHasher::default();
     let jwt_manager = DefaultJwtManager::new(JwtConfig::new(
