@@ -31,6 +31,9 @@ impl IntoResponse for Error {
             Error::Conflict(msg) => {
                 (StatusCode::CONFLICT, Json(json!({"error": msg}))).into_response()
             }
+            Error::BadRequest(msg) => {
+                (StatusCode::BAD_REQUEST, Json(json!({"error": msg}))).into_response()
+            }
             Error::Internal(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"error": "Internal error"})),
@@ -124,6 +127,16 @@ mod tests {
 
         let json = response_to_json(response).await;
         assert_eq!(json["error"], "Not authenticated");
+    }
+
+    #[tokio::test]
+    async fn test_bad_request_response() {
+        let error = Error::BadRequest("Invalid input".to_string());
+        let response = error.into_response();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let json = response_to_json(response).await;
+        assert_eq!(json["error"], "Invalid input");
     }
 
     #[tokio::test]

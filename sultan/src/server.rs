@@ -39,7 +39,11 @@ use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 
 use crate::config::AppConfig;
-use sultan_web::{AppState, supplier_routes::supplier_router};
+use sultan_web::{
+    AppState,
+    supplier_routes::supplier_router,
+    user_routes::{UserApiDoc, user_router},
+};
 use sultan_web::{
     handler::{
         auth_router::{AuthApiDoc, auth_router},
@@ -234,7 +238,13 @@ pub async fn create_app() -> anyhow::Result<Router> {
                 .parse::<http::HeaderValue>()
                 .unwrap(),
         )
-        .allow_methods([http::Method::POST, http::Method::GET])
+        .allow_methods([
+            http::Method::POST,
+            http::Method::GET,
+            http::Method::PUT,
+            http::Method::DELETE,
+            http::Method::PATCH,
+        ])
         .allow_headers([CONTENT_TYPE, AUTHORIZATION])
         .allow_credentials(true);
 
@@ -242,6 +252,7 @@ pub async fn create_app() -> anyhow::Result<Router> {
         .nest("/category", category_router())
         .nest("/customer", customer_router())
         .nest("/supplier", supplier_router())
+        .nest("/user", user_router())
         .route_layer(axum::middleware::from_fn_with_state(
             app_state.clone(),
             verify_jwt,
@@ -252,7 +263,7 @@ pub async fn create_app() -> anyhow::Result<Router> {
     openapi.merge(CategoryApiDoc::openapi());
     openapi.merge(CustomerApiDoc::openapi());
     openapi.merge(SupplierApiDoc::openapi());
-
+    openapi.merge(UserApiDoc::openapi());
     // Add Bearer token security scheme
     if let Some(components) = openapi.components.as_mut() {
         components.add_security_scheme(

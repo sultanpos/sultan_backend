@@ -1,8 +1,9 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use sultan_core::application::UserServiceTrait;
+use sultan_core::domain::model::pagination::PaginationOptions;
 use sultan_core::domain::model::permission::{Permission, PermissionCreate, action, resource};
-use sultan_core::domain::model::user::{UserCreate, UserUpdate};
+use sultan_core::domain::model::user::{UserCreate, UserFilter, UserUpdate};
 use sultan_core::domain::{Context, DomainResult, Error, User};
 
 pub struct MockUserService {
@@ -124,5 +125,23 @@ impl UserServiceTrait for MockUserService {
         } else {
             Ok(vec![])
         }
+    }
+
+    async fn get_all(
+        &self,
+        ctx: &Context,
+        filter: &UserFilter,
+        pagination: &PaginationOptions,
+    ) -> DomainResult<Vec<User>> {
+        Err(Error::Database("Mock get all users error".to_string()))
+    }
+
+    async fn change_my_password(
+        &self,
+        ctx: &Context,
+        old_password: String,
+        new_password: String,
+    ) -> DomainResult<()> {
+        Err(Error::Database("Mock change my password error".to_string()))
     }
 }

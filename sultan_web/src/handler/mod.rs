@@ -3,3 +3,4 @@ pub mod category_router;
 pub mod customer_router;
 pub mod middleware;
 pub mod supplier_routes;
+pub mod user_routes;
