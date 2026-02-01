@@ -24,6 +24,7 @@ pub struct UserCreateRequest {
         message = "Username must be between 1 and 100 characters"
     ))]
     #[schema(example = "sultan")]
+    #[serde(default)]
     pub username: String,
     #[validate(length(
         min = 1,
@@ -31,6 +32,7 @@ pub struct UserCreateRequest {
         message = "Password must be between 1 and 100 characters"
     ))]
     #[schema(example = "sultan")]
+    #[serde(default)]
     pub password: String,
     #[validate(length(
         min = 1,
@@ -38,6 +40,7 @@ pub struct UserCreateRequest {
         message = "Name must be between 1 and 100 characters"
     ))]
     #[schema(example = "Sultan")]
+    #[serde(default)]
     pub name: String,
     pub email: Option<String>,
     pub photo: Option<String>,
