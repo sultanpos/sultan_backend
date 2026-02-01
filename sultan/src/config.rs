@@ -32,7 +32,7 @@ impl AppConfig {
         let write_log_to_file = matches!(write_log_to_file.as_str(), "1" | "true" | "yes");
 
         let database_max_connections: u32 = env::var("DATABASE_MAX_CONNECTIONS")
-            .unwrap_or_else(|_| "5".to_string())
+            .unwrap_or_else(|_| "10".to_string())
             .parse()
             .expect("DATABASE_MAX_CONNECTIONS must be a valid number");
 
@@ -58,7 +58,7 @@ mod tests {
             access_token_ttl: Duration::seconds(900),
             refresh_token_ttl: Duration::days(30),
             database_url: "sqlite:test.db".to_string(),
-            database_max_connections: 5,
+            database_max_connections: 10,
             write_log_to_file: false,
         };
 
@@ -66,6 +66,10 @@ mod tests {
         assert_eq!(config.jwt_secret, cloned.jwt_secret);
         assert_eq!(config.database_url, cloned.database_url);
         assert_eq!(config.write_log_to_file, cloned.write_log_to_file);
+        assert_eq!(
+            config.database_max_connections,
+            cloned.database_max_connections
+        );
         assert_eq!(config.access_token_ttl, cloned.access_token_ttl);
         assert_eq!(config.refresh_token_ttl, cloned.refresh_token_ttl);
     }

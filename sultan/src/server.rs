@@ -72,9 +72,14 @@ async fn init_sqlite_db(config: &AppConfig) -> anyhow::Result<DatabaseConnection
     tracing::info!("Running SQLite migrations");
     sqlx::migrate!("../migrations").run(&pool).await?;
 
-    tracing::info!("Connected to SQLite database");
+    pool.close().await;
 
-    let database = Database::connect(database_url).await?;
+    let mut opt = sea_orm::ConnectOptions::new(database_url);
+    opt.max_connections(config.database_max_connections)
+        .min_connections(1)
+        .sqlx_logging(false);
+    let database = Database::connect(opt).await?;
+    tracing::info!("Connected to SQLite database");
 
     Ok(database)
 }
