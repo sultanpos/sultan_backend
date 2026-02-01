@@ -335,6 +335,10 @@ async fn reset_password(
     Path(id): Path<i64>,
     Json(payload): Json<ResetPasswordRequest>,
 ) -> DomainResult<impl IntoResponse> {
+    payload
+        .validate()
+        .map_err(|e| Error::ValidationError(format!("{}", e)))?;
+
     user_service
         .reset_password(&ctx, id, payload.new_password)
         .await?;
@@ -369,6 +373,10 @@ async fn change_my_password(
     Extension(ctx): Extension<Context>,
     Json(payload): Json<ChangeMyPasswordRequest>,
 ) -> DomainResult<impl IntoResponse> {
+    payload
+        .validate()
+        .map_err(|e| Error::ValidationError(format!("{}", e)))?;
+
     user_service
         .change_my_password(&ctx, payload.old_password, payload.new_password)
         .await?;
@@ -383,10 +391,10 @@ pub fn user_router() -> Router<AppState> {
     Router::new()
         .route("/", post(create))
         .route("/", get(get_all))
-        .route("/password", patch(change_my_password))
         .route("/{id}", get(get_by_id))
         .route("/{id}", put(update))
-        .route("/{id}/password", patch(reset_password))
         .route("/{id}", delete(delete_user))
         .route("/{id}/permissions", get(get_permission_by_user_id))
+        .route("/{id}/password", patch(reset_password))
+        .route("/mypassword", patch(change_my_password))
 }
