@@ -16,9 +16,23 @@ use sultan_core::crypto::{DefaultJwtManager, JwtConfig, JwtManager};
 use sultan_core::domain::Context;
 use sultan_core::domain::model::permission::{action, resource};
 use sultan_web::handler::middleware::verify_jwt;
+use sultan_web::handler::user_routes::user_router;
+use sultan_web::middleware::context_middleware;
 use tower::ServiceExt;
 
-use common::{MockAppStateBuilder, MockUserService};
+use common::{MockAppStateBuilder, MockUserService, make_request};
+
+// ============================================================================
+// Test Utilities
+// ============================================================================
+
+/// Helper function to build a test router with the context middleware
+fn build_test_router(app_state: MockAppStateBuilder) -> Router {
+    Router::new()
+        .nest("/api/user", user_router())
+        .layer(middleware::from_fn(context_middleware))
+        .with_state(app_state.build())
+}
 
 // Helper to extract JSON response
 async fn get_json_response(response: axum::response::Response) -> (StatusCode, Value) {
@@ -46,6 +60,407 @@ async fn test_permissions_handler(Extension(ctx): Extension<Context>) -> impl In
         "has_user_update": has_user_update,
     }))
 }
+
+// ============================================================================
+// POST /api/user - Create User Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_create_user_success() {
+    let app_state =
+        MockAppStateBuilder::new().with_user_service(Arc::new(MockUserService::new_success()));
+    let app = build_test_router(app_state);
+
+    let body = json!({
+        "username": "testuser",
+        "password": "password123",
+        "name": "Test User",
+        "email": "test@example.com",
+        "permissions": []
+    });
+
+    let (status, response) = make_request(app, "POST", "/api/user", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::CREATED);
+    assert!(response.get("id").is_some());
+    assert_eq!(response["id"].as_str().unwrap(), "1");
+}
+
+#[tokio::test]
+async fn test_create_user_validation_error_empty_username() {
+    let app_state =
+        MockAppStateBuilder::new().with_user_service(Arc::new(MockUserService::new_success()));
+    let app = build_test_router(app_state);
+
+    let body = json!({
+        "username": "",
+        "password": "password123",
+        "name": "Test User",
+        "permissions": []
+    });
+
+    let (status, response) = make_request(app, "POST", "/api/user", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(response["error"].as_str().unwrap().contains("Username"));
+}
+
+#[tokio::test]
+async fn test_create_user_validation_error_empty_password() {
+    let app_state =
+        MockAppStateBuilder::new().with_user_service(Arc::new(MockUserService::new_success()));
+    let app = build_test_router(app_state);
+
+    let body = json!({
+        "username": "testuser",
+        "password": "",
+        "name": "Test User",
+        "permissions": []
+    });
+
+    let (status, response) = make_request(app, "POST", "/api/user", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(response["error"].as_str().unwrap().contains("Password"));
+}
+
+#[tokio::test]
+async fn test_create_user_service_error() {
+    let app_state =
+        MockAppStateBuilder::new().with_user_service(Arc::new(MockUserService::new_failure()));
+    let app = build_test_router(app_state);
+
+    let body = json!({
+        "username": "testuser",
+        "password": "password123",
+        "name": "Test User",
+        "permissions": []
+    });
+
+    let (status, response) = make_request(app, "POST", "/api/user", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(response.get("error").is_some());
+}
+
+// ============================================================================
+// PUT /api/user/:id - Update User Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_update_user_success() {
+    let app_state =
+        MockAppStateBuilder::new().with_user_service(Arc::new(MockUserService::new_success()));
+    let app = build_test_router(app_state);
+
+    let body = json!({
+        "name": "Updated User",
+        "email": "updated@example.com"
+    });
+
+    let (status, _response) = make_request(app, "PUT", "/api/user/1", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn test_update_user_service_error() {
+    let app_state =
+        MockAppStateBuilder::new().with_user_service(Arc::new(MockUserService::new_failure()));
+    let app = build_test_router(app_state);
+
+    let body = json!({
+        "name": "Updated User"
+    });
+
+    let (status, response) = make_request(app, "PUT", "/api/user/1", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(response.get("error").is_some());
+}
+
+// ============================================================================
+// DELETE /api/user/:id - Delete User Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_delete_user_success() {
+    let app_state =
+        MockAppStateBuilder::new().with_user_service(Arc::new(MockUserService::new_success()));
+    let app = build_test_router(app_state);
+
+    let (status, _response) = make_request(app, "DELETE", "/api/user/1", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn test_delete_user_service_error() {
+    let app_state =
+        MockAppStateBuilder::new().with_user_service(Arc::new(MockUserService::new_failure()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "DELETE", "/api/user/1", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(response.get("error").is_some());
+}
+
+// ============================================================================
+// GET /api/user/:id - Get User by ID Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_user_by_id_success() {
+    let app_state =
+        MockAppStateBuilder::new().with_user_service(Arc::new(MockUserService::new_success()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/user/1", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(response["id"].as_str().unwrap(), "1");
+    assert_eq!(response["username"].as_str().unwrap(), "testuser");
+    assert_eq!(response["name"].as_str().unwrap(), "Test User");
+}
+
+#[tokio::test]
+async fn test_get_user_by_id_not_found() {
+    let app_state =
+        MockAppStateBuilder::new().with_user_service(Arc::new(MockUserService::new_success()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/user/999", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(response["error"].as_str().unwrap().contains("not found"));
+}
+
+#[tokio::test]
+async fn test_get_user_by_id_service_error() {
+    let app_state =
+        MockAppStateBuilder::new().with_user_service(Arc::new(MockUserService::new_failure()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/user/1", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(response.get("error").is_some());
+}
+
+// ============================================================================
+// GET /api/user - Get All Users Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_all_users_service_error() {
+    let app_state =
+        MockAppStateBuilder::new().with_user_service(Arc::new(MockUserService::new_success()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/user", None)
+        .await
+        .expect("Request failed");
+
+    // MockUserService returns error for get_all
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(response.get("error").is_some());
+}
+
+// ============================================================================
+// GET /api/user/:id/permissions - Get User Permissions Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_user_permissions_success() {
+    let app_state =
+        MockAppStateBuilder::new().with_user_service(Arc::new(MockUserService::new_success()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/user/1/permissions", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(response.is_array());
+    let permissions = response.as_array().unwrap();
+    assert_eq!(permissions.len(), 1);
+}
+
+#[tokio::test]
+async fn test_get_user_permissions_no_permissions() {
+    let app_state =
+        MockAppStateBuilder::new().with_user_service(Arc::new(MockUserService::new_success()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/user/999/permissions", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(response.is_array());
+    let permissions = response.as_array().unwrap();
+    assert_eq!(permissions.len(), 0);
+}
+
+#[tokio::test]
+async fn test_get_user_permissions_service_error() {
+    let app_state =
+        MockAppStateBuilder::new().with_user_service(Arc::new(MockUserService::new_failure()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/user/1/permissions", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(response.get("error").is_some());
+}
+
+// ============================================================================
+// PATCH /api/user/:id/password - Reset Password Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_reset_password_success() {
+    let app_state =
+        MockAppStateBuilder::new().with_user_service(Arc::new(MockUserService::new_success()));
+    let app = build_test_router(app_state);
+
+    let body = json!({
+        "new_password": "newpassword123"
+    });
+
+    let (status, _response) = make_request(app, "PATCH", "/api/user/1/password", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn test_reset_password_validation_error() {
+    let app_state =
+        MockAppStateBuilder::new().with_user_service(Arc::new(MockUserService::new_success()));
+    let app = build_test_router(app_state);
+
+    let body = json!({
+        "new_password": ""
+    });
+
+    let (status, response) = make_request(app, "PATCH", "/api/user/1/password", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(response["error"].as_str().unwrap().contains("password"));
+}
+
+#[tokio::test]
+async fn test_reset_password_service_error() {
+    let app_state =
+        MockAppStateBuilder::new().with_user_service(Arc::new(MockUserService::new_failure()));
+    let app = build_test_router(app_state);
+
+    let body = json!({
+        "new_password": "newpassword123"
+    });
+
+    let (status, response) = make_request(app, "PATCH", "/api/user/1/password", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(response.get("error").is_some());
+}
+
+// ============================================================================
+// PATCH /api/user/:id/mypassword - Change My Password Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_change_my_password_service_error() {
+    let app_state =
+        MockAppStateBuilder::new().with_user_service(Arc::new(MockUserService::new_success()));
+    let app = build_test_router(app_state);
+
+    let body = json!({
+        "old_password": "oldpassword123",
+        "new_password": "newpassword123"
+    });
+
+    let (status, response) = make_request(app, "PATCH", "/api/user/mypassword", Some(body))
+        .await
+        .expect("Request failed");
+
+    // MockUserService returns error for change_my_password
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(response.get("error").is_some());
+}
+
+#[tokio::test]
+async fn test_change_my_password_validation_error_empty_old_password() {
+    let app_state =
+        MockAppStateBuilder::new().with_user_service(Arc::new(MockUserService::new_success()));
+    let app = build_test_router(app_state);
+
+    let body = json!({
+        "old_password": "",
+        "new_password": "newpassword123"
+    });
+
+    let (status, response) = make_request(app, "PATCH", "/api/user/mypassword", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(response["error"].as_str().unwrap().contains("password"));
+}
+
+#[tokio::test]
+async fn test_change_my_password_validation_error_empty_new_password() {
+    let app_state =
+        MockAppStateBuilder::new().with_user_service(Arc::new(MockUserService::new_success()));
+    let app = build_test_router(app_state);
+
+    let body = json!({
+        "old_password": "oldpassword123",
+        "new_password": ""
+    });
+
+    let (status, response) = make_request(app, "PATCH", "/api/user/mypassword", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(response["error"].as_str().unwrap().contains("password"));
+}
+
+// ============================================================================
+// Service-Level Tests
+// ============================================================================
 
 #[tokio::test]
 async fn test_user_service_get_user_permission_success() {
@@ -95,6 +510,10 @@ async fn test_user_service_get_user_permission_failure() {
     // Assert - should return error
     assert!(result.is_err());
 }
+
+// ============================================================================
+// JWT Middleware Tests
+// ============================================================================
 
 #[tokio::test]
 async fn test_verify_jwt_middleware_sets_correct_permissions() {

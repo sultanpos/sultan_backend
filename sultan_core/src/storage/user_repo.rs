@@ -3,7 +3,7 @@ use sea_orm::ConnectionTrait;
 
 use crate::domain::DomainResult;
 use crate::domain::model::pagination::PaginationOptions;
-use crate::domain::model::permission::Permission;
+use crate::domain::model::permission::{Permission, PermissionCreate};
 use crate::domain::model::user::{User, UserCreate, UserFilter, UserUpdate};
 
 /// Repository trait for User operations.
@@ -194,52 +194,47 @@ pub trait UserRepository: Send + Sync {
         id: i64,
     ) -> DomainResult<Option<User>>;
 
-    /// Saves or updates a user permission.
+    /// Deletes all permissions for a specific user.
     ///
-    /// If a permission with the same user_id, branch_id, and resource already exists,
-    /// it will be replaced with the new action value.
+    /// This method removes all permission records associated with the given user_id,
+    /// regardless of branch_id or resource type.
     ///
     /// # Arguments
     ///
     /// * `ctx` - Repository context with database connection
-    /// * `user_id` - ID of the user
-    /// * `branch_id` - Optional branch ID (None for global permissions)
-    /// * `resource` - Resource identifier
-    /// * `action` - Action bitmask
+    /// * `user_id` - ID of the user whose permissions should be deleted
     ///
     /// # Returns
     ///
-    /// * `Ok(())` - Permission saved successfully
+    /// * `Ok(())` - All permissions deleted successfully (even if none existed)
     /// * `Err(Error)` - Database error
-    async fn save_permission(
+    async fn delete_permission_by_user_id(
         &self,
         ctx: &super::RepoCtx<impl ConnectionTrait>,
         user_id: i64,
-        branch_id: Option<i64>,
-        resource: i32,
-        action: i32,
     ) -> DomainResult<()>;
 
-    /// Deletes a user permission.
+    /// Saves or updates multiple permissions for a user.
+    ///
+    /// For each permission in the list, if a permission with the same user_id,
+    /// branch_id, and resource already exists, it will be replaced with the new
+    /// action value.
     ///
     /// # Arguments
     ///
     /// * `ctx` - Repository context with database connection
     /// * `user_id` - ID of the user
-    /// * `branch_id` - Optional branch ID (None for global permissions)
-    /// * `resource` - Resource identifier
+    /// * `permissions` - List of permissions to save
     ///
     /// # Returns
     ///
-    /// * `Ok(())` - Permission deleted successfully
-    /// * `Err(Error::NotFound)` - Permission not found
+    /// * `Ok(())` - All permissions saved successfully
     /// * `Err(Error)` - Database error
-    async fn delete_permission(
+    async fn save_permissions(
         &self,
         ctx: &super::RepoCtx<impl ConnectionTrait>,
         user_id: i64,
-        branch_id: Option<i64>,
-        resource: i32,
+        permissions: &[PermissionCreate],
     ) -> DomainResult<()>;
 
     /// Retrieves all permissions for a user.

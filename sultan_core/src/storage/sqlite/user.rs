@@ -8,7 +8,7 @@ use crate::{
         DomainResult, Error,
         model::{
             pagination::PaginationOptions,
-            permission::Permission,
+            permission::{Permission, PermissionCreate},
             user::{User, UserCreate, UserFilter, UserUpdate},
         },
     },
@@ -260,67 +260,35 @@ impl UserRepository for SqliteUserRepository {
         Ok(user.map(|u| u.to_domain()))
     }
 
-    async fn save_permission(
+    async fn delete_permission_by_user_id(
         &self,
         ctx: &RepoCtx<impl ConnectionTrait>,
         user_id: i64,
-        branch_id: Option<i64>,
-        resource: i32,
-        action: i32,
     ) -> DomainResult<()> {
-        // First, delete any existing permission with the same user_id, branch_id, and resource
-        let mut delete_query = PermissionEntity::delete_many()
+        PermissionEntity::delete_many()
             .filter(PermissionColumn::UserId.eq(user_id))
-            .filter(PermissionColumn::Resource.eq(resource));
-
-        if let Some(bid) = branch_id {
-            delete_query = delete_query.filter(PermissionColumn::BranchId.eq(bid));
-        } else {
-            delete_query = delete_query.filter(PermissionColumn::BranchId.is_null());
-        }
-
-        // Execute delete (ignore result - it's OK if nothing was deleted)
-        let _ = delete_query.exec(&ctx.db).await;
-
-        // Insert the new permission
-        let permission_model = PermissionActiveModel {
-            user_id: Set(user_id),
-            branch_id: Set(branch_id),
-            resource: Set(resource),
-            action: Set(action),
-            ..Default::default()
-        };
-
-        permission_model.insert(&ctx.db).await?;
+            .exec(&ctx.db)
+            .await?;
         Ok(())
     }
 
-    async fn delete_permission(
+    async fn save_permissions(
         &self,
         ctx: &RepoCtx<impl ConnectionTrait>,
         user_id: i64,
-        branch_id: Option<i64>,
-        resource: i32,
+        permissions: &[PermissionCreate],
     ) -> DomainResult<()> {
-        let mut delete_query = PermissionEntity::delete_many()
-            .filter(PermissionColumn::UserId.eq(user_id))
-            .filter(PermissionColumn::Resource.eq(resource));
+        for perm in permissions {
+            let permission_model = PermissionActiveModel {
+                user_id: Set(user_id),
+                branch_id: Set(perm.branch_id),
+                resource: Set(perm.resource),
+                action: Set(perm.action),
+                ..Default::default()
+            };
 
-        if let Some(bid) = branch_id {
-            delete_query = delete_query.filter(PermissionColumn::BranchId.eq(bid));
-        } else {
-            delete_query = delete_query.filter(PermissionColumn::BranchId.is_null());
+            permission_model.insert(&ctx.db).await?;
         }
-
-        let result = delete_query.exec(&ctx.db).await?;
-
-        if result.rows_affected == 0 {
-            return Err(Error::NotFound(format!(
-                "Permission not found for user_id: {}, resource: {}, branch_id: {:?}",
-                user_id, resource, branch_id
-            )));
-        }
-
         Ok(())
     }
 

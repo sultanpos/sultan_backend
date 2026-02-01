@@ -24,3 +24,10 @@ pub struct Permission {
     pub resource: i32,
     pub action: i32,
 }
+
+#[derive(Debug, Clone)]
+pub struct PermissionCreate {
+    pub branch_id: Option<i64>,
+    pub resource: i32,
+    pub action: i32,
+}

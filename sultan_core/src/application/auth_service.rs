@@ -253,7 +253,7 @@ mod tests {
     use super::*;
     use crate::crypto::password::PasswordHash;
     use crate::domain::model::pagination::PaginationOptions;
-    use crate::domain::model::permission::Permission;
+    use crate::domain::model::permission::{Permission, PermissionCreate};
     use crate::domain::model::user::{User, UserCreate, UserFilter, UserUpdate};
     use sea_orm::ConnectionTrait;
     use std::sync::Mutex;
@@ -329,23 +329,19 @@ mod tests {
             Ok(self.user.clone())
         }
 
-        async fn save_permission(
+        async fn delete_permission_by_user_id(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
             _user_id: i64,
-            _branch_id: Option<i64>,
-            _permission: i32,
-            _action: i32,
         ) -> DomainResult<()> {
             Ok(())
         }
 
-        async fn delete_permission(
+        async fn save_permissions(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
             _user_id: i64,
-            _branch_id: Option<i64>,
-            _permission: i32,
+            _permissions: &[PermissionCreate],
         ) -> DomainResult<()> {
             Ok(())
         }

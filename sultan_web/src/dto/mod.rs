@@ -3,12 +3,14 @@ pub mod category;
 pub mod customer;
 pub mod login;
 pub mod supplier;
+pub mod user;
 
 pub use category::{CategoryCreateRequest, CategoryCreateResponse};
 pub use customer::{CustomerCreateRequest, CustomerCreateResponse};
 pub use login::{LoginRequest, LoginResponse, LogoutRequest, RefreshTokenRequest};
 use sultan_core::domain::model::Update;
 pub use supplier::{SupplierCreateRequest, SupplierCreateResponse};
+pub use user::{PermissionCreateRequest, UserCreateRequest, UserResponse, UserUpdateRequest};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use utoipa::ToSchema;
