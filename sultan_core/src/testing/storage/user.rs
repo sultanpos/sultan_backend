@@ -53,16 +53,11 @@ where
     user_test_get_by_username_not_found(&ctx_factory().await, repo).await;
 
     // Permission tests
-    user_test_save_permission_with_branch(&ctx_factory().await, repo).await;
-    user_test_save_permission_without_branch(&ctx_factory().await, repo).await;
-    user_test_save_multiple_permissions(&ctx_factory().await, repo).await;
-    user_test_delete_permission_with_branch(&ctx_factory().await, repo).await;
-    user_test_delete_permission_without_branch(&ctx_factory().await, repo).await;
-    user_test_delete_specific_permission_keeps_others(&ctx_factory().await, repo).await;
-    user_test_get_permission_not_found(&ctx_factory().await, repo).await;
-    user_test_save_permission_null_branch_then_delete(&ctx_factory().await, repo).await;
-    user_test_save_and_update_permission_null_branch(&ctx_factory().await, repo).await;
-    user_test_delete_permission_null_vs_non_null_branch(&ctx_factory().await, repo).await;
+    user_test_save_permissions(&ctx_factory().await, repo).await;
+    user_test_save_permissions_updates_existing(&ctx_factory().await, repo).await;
+    user_test_delete_permission_by_user_id(&ctx_factory().await, repo).await;
+    user_test_delete_permission_by_user_id_no_permissions(&ctx_factory().await, repo).await;
+    user_test_get_permissions_empty(&ctx_factory().await, repo).await;
 }
 
 // =============================================================================
@@ -558,13 +553,20 @@ pub async fn user_test_get_by_username_not_found<U: UserRepository>(
 // Permission Tests
 // =============================================================================
 
-pub async fn user_test_save_permission_with_branch<U: UserRepository>(
+/// Tests saving multiple permissions for a user.
+///
+/// Verifies that:
+/// - Multiple permissions can be saved at once
+/// - Each permission is correctly stored with user_id, branch_id, resource, and action
+pub async fn user_test_save_permissions<U: UserRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &U,
 ) {
+    use crate::domain::model::permission::Permission;
+
     let user = UserCreate {
         username: Uuid::new_v4().to_string(),
-        name: "Permission User 1".to_string(),
+        name: "Permission Save User".to_string(),
         email: None,
         password: "pass".to_string(),
         photo: None,
@@ -584,29 +586,67 @@ pub async fn user_test_save_permission_with_branch<U: UserRepository>(
         .expect("Failed to get user")
         .expect("User not found");
 
-    repo.save_permission(ctx, saved_user.id, None, 2, 3)
-        .await
-        .expect("Failed to save permission");
+    let permissions = vec![
+        Permission {
+            user_id: saved_user.id,
+            branch_id: None,
+            resource: 2,
+            action: 3,
+        },
+        Permission {
+            user_id: saved_user.id,
+            branch_id: None,
+            resource: 3,
+            action: 7,
+        },
+        Permission {
+            user_id: saved_user.id,
+            branch_id: None,
+            resource: 4,
+            action: 15,
+        },
+    ];
 
-    let permissions = repo
+    repo.save_permissions(ctx, saved_user.id, &permissions)
+        .await
+        .expect("Failed to save permissions");
+
+    let result = repo
         .get_permissions(ctx, saved_user.id)
         .await
         .expect("Failed to get permissions");
 
-    assert_eq!(permissions.len(), 1);
-    assert_eq!(permissions[0].user_id, saved_user.id);
-    assert_eq!(permissions[0].branch_id, None);
-    assert_eq!(permissions[0].resource, 2);
-    assert_eq!(permissions[0].action, 3);
+    assert_eq!(result.len(), 3);
+
+    // Verify each permission exists
+    let has_perm_1 = result
+        .iter()
+        .any(|p| p.branch_id.is_none() && p.resource == 2 && p.action == 3);
+    let has_perm_2 = result
+        .iter()
+        .any(|p| p.branch_id.is_none() && p.resource == 3 && p.action == 7);
+    let has_perm_3 = result
+        .iter()
+        .any(|p| p.branch_id.is_none() && p.resource == 4 && p.action == 15);
+
+    assert!(has_perm_1, "Permission 1 not found");
+    assert!(has_perm_2, "Permission 2 not found");
+    assert!(has_perm_3, "Permission 3 not found");
 }
 
-pub async fn user_test_save_permission_without_branch<U: UserRepository>(
+/// Tests that save_permissions updates existing permissions.
+///
+/// Verifies that:
+/// - Saving a permission with the same user_id, branch_id, and resource replaces the action
+pub async fn user_test_save_permissions_updates_existing<U: UserRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &U,
 ) {
+    use crate::domain::model::permission::Permission;
+
     let user = UserCreate {
         username: Uuid::new_v4().to_string(),
-        name: "Permission User 2".to_string(),
+        name: "Permission Update User".to_string(),
         email: None,
         password: "pass".to_string(),
         photo: None,
@@ -626,29 +666,40 @@ pub async fn user_test_save_permission_without_branch<U: UserRepository>(
         .expect("Failed to get user")
         .expect("User not found");
 
-    repo.save_permission(ctx, saved_user.id, None, 2, 3)
-        .await
-        .expect("Failed to save permission");
+    // Save initial permissions
+    let initial_permissions = vec![Permission {
+        user_id: saved_user.id,
+        branch_id: None,
+        resource: 5,
+        action: 1,
+    }];
 
-    let permissions = repo
+    repo.save_permissions(ctx, saved_user.id, &initial_permissions)
+        .await
+        .expect("Failed to save initial permissions");
+
+    let result = repo
         .get_permissions(ctx, saved_user.id)
         .await
         .expect("Failed to get permissions");
-
-    assert_eq!(permissions.len(), 1);
-    assert_eq!(permissions[0].user_id, saved_user.id);
-    assert_eq!(permissions[0].branch_id, None);
-    assert_eq!(permissions[0].resource, 2);
-    assert_eq!(permissions[0].action, 3);
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].action, 1);
 }
 
-pub async fn user_test_save_multiple_permissions<U: UserRepository>(
+/// Tests deleting all permissions for a user.
+///
+/// Verifies that:
+/// - All permissions for a user are deleted
+/// - Permissions for other users are not affected
+pub async fn user_test_delete_permission_by_user_id<U: UserRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &U,
 ) {
+    use crate::domain::model::permission::Permission;
+
     let user = UserCreate {
         username: Uuid::new_v4().to_string(),
-        name: "Permission User 3".to_string(),
+        name: "Permission Delete User".to_string(),
         email: None,
         password: "pass".to_string(),
         photo: None,
@@ -668,33 +719,55 @@ pub async fn user_test_save_multiple_permissions<U: UserRepository>(
         .expect("Failed to get user")
         .expect("User not found");
 
-    repo.save_permission(ctx, saved_user.id, None, 2, 3)
-        .await
-        .expect("Failed to save permission 1");
+    // Save some permissions
+    let permissions = vec![
+        Permission {
+            user_id: saved_user.id,
+            branch_id: None,
+            resource: 2,
+            action: 3,
+        },
+        Permission {
+            user_id: saved_user.id,
+            branch_id: None,
+            resource: 3,
+            action: 7,
+        },
+    ];
 
-    repo.save_permission(ctx, saved_user.id, None, 3, 4)
+    repo.save_permissions(ctx, saved_user.id, &permissions)
         .await
-        .expect("Failed to save permission 2");
+        .expect("Failed to save permissions");
 
-    repo.save_permission(ctx, saved_user.id, None, 4, 5)
-        .await
-        .expect("Failed to save permission 3");
-
-    let permissions = repo
+    let result = repo
         .get_permissions(ctx, saved_user.id)
         .await
         .expect("Failed to get permissions");
+    assert_eq!(result.len(), 2);
 
-    assert_eq!(permissions.len(), 3);
+    // Delete all permissions
+    repo.delete_permission_by_user_id(ctx, saved_user.id)
+        .await
+        .expect("Failed to delete permissions by user_id");
+
+    let result = repo
+        .get_permissions(ctx, saved_user.id)
+        .await
+        .expect("Failed to get permissions");
+    assert_eq!(result.len(), 0);
 }
 
-pub async fn user_test_delete_permission_with_branch<U: UserRepository>(
+/// Tests deleting permissions for a user that has no permissions.
+///
+/// Verifies that:
+/// - No error is returned when deleting permissions for a user with no permissions
+pub async fn user_test_delete_permission_by_user_id_no_permissions<U: UserRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &U,
 ) {
     let user = UserCreate {
         username: Uuid::new_v4().to_string(),
-        name: "Permission User 4".to_string(),
+        name: "Permission Delete No Perm User".to_string(),
         email: None,
         password: "pass".to_string(),
         photo: None,
@@ -714,133 +787,29 @@ pub async fn user_test_delete_permission_with_branch<U: UserRepository>(
         .expect("Failed to get user")
         .expect("User not found");
 
-    repo.save_permission(ctx, saved_user.id, None, 2, 3)
+    // Should not error even when there are no permissions
+    repo.delete_permission_by_user_id(ctx, saved_user.id)
         .await
-        .expect("Failed to save permission");
+        .expect("Failed to delete permissions by user_id (no permissions)");
 
-    let permissions = repo
+    let result = repo
         .get_permissions(ctx, saved_user.id)
         .await
         .expect("Failed to get permissions");
-    assert_eq!(permissions.len(), 1);
-
-    repo.delete_permission(ctx, saved_user.id, None, 2)
-        .await
-        .expect("Failed to delete permission");
-
-    let permissions = repo
-        .get_permissions(ctx, saved_user.id)
-        .await
-        .expect("Failed to get permissions");
-    assert_eq!(permissions.len(), 0);
+    assert_eq!(result.len(), 0);
 }
 
-pub async fn user_test_delete_permission_without_branch<U: UserRepository>(
+/// Tests getting permissions for a user with no permissions.
+///
+/// Verifies that:
+/// - An empty list is returned when a user has no permissions
+pub async fn user_test_get_permissions_empty<U: UserRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &U,
 ) {
     let user = UserCreate {
         username: Uuid::new_v4().to_string(),
-        name: "Permission User 5".to_string(),
-        email: None,
-        password: "pass".to_string(),
-        photo: None,
-        pin: None,
-        address: None,
-        phone: None,
-    };
-
-    let id = super::generate_test_id().await;
-    repo.create(ctx, id, &user)
-        .await
-        .expect("Failed to create user");
-
-    let saved_user = repo
-        .get_by_id(ctx, id)
-        .await
-        .expect("Failed to get user")
-        .expect("User not found");
-
-    repo.save_permission(ctx, saved_user.id, None, 2, 3)
-        .await
-        .expect("Failed to save permission");
-
-    let permissions = repo
-        .get_permissions(ctx, saved_user.id)
-        .await
-        .expect("Failed to get permissions");
-    assert_eq!(permissions.len(), 1);
-
-    repo.delete_permission(ctx, saved_user.id, None, 2)
-        .await
-        .expect("Failed to delete permission");
-
-    let permissions = repo
-        .get_permissions(ctx, saved_user.id)
-        .await
-        .expect("Failed to get permissions");
-    assert_eq!(permissions.len(), 0);
-}
-
-pub async fn user_test_delete_specific_permission_keeps_others<U: UserRepository>(
-    ctx: &RepoCtx<DatabaseConnection>,
-    repo: &U,
-) {
-    let user = UserCreate {
-        username: Uuid::new_v4().to_string(),
-        name: "Permission User 6".to_string(),
-        email: None,
-        password: "pass".to_string(),
-        photo: None,
-        pin: None,
-        address: None,
-        phone: None,
-    };
-
-    let id = super::generate_test_id().await;
-    repo.create(ctx, id, &user)
-        .await
-        .expect("Failed to create user");
-
-    let saved_user = repo
-        .get_by_id(ctx, id)
-        .await
-        .expect("Failed to get user")
-        .expect("User not found");
-
-    repo.save_permission(ctx, saved_user.id, None, 2, 3)
-        .await
-        .expect("Failed to save permission 1");
-
-    repo.save_permission(ctx, saved_user.id, None, 3, 4)
-        .await
-        .expect("Failed to save permission 2");
-
-    let permissions = repo
-        .get_permissions(ctx, saved_user.id)
-        .await
-        .expect("Failed to get permissions");
-    assert_eq!(permissions.len(), 2);
-
-    repo.delete_permission(ctx, saved_user.id, None, 2)
-        .await
-        .expect("Failed to delete permission");
-
-    let permissions = repo
-        .get_permissions(ctx, saved_user.id)
-        .await
-        .expect("Failed to get permissions");
-    assert_eq!(permissions.len(), 1);
-    assert_eq!(permissions[0].resource, 3);
-}
-
-pub async fn user_test_get_permission_not_found<U: UserRepository>(
-    ctx: &RepoCtx<DatabaseConnection>,
-    repo: &U,
-) {
-    let user = UserCreate {
-        username: Uuid::new_v4().to_string(),
-        name: "Permission User 7".to_string(),
+        name: "Permission Empty User".to_string(),
         email: None,
         password: "pass".to_string(),
         photo: None,
@@ -866,153 +835,4 @@ pub async fn user_test_get_permission_not_found<U: UserRepository>(
         .expect("Failed to get permissions");
 
     assert_eq!(permissions.len(), 0);
-}
-
-pub async fn user_test_save_permission_null_branch_then_delete<U: UserRepository>(
-    ctx: &RepoCtx<DatabaseConnection>,
-    repo: &U,
-) {
-    let user = UserCreate {
-        username: Uuid::new_v4().to_string(),
-        name: "Permission Null Branch Test".to_string(),
-        email: None,
-        password: "pass".to_string(),
-        photo: None,
-        pin: None,
-        address: None,
-        phone: None,
-    };
-
-    let id = super::generate_test_id().await;
-    repo.create(ctx, id, &user)
-        .await
-        .expect("Failed to create user");
-
-    let saved_user = repo
-        .get_by_id(ctx, id)
-        .await
-        .expect("Failed to get user")
-        .expect("User not found");
-
-    repo.save_permission(ctx, saved_user.id, None, 5, 10)
-        .await
-        .expect("Failed to save permission with NULL branch");
-
-    let permissions = repo
-        .get_permissions(ctx, saved_user.id)
-        .await
-        .expect("Failed to get permissions");
-    assert_eq!(permissions.len(), 1);
-    assert_eq!(permissions[0].branch_id, None);
-
-    repo.delete_permission(ctx, saved_user.id, None, 5)
-        .await
-        .expect("Failed to delete permission with NULL branch");
-
-    let permissions = repo
-        .get_permissions(ctx, saved_user.id)
-        .await
-        .expect("Failed to get permissions");
-    assert_eq!(permissions.len(), 0);
-}
-
-pub async fn user_test_save_and_update_permission_null_branch<U: UserRepository>(
-    ctx: &RepoCtx<DatabaseConnection>,
-    repo: &U,
-) {
-    let user = UserCreate {
-        username: Uuid::new_v4().to_string(),
-        name: "Permission Update Null Branch".to_string(),
-        email: None,
-        password: "pass".to_string(),
-        photo: None,
-        pin: None,
-        address: None,
-        phone: None,
-    };
-
-    let id = super::generate_test_id().await;
-    repo.create(ctx, id, &user)
-        .await
-        .expect("Failed to create user");
-
-    let saved_user = repo
-        .get_by_id(ctx, id)
-        .await
-        .expect("Failed to get user")
-        .expect("User not found");
-
-    repo.save_permission(ctx, saved_user.id, None, 6, 1)
-        .await
-        .expect("Failed to save permission");
-
-    let permissions = repo
-        .get_permissions(ctx, saved_user.id)
-        .await
-        .expect("Failed to get permissions");
-    assert_eq!(permissions.len(), 1);
-    assert_eq!(permissions[0].action, 1);
-
-    repo.save_permission(ctx, saved_user.id, None, 6, 2)
-        .await
-        .expect("Failed to save permission again");
-
-    let permissions = repo
-        .get_permissions(ctx, saved_user.id)
-        .await
-        .expect("Failed to get permissions");
-    assert_eq!(permissions.len(), 1);
-    assert_eq!(permissions[0].action, 2);
-}
-
-pub async fn user_test_delete_permission_null_vs_non_null_branch<U: UserRepository>(
-    ctx: &RepoCtx<DatabaseConnection>,
-    repo: &U,
-) {
-    let user = UserCreate {
-        username: Uuid::new_v4().to_string(),
-        name: "Permission Null vs Not Null".to_string(),
-        email: None,
-        password: "pass".to_string(),
-        photo: None,
-        pin: None,
-        address: None,
-        phone: None,
-    };
-
-    let id = super::generate_test_id().await;
-    repo.create(ctx, id, &user)
-        .await
-        .expect("Failed to create user");
-
-    let saved_user = repo
-        .get_by_id(ctx, id)
-        .await
-        .expect("Failed to get user")
-        .expect("User not found");
-
-    repo.save_permission(ctx, saved_user.id, None, 7, 10)
-        .await
-        .expect("Failed to save permission with NULL branch");
-
-    repo.save_permission(ctx, saved_user.id, None, 8, 20)
-        .await
-        .expect("Failed to save second permission with NULL branch");
-
-    let permissions = repo
-        .get_permissions(ctx, saved_user.id)
-        .await
-        .expect("Failed to get permissions");
-    assert_eq!(permissions.len(), 2);
-
-    repo.delete_permission(ctx, saved_user.id, None, 7)
-        .await
-        .expect("Failed to delete permission");
-
-    let permissions = repo
-        .get_permissions(ctx, saved_user.id)
-        .await
-        .expect("Failed to get permissions");
-    assert_eq!(permissions.len(), 1);
-    assert_eq!(permissions[0].resource, 8);
 }

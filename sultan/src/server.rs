@@ -16,7 +16,11 @@ use sultan_core::{
     crypto::{Argon2PasswordHasher, DefaultJwtManager, JwtConfig, JwtManager},
     domain::{
         Context,
-        model::{branch::BranchCreate, permission::resource, user::UserCreate},
+        model::{
+            branch::BranchCreate,
+            permission::{Permission, resource},
+            user::UserCreate,
+        },
     },
     snowflake::SnowflakeGenerator,
     storage::{
@@ -166,7 +170,16 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
             .await?;
 
         user_repository
-            .save_permission(&repo_ctx, user_id, None, resource::ADMIN, 0)
+            .save_permissions(
+                &repo_ctx,
+                user_id,
+                &[Permission {
+                    user_id,
+                    branch_id: None,
+                    resource: resource::ADMIN,
+                    action: 0,
+                }],
+            )
             .await?
     }
 
