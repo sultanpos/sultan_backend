@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use sultan_core::application::UserServiceTrait;
-use sultan_core::domain::model::permission::{Permission, action, resource};
+use sultan_core::domain::model::permission::{Permission, PermissionCreate, action, resource};
 use sultan_core::domain::model::user::{UserCreate, UserUpdate};
 use sultan_core::domain::{Context, DomainResult, Error, User};
 
@@ -26,7 +26,12 @@ impl MockUserService {
 
 #[async_trait]
 impl UserServiceTrait for MockUserService {
-    async fn create(&self, _ctx: &Context, _user: &UserCreate) -> DomainResult<i64> {
+    async fn create(
+        &self,
+        _ctx: &Context,
+        _user: &UserCreate,
+        _permissions: &[PermissionCreate],
+    ) -> DomainResult<i64> {
         if self.should_succeed {
             Ok(1)
         } else {
@@ -34,7 +39,13 @@ impl UserServiceTrait for MockUserService {
         }
     }
 
-    async fn update(&self, _ctx: &Context, _id: i64, _user: &UserUpdate) -> DomainResult<()> {
+    async fn update(
+        &self,
+        _ctx: &Context,
+        _id: i64,
+        _user: &UserUpdate,
+        _permissions: Option<Vec<PermissionCreate>>,
+    ) -> DomainResult<()> {
         if self.should_succeed {
             Ok(())
         } else {

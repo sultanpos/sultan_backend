@@ -3,7 +3,7 @@ use sea_orm::ConnectionTrait;
 
 use crate::domain::DomainResult;
 use crate::domain::model::pagination::PaginationOptions;
-use crate::domain::model::permission::Permission;
+use crate::domain::model::permission::{Permission, PermissionCreate};
 use crate::domain::model::user::{User, UserCreate, UserFilter, UserUpdate};
 
 /// Repository trait for User operations.
@@ -234,7 +234,7 @@ pub trait UserRepository: Send + Sync {
         &self,
         ctx: &super::RepoCtx<impl ConnectionTrait>,
         user_id: i64,
-        permissions: &[Permission],
+        permissions: &[PermissionCreate],
     ) -> DomainResult<()>;
 
     /// Retrieves all permissions for a user.

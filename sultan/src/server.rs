@@ -18,13 +18,13 @@ use sultan_core::{
         Context,
         model::{
             branch::BranchCreate,
-            permission::{Permission, resource},
+            permission::{PermissionCreate, resource},
             user::UserCreate,
         },
     },
     snowflake::SnowflakeGenerator,
     storage::{
-        BranchRepository, RepoCtx, SqliteUserRepository, UserRepository,
+        BranchRepository, RepoCtx, SqliteUserRepository,
         sqlite::{
             SqliteBranchRepository, SqliteCategoryRepository, SqliteCustomerRepository,
             SqliteNumberRepository, SqliteSupplierRepository, SqliteTokenRepository,
@@ -153,7 +153,7 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
             .await?;
         tracing::info!("Created default branch");
 
-        let user_id = user_service
+        user_service
             .create(
                 &ctx,
                 &UserCreate {
@@ -166,21 +166,13 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
                     address: None,
                     phone: None,
                 },
-            )
-            .await?;
-
-        user_repository
-            .save_permissions(
-                &repo_ctx,
-                user_id,
-                &[Permission {
-                    user_id,
+                &[PermissionCreate {
                     branch_id: None,
                     resource: resource::ADMIN,
                     action: 0,
                 }],
             )
-            .await?
+            .await?;
     }
 
     Ok(AppState {

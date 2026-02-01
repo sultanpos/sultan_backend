@@ -5,6 +5,7 @@ use crate::{
     domain::model::{
         Update,
         pagination::PaginationOptions,
+        permission::PermissionCreate,
         user::{UserCreate, UserFilter, UserUpdate},
     },
     storage::{RepoCtx, UserRepository},
@@ -562,8 +563,6 @@ pub async fn user_test_save_permissions<U: UserRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &U,
 ) {
-    use crate::domain::model::permission::Permission;
-
     let user = UserCreate {
         username: Uuid::new_v4().to_string(),
         name: "Permission Save User".to_string(),
@@ -587,20 +586,17 @@ pub async fn user_test_save_permissions<U: UserRepository>(
         .expect("User not found");
 
     let permissions = vec![
-        Permission {
-            user_id: saved_user.id,
+        PermissionCreate {
             branch_id: None,
             resource: 2,
             action: 3,
         },
-        Permission {
-            user_id: saved_user.id,
+        PermissionCreate {
             branch_id: None,
             resource: 3,
             action: 7,
         },
-        Permission {
-            user_id: saved_user.id,
+        PermissionCreate {
             branch_id: None,
             resource: 4,
             action: 15,
@@ -642,8 +638,6 @@ pub async fn user_test_save_permissions_updates_existing<U: UserRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &U,
 ) {
-    use crate::domain::model::permission::Permission;
-
     let user = UserCreate {
         username: Uuid::new_v4().to_string(),
         name: "Permission Update User".to_string(),
@@ -667,8 +661,7 @@ pub async fn user_test_save_permissions_updates_existing<U: UserRepository>(
         .expect("User not found");
 
     // Save initial permissions
-    let initial_permissions = vec![Permission {
-        user_id: saved_user.id,
+    let initial_permissions = vec![PermissionCreate {
         branch_id: None,
         resource: 5,
         action: 1,
@@ -695,8 +688,6 @@ pub async fn user_test_delete_permission_by_user_id<U: UserRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &U,
 ) {
-    use crate::domain::model::permission::Permission;
-
     let user = UserCreate {
         username: Uuid::new_v4().to_string(),
         name: "Permission Delete User".to_string(),
@@ -721,14 +712,12 @@ pub async fn user_test_delete_permission_by_user_id<U: UserRepository>(
 
     // Save some permissions
     let permissions = vec![
-        Permission {
-            user_id: saved_user.id,
+        PermissionCreate {
             branch_id: None,
             resource: 2,
             action: 3,
         },
-        Permission {
-            user_id: saved_user.id,
+        PermissionCreate {
             branch_id: None,
             resource: 3,
             action: 7,

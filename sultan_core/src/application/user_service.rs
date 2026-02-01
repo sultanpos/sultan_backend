@@ -1,11 +1,11 @@
 use async_trait::async_trait;
-use sea_orm::DatabaseConnection;
+use sea_orm::{DatabaseConnection, TransactionTrait};
 use std::sync::Arc;
 use std::time::Duration;
 
 use crate::application::cache::CacheService;
 use crate::crypto::password::PasswordHash;
-use crate::domain::model::permission::{Permission, action, resource};
+use crate::domain::model::permission::{Permission, PermissionCreate, action, resource};
 use crate::domain::model::user::{UserCreate, UserUpdate};
 use crate::domain::{Context, DomainResult, User};
 use crate::snowflake::IdGenerator;
@@ -17,8 +17,19 @@ use crate::storage::{RepoCtx, UserRepository};
 /// creation, updates, password resets, deletion, and permissions.
 #[async_trait]
 pub trait UserServiceTrait: Send + Sync {
-    async fn create(&self, ctx: &Context, user: &UserCreate) -> DomainResult<i64>;
-    async fn update(&self, ctx: &Context, id: i64, user: &UserUpdate) -> DomainResult<()>;
+    async fn create(
+        &self,
+        ctx: &Context,
+        user: &UserCreate,
+        permissions: &[PermissionCreate],
+    ) -> DomainResult<i64>;
+    async fn update(
+        &self,
+        ctx: &Context,
+        id: i64,
+        user: &UserUpdate,
+        permissions: Option<Vec<PermissionCreate>>,
+    ) -> DomainResult<()>;
     async fn get_by_id(&self, ctx: &Context, user_id: i64) -> DomainResult<Option<User>>;
     async fn reset_password(
         &self,
@@ -78,7 +89,12 @@ where
     I: IdGenerator,
     C: CacheService<i64>,
 {
-    async fn create(&self, ctx: &Context, user: &UserCreate) -> DomainResult<i64> {
+    async fn create(
+        &self,
+        ctx: &Context,
+        user: &UserCreate,
+        permissions: &[PermissionCreate],
+    ) -> DomainResult<i64> {
         ctx.require_access(None, resource::USER, action::CREATE)?;
         let password_hash = self.password_hasher.hash_password(&user.password)?;
         let mut user_with_password = user.clone();
@@ -87,28 +103,47 @@ where
 
         let repo_ctx = RepoCtx {
             ctx: ctx.clone(),
-            db: self.db.clone(),
+            db: self.db.begin().await?,
         };
         self.repository
             .create(&repo_ctx, id, &user_with_password)
             .await?;
 
-        // Invalidate cache for new user
-        let _ = self.cache.delete(&id).await;
+        self.repository
+            .save_permissions(&repo_ctx, id, permissions)
+            .await?;
+
+        repo_ctx.db.commit().await?;
 
         Ok(id)
     }
 
-    async fn update(&self, ctx: &Context, id: i64, user: &UserUpdate) -> DomainResult<()> {
+    async fn update(
+        &self,
+        ctx: &Context,
+        id: i64,
+        user: &UserUpdate,
+        permissions: Option<Vec<PermissionCreate>>,
+    ) -> DomainResult<()> {
         ctx.require_access(None, resource::USER, action::UPDATE)?;
 
         let repo_ctx = RepoCtx {
             ctx: ctx.clone(),
-            db: self.db.clone(),
+            db: self.db.begin().await?,
         };
         self.repository.update(&repo_ctx, id, user).await?;
 
-        // Invalidate cache when user is updated
+        if let Some(perms) = permissions {
+            self.repository
+                .delete_permission_by_user_id(&repo_ctx, id)
+                .await?;
+            self.repository
+                .save_permissions(&repo_ctx, id, &perms)
+                .await?;
+        }
+
+        repo_ctx.db.commit().await?;
+
         let _ = self.cache.delete(&id).await;
 
         Ok(())
@@ -223,6 +258,10 @@ mod tests {
         delete_fn: Mutex<Option<Box<dyn Fn(i64) -> DomainResult<()> + Send + Sync>>>,
         get_permissions_fn:
             Mutex<Option<Box<dyn Fn(i64) -> DomainResult<Vec<Permission>> + Send + Sync>>>,
+        save_permissions_fn:
+            Mutex<Option<Box<dyn Fn(i64, &[PermissionCreate]) -> DomainResult<()> + Send + Sync>>>,
+        delete_permission_by_user_id_fn:
+            Mutex<Option<Box<dyn Fn(i64) -> DomainResult<()> + Send + Sync>>>,
     }
 
     impl MockUserRepository {
@@ -234,6 +273,8 @@ mod tests {
                 update_password_fn: Mutex::new(None),
                 delete_fn: Mutex::new(None),
                 get_permissions_fn: Mutex::new(None),
+                save_permissions_fn: Mutex::new(None),
+                delete_permission_by_user_id_fn: Mutex::new(None),
             }
         }
 
@@ -277,6 +318,21 @@ mod tests {
             F: Fn(i64) -> DomainResult<Vec<Permission>> + Send + Sync + 'static,
         {
             *self.get_permissions_fn.lock().unwrap() = Some(Box::new(f));
+        }
+
+        fn expect_save_permissions<F>(&self, f: F)
+        where
+            F: Fn(i64, &[PermissionCreate]) -> DomainResult<()> + Send + Sync + 'static,
+        {
+            *self.save_permissions_fn.lock().unwrap() = Some(Box::new(f));
+        }
+
+        #[allow(dead_code)]
+        fn expect_delete_permission_by_user_id<F>(&self, f: F)
+        where
+            F: Fn(i64) -> DomainResult<()> + Send + Sync + 'static,
+        {
+            *self.delete_permission_by_user_id_fn.lock().unwrap() = Some(Box::new(f));
         }
     }
 
@@ -370,18 +426,28 @@ mod tests {
         async fn delete_permission_by_user_id(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
-            _user_id: i64,
+            user_id: i64,
         ) -> DomainResult<()> {
-            panic!("delete_permission_by_user_id not mocked")
+            let guard = self.delete_permission_by_user_id_fn.lock().unwrap();
+            if let Some(f) = guard.as_ref() {
+                f(user_id)
+            } else {
+                Ok(()) // Default to success for this optional operation
+            }
         }
 
         async fn save_permissions(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
-            _user_id: i64,
-            _permissions: &[Permission],
+            user_id: i64,
+            permissions: &[PermissionCreate],
         ) -> DomainResult<()> {
-            panic!("save_permissions not mocked")
+            let guard = self.save_permissions_fn.lock().unwrap();
+            if let Some(f) = guard.as_ref() {
+                f(user_id, permissions)
+            } else {
+                Ok(()) // Default to success for this optional operation
+            }
         }
 
         async fn get_permissions(
@@ -540,6 +606,14 @@ mod tests {
             Ok(())
         });
 
+        mock_repo.expect_save_permissions(|id, perms| {
+            assert_eq!(id, 12345);
+            assert_eq!(perms.len(), 1);
+            assert_eq!(perms[0].resource, 1);
+            assert_eq!(perms[0].action, 2);
+            Ok(())
+        });
+
         let service = UserService::new(
             mock_repo,
             Arc::new(mock_hasher),
@@ -547,9 +621,14 @@ mod tests {
             Arc::new(InMemoryCache::<i64>::new()),
             db,
         );
+        let permissions = [PermissionCreate {
+            branch_id: None,
+            resource: 1,
+            action: 2,
+        }];
 
         let user = create_test_user();
-        let result = service.create(&ctx, &user).await;
+        let result = service.create(&ctx, &user, &permissions).await;
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 12345);
@@ -571,7 +650,12 @@ mod tests {
         );
 
         let user = create_test_user();
-        let result = service.create(&ctx, &user).await;
+        let permissions = [PermissionCreate {
+            branch_id: None,
+            resource: 1,
+            action: 2,
+        }];
+        let result = service.create(&ctx, &user, &permissions).await;
 
         assert!(matches!(result, Err(Error::Forbidden(_))));
     }
@@ -594,7 +678,12 @@ mod tests {
         );
 
         let user = create_test_user();
-        let result = service.create(&ctx, &user).await;
+        let permissions = [PermissionCreate {
+            branch_id: None,
+            resource: 1,
+            action: 2,
+        }];
+        let result = service.create(&ctx, &user, &permissions).await;
 
         assert!(matches!(result, Err(Error::Internal(_))));
     }
@@ -618,7 +707,12 @@ mod tests {
         );
 
         let user = create_test_user();
-        let result = service.create(&ctx, &user).await;
+        let permissions = [PermissionCreate {
+            branch_id: None,
+            resource: 1,
+            action: 2,
+        }];
+        let result = service.create(&ctx, &user, &permissions).await;
 
         assert!(matches!(result, Err(Error::Database(_))));
     }
@@ -648,7 +742,7 @@ mod tests {
         );
 
         let user = create_user_update();
-        let result = service.update(&ctx, 1, &user).await;
+        let result = service.update(&ctx, 1, &user, None).await;
 
         assert!(result.is_ok());
     }
@@ -669,7 +763,7 @@ mod tests {
         );
 
         let user = create_user_update();
-        let result = service.update(&ctx, 1, &user).await;
+        let result = service.update(&ctx, 1, &user, None).await;
 
         assert!(matches!(result, Err(Error::Forbidden(_))));
     }
@@ -993,7 +1087,7 @@ mod tests {
 
         // Update user - should invalidate cache
         let user = create_user_update();
-        let result = service.update(&ctx, 1, &user).await;
+        let result = service.update(&ctx, 1, &user, None).await;
         assert!(result.is_ok());
 
         // Cache should be cleared

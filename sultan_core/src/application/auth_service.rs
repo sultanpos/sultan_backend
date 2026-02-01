@@ -253,7 +253,7 @@ mod tests {
     use super::*;
     use crate::crypto::password::PasswordHash;
     use crate::domain::model::pagination::PaginationOptions;
-    use crate::domain::model::permission::Permission;
+    use crate::domain::model::permission::{Permission, PermissionCreate};
     use crate::domain::model::user::{User, UserCreate, UserFilter, UserUpdate};
     use sea_orm::ConnectionTrait;
     use std::sync::Mutex;
@@ -341,7 +341,7 @@ mod tests {
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
             _user_id: i64,
-            _permissions: &[Permission],
+            _permissions: &[PermissionCreate],
         ) -> DomainResult<()> {
             Ok(())
         }

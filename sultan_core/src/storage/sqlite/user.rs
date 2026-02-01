@@ -8,7 +8,7 @@ use crate::{
         DomainResult, Error,
         model::{
             pagination::PaginationOptions,
-            permission::Permission,
+            permission::{Permission, PermissionCreate},
             user::{User, UserCreate, UserFilter, UserUpdate},
         },
     },
@@ -276,7 +276,7 @@ impl UserRepository for SqliteUserRepository {
         &self,
         ctx: &RepoCtx<impl ConnectionTrait>,
         user_id: i64,
-        permissions: &[Permission],
+        permissions: &[PermissionCreate],
     ) -> DomainResult<()> {
         for perm in permissions {
             let permission_model = PermissionActiveModel {
