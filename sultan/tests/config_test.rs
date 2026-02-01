@@ -46,7 +46,7 @@ fn test_from_env_with_defaults() {
         config.refresh_token_ttl.as_seconds_f64() as i64,
         30 * 24 * 60 * 60
     );
-    assert_eq!(config.database_max_connections, 5);
+    assert_eq!(config.database_max_connections, 10);
     assert!(!config.write_log_to_file);
 }
 

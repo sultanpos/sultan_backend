@@ -149,7 +149,11 @@ pub async fn init_sqlite_repo_ctx_with_pool() -> (RepoCtx<DatabaseConnection>, S
         .await
         .expect("Failed to run SQLite migrations");
 
-    let db_connection = Database::connect(connection_string)
+    let mut opt = sea_orm::ConnectOptions::new(connection_string);
+    opt.max_connections(5)
+        .min_connections(1)
+        .sqlx_logging(false);
+    let db_connection = Database::connect(opt)
         .await
         .expect("unable to connect sqlite");
 
@@ -207,42 +211,13 @@ pub async fn init_sqlite_pool_with_seaorm() -> (SqlitePool, DatabaseConnection) 
         .expect("Failed to run SQLite migrations");
 
     // Create SeaORM connection to the same database
-    let db_connection = Database::connect(&connection_string)
+    let mut opt = sea_orm::ConnectOptions::new(connection_string);
+    opt.max_connections(5)
+        .min_connections(1)
+        .sqlx_logging(false);
+    let db_connection = Database::connect(opt)
         .await
         .expect("unable to connect sqlite");
 
     (new_pool, db_connection)
 }
-
-/*
-pub async fn init_postgres_pool() -> PgPool {
-    let mut pool = POSTGRES_POOL.lock().await;
-
-    if let Some(existing_pool) = pool.as_ref() {
-        return existing_pool.clone();
-    }
-
-    let database_url = std::env::var("DATABASE_URL")
-        .expect("DATABASE_URL environment variable must be set for PostgreSQL tests");
-
-    let new_pool = sqlx::PgPool::connect(&database_url)
-        .await
-        .unwrap_or_else(|e| {
-            panic!(
-                "Failed to connect to PostgreSQL database.\n\
-                 DATABASE_URL: {}\n\
-                 Error: {}\n\
-                 Make sure PostgreSQL is running and the database exists.",
-                database_url, e
-            )
-        });
-
-    sqlx::migrate!("./migrations-postgres")
-        .run(&new_pool)
-        .await
-        .expect("Failed to run PostgreSQL migrations");
-
-    *pool = Some(new_pool.clone());
-    new_pool
-}
-*/
