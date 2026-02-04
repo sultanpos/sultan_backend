@@ -129,18 +129,18 @@ impl UserServiceTrait for MockUserService {
 
     async fn get_all(
         &self,
-        ctx: &Context,
-        filter: &UserFilter,
-        pagination: &PaginationOptions,
+        _ctx: &Context,
+        _filter: &UserFilter,
+        _pagination: &PaginationOptions,
     ) -> DomainResult<Vec<User>> {
         Err(Error::Database("Mock get all users error".to_string()))
     }
 
     async fn change_my_password(
         &self,
-        ctx: &Context,
-        old_password: String,
-        new_password: String,
+        _ctx: &Context,
+        _old_password: String,
+        _new_password: String,
     ) -> DomainResult<()> {
         Err(Error::Database("Mock change my password error".to_string()))
     }

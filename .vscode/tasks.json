@@ -1,0 +1,87 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "type": "cargo",
+            "command": "build",
+            "args": [
+                "--package",
+                "sultan"
+            ],
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "label": "rust: cargo build sultan",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "type": "cargo",
+            "command": "run",
+            "args": [
+                "--package",
+                "sultan"
+            ],
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "label": "rust: cargo run sultan",
+            "group": {
+                "kind": "test",
+                "isDefault": false
+            }
+        },
+        {
+            "type": "cargo",
+            "command": "test",
+            "args": [
+                "--package",
+                "sultan_core"
+            ],
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "label": "rust: cargo test sultan_core",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            }
+        },
+        {
+            "type": "cargo",
+            "command": "test",
+            "args": [
+                "--package",
+                "sultan_web"
+            ],
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "label": "rust: cargo test sultan_web"
+        },
+        {
+            "type": "cargo",
+            "command": "clippy",
+            "args": [
+                "--package",
+                "sultan",
+                "--",
+                "-D",
+                "warnings"
+            ],
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "label": "rust: cargo clippy sultan"
+        },
+        {
+            "type": "shell",
+            "command": "cargo fmt --package sultan && cargo clippy --package sultan -- -D warnings && cargo test --package sultan",
+            "problemMatcher": [],
+            "label": "rust: quality checks (fmt + clippy + test)",
+            "group": "test"
+        }
+    ]
+}

@@ -1,5 +1,7 @@
 use async_trait::async_trait;
-use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set,
+};
 
 use super::entity::{TokenColumn, TokenEntity};
 use crate::{
@@ -30,13 +32,13 @@ impl TokenRepository for SqliteTokenRepository {
         let expired_at = token.expired_at.to_rfc3339();
 
         let token_model = super::entity::TokenActiveModel {
-            id: Set(token.id), // Will be ignored due to auto-increment
+            id: ActiveValue::NotSet, // Let database auto-generate the ID
             user_id: Set(token.user_id),
             expired_at: Set(expired_at),
             token: Set(token.token.clone()),
         };
 
-        // Use insert with returning to handle auto-increment
+        // Use insert to let auto-increment handle ID generation
         token_model.insert(&ctx.db).await?;
         Ok(())
     }

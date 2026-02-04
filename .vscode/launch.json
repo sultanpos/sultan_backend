@@ -1,0 +1,91 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug Sultan Server",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=sultan",
+                    "--package=sultan"
+                ],
+                "filter": {
+                    "name": "sultan",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_LOG": "debug",
+                "RUST_BACKTRACE": "1"
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug Current Test",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=${selectedText}"
+                ],
+                "filter": {
+                    "name": "${selectedText}",
+                    "kind": "lib"
+                }
+            },
+            "args": [
+                "${selectedText}",
+                "--nocapture"
+            ],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug sultan_core Unit Tests",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=sultan_core"
+                ],
+                "filter": {
+                    "name": "sultan_core",
+                    "kind": "lib"
+                }
+            },
+            "args": [
+                "--nocapture"
+            ],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug sultan_web Integration Tests",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=user_test",
+                    "--package=sultan_web"
+                ],
+                "filter": {
+                    "name": "user_test",
+                    "kind": "test"
+                }
+            },
+            "args": [
+                "--nocapture"
+            ],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
