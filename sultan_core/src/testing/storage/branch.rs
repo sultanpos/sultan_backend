@@ -24,6 +24,7 @@ where
     branch_test_update_branch_not_found(&ctx_factory().await, repo).await;
     branch_test_create_branch_with_all_fields(&ctx_factory().await, repo).await;
     branch_test_update_address_scenarios(&ctx_factory().await, repo).await;
+    branch_test_set_all_is_main_false(&ctx_factory().await, repo).await;
 }
 
 pub async fn branch_test_repo_integration<B: BranchRepository>(
@@ -375,4 +376,193 @@ pub async fn branch_test_update_address_scenarios<B: BranchRepository>(
         Some("555-1111".to_string()),
         "Phone should still remain unchanged"
     );
+}
+
+pub async fn branch_test_set_all_is_main_false<B: BranchRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &B,
+) {
+    // Create three branches, all with is_main = true
+    let id1 = super::generate_test_id().await;
+    let id2 = super::generate_test_id().await;
+    let id3 = super::generate_test_id().await;
+
+    let branch1 = BranchCreate {
+        is_main: true,
+        name: "Branch 1".to_string(),
+        code: "BR1".to_string(),
+        address: None,
+        phone: None,
+        npwp: None,
+        image: None,
+    };
+
+    let branch2 = BranchCreate {
+        is_main: true,
+        name: "Branch 2".to_string(),
+        code: "BR2".to_string(),
+        address: None,
+        phone: None,
+        npwp: None,
+        image: None,
+    };
+
+    let branch3 = BranchCreate {
+        is_main: true,
+        name: "Branch 3".to_string(),
+        code: "BR3".to_string(),
+        address: None,
+        phone: None,
+        npwp: None,
+        image: None,
+    };
+
+    repo.create(ctx, id1, &branch1)
+        .await
+        .expect("Failed to create branch 1");
+    repo.create(ctx, id2, &branch2)
+        .await
+        .expect("Failed to create branch 2");
+    repo.create(ctx, id3, &branch3)
+        .await
+        .expect("Failed to create branch 3");
+
+    // Verify all branches are created with is_main = true
+    let b1 = repo
+        .get_by_id(ctx, id1)
+        .await
+        .expect("Failed to get branch 1")
+        .expect("Branch 1 not found");
+    let b2 = repo
+        .get_by_id(ctx, id2)
+        .await
+        .expect("Failed to get branch 2")
+        .expect("Branch 2 not found");
+    let b3 = repo
+        .get_by_id(ctx, id3)
+        .await
+        .expect("Failed to get branch 3")
+        .expect("Branch 3 not found");
+
+    assert!(b1.is_main, "Branch 1 should initially be main");
+    assert!(b2.is_main, "Branch 2 should initially be main");
+    assert!(b3.is_main, "Branch 3 should initially be main");
+
+    // Test 1: Set all branches to is_main = false except id2
+    repo.set_all_is_main_false(ctx, Some(id2))
+        .await
+        .expect("Failed to set all is_main to false except id2");
+
+    let b1_after = repo
+        .get_by_id(ctx, id1)
+        .await
+        .expect("Failed to get branch 1")
+        .expect("Branch 1 not found");
+    let b2_after = repo
+        .get_by_id(ctx, id2)
+        .await
+        .expect("Failed to get branch 2")
+        .expect("Branch 2 not found");
+    let b3_after = repo
+        .get_by_id(ctx, id3)
+        .await
+        .expect("Failed to get branch 3")
+        .expect("Branch 3 not found");
+
+    assert!(
+        !b1_after.is_main,
+        "Branch 1 should be set to is_main = false"
+    );
+    assert!(
+        b2_after.is_main,
+        "Branch 2 should remain is_main = true (excluded)"
+    );
+    assert!(
+        !b3_after.is_main,
+        "Branch 3 should be set to is_main = false"
+    );
+
+    // Test 2: Set all branches to is_main = false with no exception (None)
+    // First set branch 2 back to is_main = true for testing
+    let update = BranchUpdate {
+        is_main: Some(true),
+        ..Default::default()
+    };
+    repo.update(ctx, id2, &update)
+        .await
+        .expect("Failed to update branch 2");
+
+    repo.set_all_is_main_false(ctx, None)
+        .await
+        .expect("Failed to set all is_main to false");
+
+    let b1_final = repo
+        .get_by_id(ctx, id1)
+        .await
+        .expect("Failed to get branch 1")
+        .expect("Branch 1 not found");
+    let b2_final = repo
+        .get_by_id(ctx, id2)
+        .await
+        .expect("Failed to get branch 2")
+        .expect("Branch 2 not found");
+    let b3_final = repo
+        .get_by_id(ctx, id3)
+        .await
+        .expect("Failed to get branch 3")
+        .expect("Branch 3 not found");
+
+    assert!(
+        !b1_final.is_main,
+        "Branch 1 should be is_main = false (no exception)"
+    );
+    assert!(
+        !b2_final.is_main,
+        "Branch 2 should be is_main = false (no exception)"
+    );
+    assert!(
+        !b3_final.is_main,
+        "Branch 3 should be is_main = false (no exception)"
+    );
+
+    // Test 3: Verify that deleted branches are not affected
+    let id4 = super::generate_test_id().await;
+    let branch4 = BranchCreate {
+        is_main: true,
+        name: "Branch 4 (to be deleted)".to_string(),
+        code: "BR4".to_string(),
+        address: None,
+        phone: None,
+        npwp: None,
+        image: None,
+    };
+
+    repo.create(ctx, id4, &branch4)
+        .await
+        .expect("Failed to create branch 4");
+
+    // Soft delete branch 4
+    repo.delete(ctx, id4)
+        .await
+        .expect("Failed to delete branch 4");
+
+    // Call set_all_is_main_false - should not affect deleted branch
+    repo.set_all_is_main_false(ctx, None)
+        .await
+        .expect("Failed to set all is_main to false");
+
+    // Verify branch 4 cannot be retrieved (it's deleted)
+    let b4_deleted = repo
+        .get_by_id(ctx, id4)
+        .await
+        .expect("Failed to get deleted branch");
+    assert!(
+        b4_deleted.is_none(),
+        "Deleted branch should not be retrievable"
+    );
+
+    // Clean up: delete test branches
+    repo.delete(ctx, id1).await.ok();
+    repo.delete(ctx, id2).await.ok();
+    repo.delete(ctx, id3).await.ok();
 }
