@@ -49,8 +49,14 @@ impl BranchRepository for SqliteBranchRepository {
         id: i64,
         branch: &BranchCreate,
     ) -> DomainResult<()> {
+        let now = chrono::Utc::now()
+            .format("%Y-%m-%dT%H:%M:%S%.fZ")
+            .to_string();
+
         let branch_model = BranchActiveModel {
             id: Set(id),
+            created_at: Set(now.clone()),
+            updated_at: Set(now),
             is_main: Set(branch.is_main),
             name: Set(branch.name.clone()),
             code: Set(branch.code.clone()),
@@ -183,5 +189,33 @@ impl BranchRepository for SqliteBranchRepository {
             .await?;
 
         Ok(branches.into_iter().map(|b| b.to_domain()).collect())
+    }
+
+    async fn set_all_is_main_false(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        except_id: Option<i64>,
+    ) -> DomainResult<()> {
+        use sea_orm::sea_query::Expr;
+
+        let mut update_query = BranchEntity::update_many()
+            .filter(BranchColumn::IsDeleted.eq(false))
+            .col_expr(BranchColumn::IsMain, Expr::value(false))
+            .col_expr(
+                BranchColumn::UpdatedAt,
+                Expr::value(
+                    chrono::Utc::now()
+                        .format("%Y-%m-%dT%H:%M:%S%.fZ")
+                        .to_string(),
+                ),
+            );
+
+        // Exclude the specified branch if provided
+        if let Some(id) = except_id {
+            update_query = update_query.filter(BranchColumn::Id.ne(id));
+        }
+
+        update_query.exec(&ctx.db).await?;
+        Ok(())
     }
 }

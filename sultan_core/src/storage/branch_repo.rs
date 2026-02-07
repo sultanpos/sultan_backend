@@ -142,4 +142,23 @@ pub trait BranchRepository: Send + Sync {
         ctx: &super::RepoCtx<impl ConnectionTrait>,
         id: i64,
     ) -> DomainResult<Option<Branch>>;
+
+    /// Sets `is_main` to false for all branches except the specified one.
+    ///
+    /// This is used to ensure only one branch can be the main branch at a time.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - Repository context with database connection
+    /// * `except_id` - Optional ID of branch to exclude from the update (None to update all)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Update successful
+    /// * `Err(Error)` - Database error
+    async fn set_all_is_main_false(
+        &self,
+        ctx: &super::RepoCtx<impl ConnectionTrait>,
+        except_id: Option<i64>,
+    ) -> DomainResult<()>;
 }
