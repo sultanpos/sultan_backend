@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use sea_orm::DatabaseConnection;
+use sea_orm::{DatabaseConnection, TransactionTrait};
 
 use crate::domain::Context;
 use crate::domain::DomainResult;
@@ -39,21 +39,50 @@ impl<R: BranchRepository, I: IdGenerator> BranchServiceTrait for BranchService<R
     async fn create(&self, ctx: &Context, branch: &BranchCreate) -> DomainResult<i64> {
         ctx.require_access(None, resource::BRANCH, action::CREATE)?;
         let id = self.id_generator.generate()?;
+
+        // Use transaction to ensure atomicity
         let repo_ctx = RepoCtx {
             ctx: ctx.clone(),
-            db: self.db.clone(),
+            db: self.db.begin().await?,
         };
+
+        // If this branch is being set as main, unset all other branches first
+        if branch.is_main {
+            self.repository
+                .set_all_is_main_false(&repo_ctx, Some(id))
+                .await?;
+        }
+
         self.repository.create(&repo_ctx, id, branch).await?;
+
+        // Commit the transaction
+        repo_ctx.db.commit().await?;
+
         Ok(id)
     }
 
     async fn update(&self, ctx: &Context, id: i64, branch: &BranchUpdate) -> DomainResult<()> {
         ctx.require_access(None, resource::BRANCH, action::UPDATE)?;
+
+        // Use transaction to ensure atomicity
         let repo_ctx = RepoCtx {
             ctx: ctx.clone(),
-            db: self.db.clone(),
+            db: self.db.begin().await?,
         };
-        self.repository.update(&repo_ctx, id, branch).await
+
+        // If this branch is being set as main, unset all other branches first
+        if let Some(true) = branch.is_main {
+            self.repository
+                .set_all_is_main_false(&repo_ctx, Some(id))
+                .await?;
+        }
+
+        self.repository.update(&repo_ctx, id, branch).await?;
+
+        // Commit the transaction
+        repo_ctx.db.commit().await?;
+
+        Ok(())
     }
 
     async fn delete(&self, ctx: &Context, id: i64) -> DomainResult<()> {
@@ -106,6 +135,8 @@ mod tests {
         delete_fn: Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<()> + Send>>>>,
         get_by_id_fn: Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<Option<Branch>> + Send>>>>,
         get_all_fn: Arc<Mutex<Option<Box<dyn Fn() -> DomainResult<Vec<Branch>> + Send>>>>,
+        set_all_is_main_false_fn:
+            Arc<Mutex<Option<Box<dyn Fn(Option<i64>) -> DomainResult<()> + Send>>>>,
     }
 
     impl MockBranchRepo {
@@ -116,6 +147,7 @@ mod tests {
                 delete_fn: Arc::new(Mutex::new(None)),
                 get_by_id_fn: Arc::new(Mutex::new(None)),
                 get_all_fn: Arc::new(Mutex::new(None)),
+                set_all_is_main_false_fn: Arc::new(Mutex::new(None)),
             }
         }
 
@@ -152,6 +184,13 @@ mod tests {
             F: Fn() -> DomainResult<Vec<Branch>> + Send + 'static,
         {
             *self.get_all_fn.lock().unwrap() = Some(Box::new(f));
+        }
+
+        fn expect_set_all_is_main_false<F>(&mut self, f: F)
+        where
+            F: Fn(Option<i64>) -> DomainResult<()> + Send + 'static,
+        {
+            *self.set_all_is_main_false_fn.lock().unwrap() = Some(Box::new(f));
         }
     }
 
@@ -213,6 +252,20 @@ mod tests {
                 f()
             } else {
                 panic!("get_all not mocked")
+            }
+        }
+
+        async fn set_all_is_main_false(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            except_id: Option<i64>,
+        ) -> DomainResult<()> {
+            let func = self.set_all_is_main_false_fn.lock().unwrap();
+            if let Some(f) = func.as_ref() {
+                f(except_id)
+            } else {
+                // By default, return Ok(()) for tests that don't care about this
+                Ok(())
             }
         }
     }

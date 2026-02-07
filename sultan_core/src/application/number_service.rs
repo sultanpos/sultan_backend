@@ -262,6 +262,15 @@ mod tests {
         async fn get_all(&self, _ctx: &RepoCtx<impl ConnectionTrait>) -> DomainResult<Vec<Branch>> {
             panic!("get_all not mocked");
         }
+
+        async fn set_all_is_main_false(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            _except_id: Option<i64>,
+        ) -> DomainResult<()> {
+            // Not needed for number service tests
+            Ok(())
+        }
     }
 
     fn create_test_context() -> Context {
