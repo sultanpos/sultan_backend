@@ -37,20 +37,12 @@ impl BranchServiceTrait for MockBranchService {
         Ok(self.id)
     }
 
-    async fn update(
-        &self,
-        _ctx: &Context,
-        id: i64,
-        _branch: &BranchUpdate,
-    ) -> DomainResult<()> {
+    async fn update(&self, _ctx: &Context, id: i64, _branch: &BranchUpdate) -> DomainResult<()> {
         if !self.should_succeed {
             return Err(Error::Internal("Failed to update branch".to_string()));
         }
         if id != 1 {
-            return Err(Error::NotFound(format!(
-                "Branch with id {} not found",
-                id
-            )));
+            return Err(Error::NotFound(format!("Branch with id {} not found", id)));
         }
         Ok(())
     }
@@ -60,10 +52,7 @@ impl BranchServiceTrait for MockBranchService {
             return Err(Error::Internal("Failed to delete branch".to_string()));
         }
         if id != 1 {
-            return Err(Error::NotFound(format!(
-                "Branch with id {} not found",
-                id
-            )));
+            return Err(Error::NotFound(format!("Branch with id {} not found", id)));
         }
         Ok(())
     }
