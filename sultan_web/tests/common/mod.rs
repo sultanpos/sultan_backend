@@ -1,10 +1,12 @@
 pub mod mock_auth_service;
+pub mod mock_branch_service;
 pub mod mock_category_service;
 pub mod mock_customer_service;
 pub mod mock_supplier_service;
 pub mod mock_user_service;
 
 pub use mock_auth_service::MockAuthService;
+pub use mock_branch_service::MockBranchService;
 pub use mock_category_service::MockCategoryService;
 pub use mock_customer_service::MockCustomerService;
 pub use mock_supplier_service::MockSupplierService;
@@ -19,8 +21,8 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::Arc;
 use sultan_core::application::{
-    AuthServiceTrait, CategoryServiceTrait, CustomerServiceTrait, SupplierServiceTrait,
-    UserServiceTrait,
+    AuthServiceTrait, BranchServiceTrait, CategoryServiceTrait, CustomerServiceTrait,
+    SupplierServiceTrait, UserServiceTrait,
 };
 use sultan_core::crypto::{DefaultJwtManager, JwtConfig};
 use sultan_web::AppState;
@@ -29,6 +31,7 @@ use tower::ServiceExt;
 /// Builder for creating test AppState with optional service overrides
 pub struct MockAppStateBuilder {
     auth_service: Option<Arc<dyn AuthServiceTrait>>,
+    branch_service: Option<Arc<dyn BranchServiceTrait>>,
     category_service: Option<Arc<dyn CategoryServiceTrait>>,
     customer_service: Option<Arc<dyn CustomerServiceTrait>>,
     supplier_service: Option<Arc<dyn SupplierServiceTrait>>,
@@ -41,6 +44,7 @@ impl MockAppStateBuilder {
     pub fn new() -> Self {
         Self {
             auth_service: None,
+            branch_service: None,
             category_service: None,
             customer_service: None,
             supplier_service: None,
@@ -53,6 +57,13 @@ impl MockAppStateBuilder {
     #[allow(dead_code)]
     pub fn with_auth_service(mut self, service: Arc<dyn AuthServiceTrait>) -> Self {
         self.auth_service = Some(service);
+        self
+    }
+
+    /// Override the branch service
+    #[allow(dead_code)]
+    pub fn with_branch_service(mut self, service: Arc<dyn BranchServiceTrait>) -> Self {
+        self.branch_service = Some(service);
         self
     }
 
@@ -103,6 +114,9 @@ impl MockAppStateBuilder {
                 .auth_service
                 .unwrap_or_else(|| Arc::new(MockAuthService::new_success())),
             jwt_manager: Arc::new(jwt_manager),
+            branch_service: self
+                .branch_service
+                .unwrap_or_else(|| Arc::new(MockBranchService::new_success())),
             category_service: self
                 .category_service
                 .unwrap_or_else(|| Arc::new(MockCategoryService::new_success())),

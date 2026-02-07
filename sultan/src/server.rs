@@ -10,8 +10,8 @@ use sqlx::{Sqlite, migrate::MigrateDatabase, sqlite::SqlitePoolOptions};
 use std::{fs::File, sync::Arc};
 use sultan_core::{
     application::{
-        AuthService, AuthServiceTrait, CategoryService, CustomerService, InMemoryCache,
-        NumberService, SupplierService, UserService, UserServiceTrait,
+        AuthService, AuthServiceTrait, BranchService, CategoryService, CustomerService,
+        InMemoryCache, NumberService, SupplierService, UserService, UserServiceTrait,
     },
     crypto::{Argon2PasswordHasher, DefaultJwtManager, JwtConfig, JwtManager},
     domain::{
@@ -47,6 +47,7 @@ use sultan_web::{
 use sultan_web::{
     handler::{
         auth_router::{AuthApiDoc, auth_router},
+        branch_router::{BranchApiDoc, branch_router},
         category_router::{CategoryApiDoc, category_router},
         customer_router::{CustomerApiDoc, customer_router},
         middleware::{context_middleware, verify_jwt},
@@ -130,6 +131,11 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
         SnowflakeGenerator::new(1)?,
         db_connection.clone(),
     );
+    let branch_service = BranchService::new(
+        branch_repository.clone(),
+        SnowflakeGenerator::new(1)?,
+        db_connection.clone(),
+    );
     let user_service = UserService::new(
         user_repository.clone(),
         Arc::new(Argon2PasswordHasher::default()),
@@ -187,6 +193,7 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
     Ok(AppState {
         auth_service: Arc::new(auth_service) as Arc<dyn AuthServiceTrait>,
         jwt_manager: Arc::new(jwt_manager) as Arc<dyn JwtManager>,
+        branch_service: Arc::new(branch_service),
         category_service: Arc::new(category_service),
         customer_service: Arc::new(customer_service),
         supplier_service: Arc::new(supplier_service),
@@ -254,6 +261,7 @@ pub async fn create_app() -> anyhow::Result<Router> {
         .allow_credentials(true);
 
     let protected_router = Router::new()
+        .nest("/branch", branch_router())
         .nest("/category", category_router())
         .nest("/customer", customer_router())
         .nest("/supplier", supplier_router())
@@ -265,6 +273,7 @@ pub async fn create_app() -> anyhow::Result<Router> {
 
     // Merge OpenAPI specs
     let mut openapi = AuthApiDoc::openapi();
+    openapi.merge(BranchApiDoc::openapi());
     openapi.merge(CategoryApiDoc::openapi());
     openapi.merge(CustomerApiDoc::openapi());
     openapi.merge(SupplierApiDoc::openapi());
