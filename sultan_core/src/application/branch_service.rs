@@ -186,6 +186,7 @@ mod tests {
             *self.get_all_fn.lock().unwrap() = Some(Box::new(f));
         }
 
+        #[allow(dead_code)]
         fn expect_set_all_is_main_false<F>(&mut self, f: F)
         where
             F: Fn(Option<i64>) -> DomainResult<()> + Send + 'static,
