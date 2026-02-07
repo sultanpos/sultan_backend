@@ -12,7 +12,9 @@ pub struct PermissionCreateRequest {
     #[schema(example = "1234567890", value_type = Option<String>)]
     #[serde(default, deserialize_with = "option_string_to_i64")]
     pub branch_id: Option<i64>,
+    #[serde(default)]
     pub resource: i32,
+    #[serde(default)]
     pub action: i32,
 }
 
@@ -47,6 +49,7 @@ pub struct UserCreateRequest {
     pub pin: Option<String>,
     pub address: Option<String>,
     pub phone: Option<String>,
+    #[serde(default)]
     pub permissions: Vec<PermissionCreateRequest>,
 }
 
