@@ -23,10 +23,12 @@
 
 use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
+use sea_orm::TransactionTrait;
 
 use crate::domain::Context;
 use crate::domain::DomainResult;
 use crate::domain::model::permission::{action, resource};
+use crate::domain::model::product::ProductFullCreate;
 use crate::domain::model::product::{
     Product, ProductCreate, ProductUpdate, ProductVariant, ProductVariantCreate,
     ProductVariantUpdate,
@@ -58,12 +60,8 @@ pub trait ProductServiceTrait: Send + Sync {
     ///
     /// - `Unauthorized` if the user lacks `product:create` permission
     /// - `DatabaseError` if the database operation fails
-    async fn create_product(
-        &self,
-        ctx: &Context,
-        product: &ProductCreate,
-        variants: &[ProductVariantCreate],
-    ) -> DomainResult<i64>;
+    async fn create_product(&self, ctx: &Context, product: &ProductFullCreate)
+    -> DomainResult<i64>;
 
     /// Updates an existing product.
     ///
@@ -242,28 +240,35 @@ impl<R: ProductRepository, I: IdGenerator> ProductServiceTrait for ProductServic
     async fn create_product(
         &self,
         ctx: &Context,
-        product: &ProductCreate,
-        variants: &[ProductVariantCreate],
+        productCreate: &ProductFullCreate,
     ) -> DomainResult<i64> {
         ctx.require_access(None, resource::PRODUCT, action::CREATE)?;
 
         let repo_ctx = RepoCtx {
             ctx: ctx.clone(),
-            db: self.db.clone(),
+            db: self.db.begin().await?,
         };
 
         let id = self.id_generator.generate()?;
         self.repository
-            .create_product(&repo_ctx, id, product)
+            .create_product(&repo_ctx, id, &productCreate.product)
             .await?;
 
         // Insert all variants
-        for variant in variants {
+        for variant in &productCreate.variants {
             let variant_id = self.id_generator.generate()?;
             self.repository
-                .create_variant(&repo_ctx, variant_id, variant)
+                .create_variant(&repo_ctx, variant_id, &variant.variant)
                 .await?;
+
+            for stock in &variant.stocks {
+                self.repository
+                    .create_stock(&repo_ctx, variant_id, stock)
+                    .await?;
+            }
         }
+
+        repo_ctx.db.commit().await?;
 
         Ok(id)
     }
