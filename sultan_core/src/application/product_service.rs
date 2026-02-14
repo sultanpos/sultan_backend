@@ -333,7 +333,7 @@ impl<R: ProductRepository, S: StockRepository, P: SellPriceRepository, I: IdGene
 
         let repo_ctx = RepoCtx {
             ctx: ctx.clone(),
-            db: self.db.clone(),
+            db: self.db.begin().await?,
         };
 
         // Delete the product first
@@ -344,6 +344,7 @@ impl<R: ProductRepository, S: StockRepository, P: SellPriceRepository, I: IdGene
             .delete_variants_by_product_id(&repo_ctx, id)
             .await?;
 
+        repo_ctx.db.commit().await?;
         Ok(())
     }
 
@@ -936,6 +937,13 @@ mod tests {
             _id: i64,
         ) -> DomainResult<()> {
             panic!("delete_discount not mocked")
+        }
+        async fn delete_by_product_variant_ids(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            _product_variant_ids: &[i64],
+        ) -> DomainResult<()> {
+            panic!("delete_by_product_variant_ids not mocked")
         }
         async fn delete_discounts_by_sell_price_id(
             &self,

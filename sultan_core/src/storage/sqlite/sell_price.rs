@@ -325,7 +325,7 @@ impl SellPriceRepository for SqliteSellPriceRepository {
         ctx: &RepoCtx<impl ConnectionTrait>,
         product_variant_ids: &[i64],
     ) -> DomainResult<()> {
-        use sea_orm::sea_query::Expr;
+        use sea_orm::{QuerySelect, QueryTrait, sea_query::Expr};
 
         if product_variant_ids.is_empty() {
             return Ok(());
@@ -335,29 +335,26 @@ impl SellPriceRepository for SqliteSellPriceRepository {
             .format("%Y-%m-%dT%H:%M:%S%.fZ")
             .to_string();
 
-        // Find all sell_price IDs for the given product variant IDs (before soft-deleting them)
-        let prices = SellPriceEntity::find()
+        // Build subquery to get sell_price IDs for the given product variant IDs
+        let subquery = SellPriceEntity::find()
+            .select_only()
+            .column(SellPriceColumn::Id)
             .filter(SellPriceColumn::ProductVariantId.is_in(product_variant_ids.to_vec()))
             .filter(SellPriceColumn::IsDeleted.eq(false))
-            .all(&ctx.db)
+            .into_query();
+
+        // Soft-delete all discounts associated with those sell prices using subquery
+        SellDiscountEntity::update_many()
+            .filter(SellDiscountColumn::SellPriceId.in_subquery(subquery))
+            .filter(SellDiscountColumn::IsDeleted.eq(false))
+            .col_expr(SellDiscountColumn::IsDeleted, Expr::value(true))
+            .col_expr(
+                SellDiscountColumn::DeletedAt,
+                Expr::value(Some(now.clone())),
+            )
+            .col_expr(SellDiscountColumn::UpdatedAt, Expr::value(now.clone()))
+            .exec(&ctx.db)
             .await?;
-
-        let price_ids: Vec<i64> = prices.iter().map(|p| p.id).collect();
-
-        // Soft-delete all discounts associated with those sell prices
-        if !price_ids.is_empty() {
-            SellDiscountEntity::update_many()
-                .filter(SellDiscountColumn::SellPriceId.is_in(price_ids))
-                .filter(SellDiscountColumn::IsDeleted.eq(false))
-                .col_expr(SellDiscountColumn::IsDeleted, Expr::value(true))
-                .col_expr(
-                    SellDiscountColumn::DeletedAt,
-                    Expr::value(Some(now.clone())),
-                )
-                .col_expr(SellDiscountColumn::UpdatedAt, Expr::value(now.clone()))
-                .exec(&ctx.db)
-                .await?;
-        }
 
         // Soft-delete all sell prices for the given product variant IDs
         SellPriceEntity::update_many()
