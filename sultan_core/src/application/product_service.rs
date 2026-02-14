@@ -336,12 +336,21 @@ impl<R: ProductRepository, S: StockRepository, P: SellPriceRepository, I: IdGene
             db: self.db.begin().await?,
         };
 
+        let variant_ids = self
+            .repository
+            .get_variant_ids_by_product_id(&repo_ctx, id)
+            .await?;
+
         // Delete the product first
         self.repository.delete_product(&repo_ctx, id).await?;
 
         // Then delete all variants
         self.repository
             .delete_variants_by_product_id(&repo_ctx, id)
+            .await?;
+
+        self.sell_price_repository
+            .delete_by_product_variant_ids(&repo_ctx, &variant_ids)
             .await?;
 
         repo_ctx.db.commit().await?;
