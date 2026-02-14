@@ -34,6 +34,8 @@ where
     stock_test_update_not_found(&ctx_factory().await, repo).await;
     stock_test_delete(&ctx_factory().await, repo).await;
     stock_test_delete_not_found(&ctx_factory().await, repo).await;
+    stock_test_delete_by_product_variant_ids(&ctx_factory().await, repo).await;
+    stock_test_delete_by_product_variant_ids_empty(&ctx_factory().await, repo).await;
 }
 
 /// Creates a test branch and product_variant in the database.
@@ -371,4 +373,104 @@ pub async fn stock_test_delete_not_found<S: StockRepository>(
     let non_existent_id = super::generate_test_id().await;
     let result = repo.delete(ctx, non_existent_id).await;
     assert!(result.is_err());
+}
+
+/// Tests that `delete_by_product_variant_ids` deletes stocks for given variant IDs.
+pub async fn stock_test_delete_by_product_variant_ids<S: StockRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
+    let (branch_id, variant_id_1) = create_test_branch_and_variant(ctx).await;
+    let variant_id_2 = super::generate_test_id().await;
+    let variant_id_other = super::generate_test_id().await;
+
+    // Create product_variants for variant_id_2 and variant_id_other
+    let product_id = super::generate_test_id().await;
+    ctx.db
+        .execute_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Sqlite,
+            "INSERT INTO products (id, name, product_type, sellable, buyable) VALUES (?, 'Test Product', 'product', 1, 1)",
+            vec![product_id.into()],
+        ))
+        .await
+        .expect("Failed to insert test product");
+
+    for variant_id in [variant_id_2, variant_id_other] {
+        ctx.db
+            .execute_raw(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Sqlite,
+                "INSERT INTO product_variants (id, product_id, name) VALUES (?, ?, 'Test Variant')",
+                vec![variant_id.into(), product_id.into()],
+            ))
+            .await
+            .expect("Failed to insert test product variant");
+    }
+
+    // Create stocks for variant 1 and 2
+    for variant_id in [variant_id_1, variant_id_2] {
+        let id = super::generate_test_id().await;
+        let stock = StockCreate {
+            branch_id,
+            product_variant_id: variant_id,
+            quantity: 50,
+            min_stock: None,
+            max_stock: None,
+            last_buy_price: None,
+            metadata: None,
+        };
+        repo.create(ctx, id, &stock)
+            .await
+            .expect("Failed to create stock");
+    }
+
+    // Create a stock for a different variant (should not be affected)
+    let other_id = super::generate_test_id().await;
+    let other_stock = StockCreate {
+        branch_id,
+        product_variant_id: variant_id_other,
+        quantity: 100,
+        min_stock: None,
+        max_stock: None,
+        last_buy_price: None,
+        metadata: None,
+    };
+    repo.create(ctx, other_id, &other_stock)
+        .await
+        .expect("Failed to create other stock");
+
+    // Delete by variant IDs
+    repo.delete_by_product_variant_ids(ctx, &[variant_id_1, variant_id_2])
+        .await
+        .expect("Failed to delete by product variant ids");
+
+    // Stocks for variant 1 and 2 should be gone
+    let stock_1 = repo
+        .get_by_branch_and_variant(ctx, branch_id, variant_id_1)
+        .await
+        .expect("Failed to get stock");
+    assert!(stock_1.is_none());
+
+    let stock_2 = repo
+        .get_by_branch_and_variant(ctx, branch_id, variant_id_2)
+        .await
+        .expect("Failed to get stock");
+    assert!(stock_2.is_none());
+
+    // Stock for other variant should still exist
+    let stock_other = repo
+        .get_by_branch_and_variant(ctx, branch_id, variant_id_other)
+        .await
+        .expect("Failed to get stock");
+    assert!(stock_other.is_some());
+}
+
+/// Tests that `delete_by_product_variant_ids` with an empty slice is a no-op.
+pub async fn stock_test_delete_by_product_variant_ids_empty<S: StockRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
+    // Should not error on empty slice
+    repo.delete_by_product_variant_ids(ctx, &[])
+        .await
+        .expect("Failed to delete by empty product variant ids");
 }

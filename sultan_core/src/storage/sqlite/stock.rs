@@ -167,4 +167,22 @@ impl StockRepository for SqliteStockRepository {
 
         Ok(())
     }
+
+    async fn delete_by_product_variant_ids(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        variant_ids: &[i64],
+    ) -> DomainResult<()> {
+        if variant_ids.is_empty() {
+            return Ok(());
+        }
+
+        // Hard delete all stock records for the given product variant IDs
+        StockEntity::delete_many()
+            .filter(StockColumn::ProductVariantId.is_in(variant_ids.to_vec()))
+            .exec(&ctx.db)
+            .await?;
+
+        Ok(())
+    }
 }

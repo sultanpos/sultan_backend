@@ -353,6 +353,10 @@ impl<R: ProductRepository, S: StockRepository, P: SellPriceRepository, I: IdGene
             .delete_by_product_variant_ids(&repo_ctx, &variant_ids)
             .await?;
 
+        self.stock_repository
+            .delete_by_product_variant_ids(&repo_ctx, &variant_ids)
+            .await?;
+
         repo_ctx.db.commit().await?;
         Ok(())
     }
@@ -890,6 +894,13 @@ mod tests {
         }
         async fn delete(&self, _ctx: &RepoCtx<impl ConnectionTrait>, _id: i64) -> DomainResult<()> {
             panic!("delete not mocked")
+        }
+        async fn delete_by_product_variant_ids(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            _variant_ids: &[i64],
+        ) -> DomainResult<()> {
+            Ok(())
         }
     }
 
