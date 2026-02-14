@@ -39,6 +39,11 @@ where
     sell_discount_test_get_deleted(&ctx_factory().await, repo).await;
     sell_discount_test_partial_update(&ctx_factory().await, repo).await;
     sell_discount_test_delete_by_sell_price_id(&ctx_factory().await, repo).await;
+
+    // Cross-cutting tests
+    sell_price_test_delete_by_product_variant_ids(&ctx_factory().await, repo).await;
+    sell_price_test_delete_by_product_variant_ids_empty(&ctx_factory().await, repo).await;
+    sell_price_test_delete_by_product_variant_ids_with_discounts(&ctx_factory().await, repo).await;
 }
 
 /// Creates a test product and product_variant in the database.
@@ -466,6 +471,150 @@ pub async fn sell_discount_test_partial_update<P: SellPriceRepository>(
     // Other fields should remain unchanged
     assert_eq!(fetched.discount_formula, Some("-10%".to_string()));
     assert_eq!(fetched.customer_level, Some(2));
+}
+
+/// Tests that `delete_by_product_variant_ids` soft-deletes sell prices for given variant IDs.
+pub async fn sell_price_test_delete_by_product_variant_ids<P: SellPriceRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &P,
+) {
+    let variant_id_1 = create_test_product_variant(ctx).await;
+    let variant_id_2 = create_test_product_variant(ctx).await;
+    let variant_id_other = create_test_product_variant(ctx).await;
+
+    // Create prices for variant 1 and 2
+    for variant_id in [variant_id_1, variant_id_2] {
+        let id = super::generate_test_id().await;
+        let uom_id = super::generate_test_id().await;
+        let price = SellPriceCreate {
+            branch_id: None,
+            product_variant_id: variant_id,
+            uom_id,
+            quantity: 1,
+            price: 10000,
+            metadata: None,
+        };
+        repo.create(ctx, id, &price)
+            .await
+            .expect("Failed to create sell price");
+    }
+
+    // Create a price for a different variant (should not be affected)
+    let other_id = super::generate_test_id().await;
+    let uom_id = super::generate_test_id().await;
+    let other_price = SellPriceCreate {
+        branch_id: None,
+        product_variant_id: variant_id_other,
+        uom_id,
+        quantity: 1,
+        price: 20000,
+        metadata: None,
+    };
+    repo.create(ctx, other_id, &other_price)
+        .await
+        .expect("Failed to create other sell price");
+
+    // Delete by variant IDs
+    repo.delete_by_product_variant_ids(ctx, &[variant_id_1, variant_id_2])
+        .await
+        .expect("Failed to delete by product variant ids");
+
+    // Prices for variant 1 and 2 should be gone
+    let prices_1 = repo
+        .get_all_by_product_variant_id(ctx, variant_id_1)
+        .await
+        .expect("Failed to get prices");
+    assert!(prices_1.is_empty());
+
+    let prices_2 = repo
+        .get_all_by_product_variant_id(ctx, variant_id_2)
+        .await
+        .expect("Failed to get prices");
+    assert!(prices_2.is_empty());
+
+    // Price for other variant should still exist
+    let prices_other = repo
+        .get_all_by_product_variant_id(ctx, variant_id_other)
+        .await
+        .expect("Failed to get prices");
+    assert_eq!(prices_other.len(), 1);
+}
+
+/// Tests that `delete_by_product_variant_ids` with an empty slice is a no-op.
+pub async fn sell_price_test_delete_by_product_variant_ids_empty<P: SellPriceRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &P,
+) {
+    // Should not error on empty slice
+    repo.delete_by_product_variant_ids(ctx, &[])
+        .await
+        .expect("Failed to delete by empty product variant ids");
+}
+
+/// Tests that `delete_by_product_variant_ids` also soft-deletes associated discounts.
+pub async fn sell_price_test_delete_by_product_variant_ids_with_discounts<
+    P: SellPriceRepository,
+>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &P,
+) {
+    let variant_id = create_test_product_variant(ctx).await;
+
+    // Create a sell price
+    let price_id = super::generate_test_id().await;
+    let uom_id = super::generate_test_id().await;
+    let price = SellPriceCreate {
+        branch_id: None,
+        product_variant_id: variant_id,
+        uom_id,
+        quantity: 1,
+        price: 10000,
+        metadata: None,
+    };
+    repo.create(ctx, price_id, &price)
+        .await
+        .expect("Failed to create sell price");
+
+    // Create discounts for that price
+    for i in 0..3 {
+        let discount_id = super::generate_test_id().await;
+        let discount = SellDiscountCreate {
+            price_id,
+            quantity: (i + 1) * 5,
+            discount_formula: format!("-{}%", (i + 1) * 5),
+            customer_level: None,
+            metadata: None,
+        };
+        repo.create_discount(ctx, discount_id, &discount)
+            .await
+            .expect("Failed to create discount");
+    }
+
+    // Verify discounts exist
+    let discounts_before = repo
+        .get_all_discount_by_price_id(ctx, price_id)
+        .await
+        .expect("Failed to get discounts");
+    assert_eq!(discounts_before.len(), 3);
+
+    // Delete by variant IDs — should cascade to discounts
+    repo.delete_by_product_variant_ids(ctx, &[variant_id])
+        .await
+        .expect("Failed to delete by product variant ids");
+
+    // Sell price should be gone
+    let prices_after = repo
+        .get_all_by_product_variant_id(ctx, variant_id)
+        .await
+        .expect("Failed to get prices");
+    assert!(prices_after.is_empty());
+
+    // Discounts should also be gone
+    let discounts_after = repo
+        .get_all_discount_by_price_id(ctx, price_id)
+        .await
+        .expect("Failed to get discounts");
+    assert!(discounts_after.is_empty());
 }
 
 pub async fn sell_discount_test_delete_by_sell_price_id<P: SellPriceRepository>(

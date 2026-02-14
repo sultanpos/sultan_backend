@@ -6,10 +6,11 @@ use crate::{
         error::Error,
         model::{
             Update,
+            category::CategoryCreate,
             product::{ProductCreate, ProductUpdate, ProductVariantCreate, ProductVariantUpdate},
         },
     },
-    storage::{ProductRepository, RepoCtx},
+    storage::{CategoryRepository, ProductRepository, RepoCtx},
 };
 
 /// Creates a test product with default values.
@@ -102,6 +103,16 @@ where
     product_test_get_variant_by_product_id_product_not_found(&ctx_factory().await, repo).await;
     product_test_get_variant_by_id_when_product_deleted(&ctx_factory().await, repo).await;
     product_test_get_variant_by_barcode_when_product_deleted(&ctx_factory().await, repo).await;
+
+    // Variant ID listing tests
+    product_test_get_variant_ids_by_product_id_success(&ctx_factory().await, repo).await;
+    product_test_get_variant_ids_by_product_id_empty(&ctx_factory().await, repo).await;
+    product_test_get_variant_ids_by_product_id_excludes_deleted(&ctx_factory().await, repo).await;
+
+    // Product category tests
+    product_test_add_product_category_success(&ctx_factory().await, repo).await;
+    product_test_add_product_category_empty_array(&ctx_factory().await, repo).await;
+    product_test_add_product_category_duplicate(&ctx_factory().await, repo).await;
 }
 
 // =============================================================================
@@ -1662,4 +1673,239 @@ pub async fn product_test_get_variant_by_barcode_when_product_deleted<R: Product
         .expect("Failed to get variant");
 
     assert!(result.is_none());
+}
+
+// =============================================================================
+// Get Variant IDs by Product ID Tests
+// =============================================================================
+
+/// Test: Get variant IDs returns correct IDs for multiple variants
+pub async fn product_test_get_variant_ids_by_product_id_success<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+
+    let mut created_ids = Vec::new();
+    for i in 0..3 {
+        let variant_id = super::generate_test_id().await;
+        created_ids.push(variant_id);
+        let variant = ProductVariantCreate {
+            product_id,
+            barcode: Some(format!("IDS_BC_{}", i)),
+            name: Some(format!("Variant {}", i)),
+            metadata: None,
+        };
+        repo.create_variant(ctx, variant_id, &variant)
+            .await
+            .expect("Failed to create variant");
+    }
+
+    let ids = repo
+        .get_variant_ids_by_product_id(ctx, product_id)
+        .await
+        .expect("Failed to get variant ids");
+
+    assert_eq!(ids.len(), 3);
+    for id in &created_ids {
+        assert!(ids.contains(id));
+    }
+}
+
+/// Test: Get variant IDs returns empty list when no variants exist
+pub async fn product_test_get_variant_ids_by_product_id_empty<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+
+    let ids = repo
+        .get_variant_ids_by_product_id(ctx, product_id)
+        .await
+        .expect("Failed to get variant ids");
+
+    assert!(ids.is_empty());
+}
+
+/// Test: Get variant IDs excludes soft-deleted variants
+pub async fn product_test_get_variant_ids_by_product_id_excludes_deleted<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+
+    // Create 3 variants
+    let mut variant_ids = Vec::new();
+    for i in 0..3 {
+        let variant_id = super::generate_test_id().await;
+        variant_ids.push(variant_id);
+        let variant = ProductVariantCreate {
+            product_id,
+            barcode: Some(format!("DEL_BC_{}", i)),
+            name: Some(format!("Variant {}", i)),
+            metadata: None,
+        };
+        repo.create_variant(ctx, variant_id, &variant)
+            .await
+            .expect("Failed to create variant");
+    }
+
+    // Delete the first variant
+    repo.delete_variant(ctx, variant_ids[0])
+        .await
+        .expect("Failed to delete variant");
+
+    let ids = repo
+        .get_variant_ids_by_product_id(ctx, product_id)
+        .await
+        .expect("Failed to get variant ids");
+
+    assert_eq!(ids.len(), 2);
+    assert!(!ids.contains(&variant_ids[0]));
+    assert!(ids.contains(&variant_ids[1]));
+    assert!(ids.contains(&variant_ids[2]));
+}
+
+// =============================================================================
+// Product Category Tests
+// =============================================================================
+
+/// Test: Add product categories successfully
+pub async fn product_test_add_product_category_success<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    // First, create the categories that we'll link
+    use crate::storage::sqlite::SqliteCategoryRepository;
+    let category_repo = SqliteCategoryRepository::new();
+
+    for category_id in 1..=3 {
+        let category = CategoryCreate {
+            parent_id: None,
+            name: format!("Category {}", category_id),
+            description: None,
+        };
+        category_repo
+            .create(ctx, category_id, &category)
+            .await
+            .expect("Failed to create category");
+    }
+
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+
+    // Add categories
+    let category_ids = vec![1, 2, 3];
+    repo.add_product_category(ctx, product_id, &category_ids)
+        .await
+        .expect("Failed to add product categories");
+
+    // Verify categories were added
+    let categories = repo
+        .get_product_category(ctx, product_id)
+        .await
+        .expect("Failed to get product categories");
+
+    assert_eq!(categories.len(), 3);
+    assert!(categories.contains(&1));
+    assert!(categories.contains(&2));
+    assert!(categories.contains(&3));
+}
+
+/// Test: Add product categories with empty array is a no-op
+pub async fn product_test_add_product_category_empty_array<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+
+    // Add empty array
+    repo.add_product_category(ctx, product_id, &[])
+        .await
+        .expect("Failed to add empty product categories");
+
+    // Verify no categories were added
+    let categories = repo
+        .get_product_category(ctx, product_id)
+        .await
+        .expect("Failed to get product categories");
+
+    assert!(categories.is_empty());
+}
+
+/// Test: Add product categories with duplicates handles gracefully
+pub async fn product_test_add_product_category_duplicate<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    // First, create the categories that we'll link
+    use crate::storage::sqlite::SqliteCategoryRepository;
+    let category_repo = SqliteCategoryRepository::new();
+
+    for category_id in 1..=4 {
+        let category = CategoryCreate {
+            parent_id: None,
+            name: format!("Category {}", category_id),
+            description: None,
+        };
+        category_repo
+            .create(ctx, category_id, &category)
+            .await
+            .expect("Failed to create category");
+    }
+
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+
+    // Add categories first time
+    let category_ids = vec![1, 2, 3];
+    repo.add_product_category(ctx, product_id, &category_ids)
+        .await
+        .expect("Failed to add product categories");
+
+    // Add some of the same categories again
+    let duplicate_ids = vec![2, 3, 4];
+    repo.add_product_category(ctx, product_id, &duplicate_ids)
+        .await
+        .expect("Failed to add duplicate product categories");
+
+    // Verify we have 4 unique categories (1, 2, 3, 4)
+    let categories = repo
+        .get_product_category(ctx, product_id)
+        .await
+        .expect("Failed to get product categories");
+
+    assert_eq!(categories.len(), 4);
+    assert!(categories.contains(&1));
+    assert!(categories.contains(&2));
+    assert!(categories.contains(&3));
+    assert!(categories.contains(&4));
 }

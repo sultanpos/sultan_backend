@@ -320,6 +320,55 @@ impl SellPriceRepository for SqliteSellPriceRepository {
         Ok(())
     }
 
+    async fn delete_by_product_variant_ids(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        product_variant_ids: &[i64],
+    ) -> DomainResult<()> {
+        use sea_orm::{QuerySelect, QueryTrait, sea_query::Expr};
+
+        if product_variant_ids.is_empty() {
+            return Ok(());
+        }
+
+        let now = chrono::Utc::now()
+            .format("%Y-%m-%dT%H:%M:%S%.fZ")
+            .to_string();
+
+        // Build subquery to get sell_price IDs for the given product variant IDs
+        let subquery = SellPriceEntity::find()
+            .select_only()
+            .column(SellPriceColumn::Id)
+            .filter(SellPriceColumn::ProductVariantId.is_in(product_variant_ids.to_vec()))
+            .filter(SellPriceColumn::IsDeleted.eq(false))
+            .into_query();
+
+        // Soft-delete all discounts associated with those sell prices using subquery
+        SellDiscountEntity::update_many()
+            .filter(SellDiscountColumn::SellPriceId.in_subquery(subquery))
+            .filter(SellDiscountColumn::IsDeleted.eq(false))
+            .col_expr(SellDiscountColumn::IsDeleted, Expr::value(true))
+            .col_expr(
+                SellDiscountColumn::DeletedAt,
+                Expr::value(Some(now.clone())),
+            )
+            .col_expr(SellDiscountColumn::UpdatedAt, Expr::value(now.clone()))
+            .exec(&ctx.db)
+            .await?;
+
+        // Soft-delete all sell prices for the given product variant IDs
+        SellPriceEntity::update_many()
+            .filter(SellPriceColumn::ProductVariantId.is_in(product_variant_ids.to_vec()))
+            .filter(SellPriceColumn::IsDeleted.eq(false))
+            .col_expr(SellPriceColumn::IsDeleted, Expr::value(true))
+            .col_expr(SellPriceColumn::DeletedAt, Expr::value(Some(now.clone())))
+            .col_expr(SellPriceColumn::UpdatedAt, Expr::value(now))
+            .exec(&ctx.db)
+            .await?;
+
+        Ok(())
+    }
+
     async fn delete_discounts_by_sell_price_id(
         &self,
         ctx: &RepoCtx<impl ConnectionTrait>,

@@ -82,3 +82,9 @@ pub use product_category::ActiveModel as ProductCategoryActiveModel;
 pub use product_category::Column as ProductCategoryColumn;
 pub use product_category::Entity as ProductCategoryEntity;
 pub use product_category::Model as ProductCategoryModel;
+
+pub mod stock;
+pub use stock::ActiveModel as StockActiveModel;
+pub use stock::Column as StockColumn;
+pub use stock::Entity as StockEntity;
+pub use stock::Model as StockModel;

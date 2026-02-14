@@ -1,6 +1,11 @@
 use chrono::Utc;
 use serde_json::Value;
 
+use crate::domain::model::{
+    sell_price::{SellDiscountCreate, SellPriceCreate},
+    stock::StockCreate,
+};
+
 use super::Update;
 
 #[derive(Debug, Clone)]
@@ -111,4 +116,24 @@ pub struct ProductFilter {
     pub name: Option<String>,
     pub product_type: Option<String>,
     pub category_id: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SellPriceFullCreate {
+    pub sell_price: SellPriceCreate,
+    pub discounts: Vec<SellDiscountCreate>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProductVariantFullCreate {
+    pub variant: ProductVariantCreate,
+    pub sell_prices: Vec<SellPriceFullCreate>,
+    pub stocks: Vec<StockCreate>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProductFullCreate {
+    pub product: ProductCreate,
+    pub variants: Vec<ProductVariantFullCreate>,
+    pub categories: Vec<i64>,
 }
