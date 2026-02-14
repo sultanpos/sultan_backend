@@ -123,6 +123,30 @@ pub trait SellPriceRepository: Send + Sync {
     async fn delete(&self, ctx: &super::RepoCtx<impl ConnectionTrait>, id: i64)
     -> DomainResult<()>;
 
+    /// Soft-deletes all sell prices (and their associated discounts) for the given product variant IDs.
+    ///
+    /// This method marks all matching sell prices and their discounts as deleted instead of
+    /// physically removing them. The `is_deleted` flag is set to true, and `deleted_at` is
+    /// set to the current timestamp for each affected record.
+    ///
+    /// This is typically used when deleting a product and its variants, to cascade the
+    /// soft-delete to all related pricing data.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - Repository context with database connection
+    /// * `product_variant_ids` - Slice of product variant IDs whose sell prices (and discounts) to delete
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - All matching sell prices and discounts were soft-deleted (including when none matched)
+    /// * `Err(Error)` - Database error
+    async fn delete_by_product_variant_ids(
+        &self,
+        ctx: &super::RepoCtx<impl ConnectionTrait>,
+        product_variant_ids: &[i64],
+    ) -> DomainResult<()>;
+
     /// Lists all non-deleted sell prices for a product variant.
     ///
     /// # Arguments

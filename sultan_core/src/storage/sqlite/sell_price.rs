@@ -320,6 +320,58 @@ impl SellPriceRepository for SqliteSellPriceRepository {
         Ok(())
     }
 
+    async fn delete_by_product_variant_ids(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        product_variant_ids: &[i64],
+    ) -> DomainResult<()> {
+        use sea_orm::sea_query::Expr;
+
+        if product_variant_ids.is_empty() {
+            return Ok(());
+        }
+
+        let now = chrono::Utc::now()
+            .format("%Y-%m-%dT%H:%M:%S%.fZ")
+            .to_string();
+
+        // Find all sell_price IDs for the given product variant IDs (before soft-deleting them)
+        let prices = SellPriceEntity::find()
+            .filter(SellPriceColumn::ProductVariantId.is_in(product_variant_ids.to_vec()))
+            .filter(SellPriceColumn::IsDeleted.eq(false))
+            .all(&ctx.db)
+            .await?;
+
+        let price_ids: Vec<i64> = prices.iter().map(|p| p.id).collect();
+
+        // Soft-delete all discounts associated with those sell prices
+        if !price_ids.is_empty() {
+            SellDiscountEntity::update_many()
+                .filter(SellDiscountColumn::SellPriceId.is_in(price_ids))
+                .filter(SellDiscountColumn::IsDeleted.eq(false))
+                .col_expr(SellDiscountColumn::IsDeleted, Expr::value(true))
+                .col_expr(
+                    SellDiscountColumn::DeletedAt,
+                    Expr::value(Some(now.clone())),
+                )
+                .col_expr(SellDiscountColumn::UpdatedAt, Expr::value(now.clone()))
+                .exec(&ctx.db)
+                .await?;
+        }
+
+        // Soft-delete all sell prices for the given product variant IDs
+        SellPriceEntity::update_many()
+            .filter(SellPriceColumn::ProductVariantId.is_in(product_variant_ids.to_vec()))
+            .filter(SellPriceColumn::IsDeleted.eq(false))
+            .col_expr(SellPriceColumn::IsDeleted, Expr::value(true))
+            .col_expr(SellPriceColumn::DeletedAt, Expr::value(Some(now.clone())))
+            .col_expr(SellPriceColumn::UpdatedAt, Expr::value(now))
+            .exec(&ctx.db)
+            .await?;
+
+        Ok(())
+    }
+
     async fn delete_discounts_by_sell_price_id(
         &self,
         ctx: &RepoCtx<impl ConnectionTrait>,
