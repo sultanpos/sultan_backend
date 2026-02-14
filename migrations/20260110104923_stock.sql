@@ -1,9 +1,14 @@
 -- Add migration script here
 CREATE TABLE stocks (
     id INTEGER PRIMARY KEY,
+    created_at TEXT DEFAULT(
+        strftime ('%Y-%m-%dT%H:%M:%fZ', 'now')
+    ),
     updated_at TEXT DEFAULT(
         strftime ('%Y-%m-%dT%H:%M:%fZ', 'now')
     ),
+    deleted_at TEXT,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
     branch_id INTEGER NOT NULL,
     product_variant_id INTEGER NOT NULL,
     quantity INTEGER NOT NULL,

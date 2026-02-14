@@ -143,7 +143,7 @@ pub trait StockRepository: Send + Sync {
 
     /// Deletes a stock record by its ID.
     ///
-    /// This performs a hard delete since stock records do not use soft delete.
+    /// This performs a soft delete by setting `is_deleted = true` and `deleted_at`.
     ///
     /// # Arguments
     ///
@@ -153,14 +153,14 @@ pub trait StockRepository: Send + Sync {
     /// # Returns
     ///
     /// * `Ok(())` - Stock deleted successfully
-    /// * `Err(Error::NotFound)` - Stock not found
+    /// * `Err(Error::NotFound)` - Stock not found or already deleted
     /// * `Err(Error)` - Database error
     async fn delete(&self, ctx: &super::RepoCtx<impl ConnectionTrait>, id: i64)
     -> DomainResult<()>;
 
     /// Deletes all stock records for the given product variant IDs.
     ///
-    /// This performs a hard delete on all stock records whose `product_variant_id`
+    /// This performs a soft delete on all stock records whose `product_variant_id`
     /// matches any ID in the provided array. This is typically used when product
     /// variants are being deleted and their associated stocks need to be cleaned up.
     ///
@@ -177,7 +177,7 @@ pub trait StockRepository: Send + Sync {
     /// # Notes
     ///
     /// - If the array is empty, this is a no-op and returns `Ok(())`
-    /// - This is a hard delete, not a soft delete
+    /// - This is a soft delete, setting `is_deleted = true` and `deleted_at`
     /// - No error is returned if no stock records exist for the given variant IDs
     async fn delete_by_product_variant_ids(
         &self,

@@ -1,5 +1,7 @@
 use async_trait::async_trait;
-use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set, prelude::Expr,
+};
 
 use crate::{
     domain::{
@@ -20,7 +22,7 @@ use crate::{
 ///
 /// # Notes
 ///
-/// The stocks table does not use soft delete — records are hard-deleted.
+/// The stocks table uses soft delete — records are marked as deleted with `is_deleted` and `deleted_at`.
 /// There is a unique constraint on `(branch_id, product_variant_id)`.
 ///
 /// # Example
@@ -77,7 +79,10 @@ impl StockRepository for SqliteStockRepository {
         ctx: &RepoCtx<impl ConnectionTrait>,
         id: i64,
     ) -> DomainResult<Option<Stock>> {
-        let stock = StockEntity::find_by_id(id).one(&ctx.db).await?;
+        let stock = StockEntity::find_by_id(id)
+            .filter(StockColumn::IsDeleted.eq(false))
+            .one(&ctx.db)
+            .await?;
 
         Ok(stock.map(|s| s.to_domain()))
     }
@@ -91,6 +96,7 @@ impl StockRepository for SqliteStockRepository {
         let stock = StockEntity::find()
             .filter(StockColumn::BranchId.eq(branch_id))
             .filter(StockColumn::ProductVariantId.eq(product_variant_id))
+            .filter(StockColumn::IsDeleted.eq(false))
             .one(&ctx.db)
             .await?;
 
@@ -108,7 +114,8 @@ impl StockRepository for SqliteStockRepository {
 
         let mut update_query: UpdateMany<StockEntity> = StockEntity::update_many()
             .filter(StockColumn::BranchId.eq(branch_id))
-            .filter(StockColumn::ProductVariantId.eq(product_variant_id));
+            .filter(StockColumn::ProductVariantId.eq(product_variant_id))
+            .filter(StockColumn::IsDeleted.eq(false));
 
         if stock.min_stock.should_update() {
             update_query = update_query.col_expr(
@@ -159,7 +166,20 @@ impl StockRepository for SqliteStockRepository {
     }
 
     async fn delete(&self, ctx: &RepoCtx<impl ConnectionTrait>, id: i64) -> DomainResult<()> {
-        let result = StockEntity::delete_by_id(id).exec(&ctx.db).await?;
+        let result = StockEntity::update_many()
+            .filter(StockColumn::Id.eq(id))
+            .filter(StockColumn::IsDeleted.eq(false))
+            .col_expr(StockColumn::IsDeleted, Expr::value(true))
+            .col_expr(
+                StockColumn::DeletedAt,
+                Expr::value(Some(
+                    chrono::Utc::now()
+                        .format("%Y-%m-%dT%H:%M:%S%.fZ")
+                        .to_string(),
+                )),
+            )
+            .exec(&ctx.db)
+            .await?;
 
         if result.rows_affected == 0 {
             return Err(Error::NotFound(format!("Stock with id {} not found", id)));
@@ -177,9 +197,19 @@ impl StockRepository for SqliteStockRepository {
             return Ok(());
         }
 
-        // Hard delete all stock records for the given product variant IDs
-        StockEntity::delete_many()
+        // Soft delete all stock records for the given product variant IDs
+        StockEntity::update_many()
             .filter(StockColumn::ProductVariantId.is_in(variant_ids.to_vec()))
+            .filter(StockColumn::IsDeleted.eq(false))
+            .col_expr(StockColumn::IsDeleted, Expr::value(true))
+            .col_expr(
+                StockColumn::DeletedAt,
+                Expr::value(Some(
+                    chrono::Utc::now()
+                        .format("%Y-%m-%dT%H:%M:%S%.fZ")
+                        .to_string(),
+                )),
+            )
             .exec(&ctx.db)
             .await?;
 

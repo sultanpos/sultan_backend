@@ -8,6 +8,8 @@ pub struct Stock {
     pub id: i64,
     pub created_at: chrono::DateTime<Utc>,
     pub updated_at: chrono::DateTime<Utc>,
+    pub deleted_at: Option<chrono::DateTime<Utc>>,
+    pub is_deleted: bool,
     pub branch_id: i64,
     pub product_variant_id: i64,
     pub quantity: i64,

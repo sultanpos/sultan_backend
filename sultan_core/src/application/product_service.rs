@@ -283,15 +283,23 @@ impl<R: ProductRepository, S: StockRepository, P: SellPriceRepository, I: IdGene
                 .await?;
 
             for stock in &variant.stocks {
+                let mut stock_with_variant = stock.clone();
+                stock_with_variant.product_variant_id = variant_id;
                 self.stock_repository
-                    .create(&repo_ctx, self.id_generator.generate()?, stock)
+                    .create(
+                        &repo_ctx,
+                        self.id_generator.generate()?,
+                        &stock_with_variant,
+                    )
                     .await?;
             }
 
             for sell_price in &variant.sell_prices {
                 let price_id = self.id_generator.generate()?;
+                let mut sell_price_with_variant = sell_price.sell_price.clone();
+                sell_price_with_variant.product_variant_id = variant_id;
                 self.sell_price_repository
-                    .create(&repo_ctx, price_id, &sell_price.sell_price)
+                    .create(&repo_ctx, price_id, &sell_price_with_variant)
                     .await?;
                 for discount in &sell_price.discounts {
                     let mut discount_with_price_id = discount.clone();
