@@ -30,10 +30,11 @@ use crate::domain::DomainResult;
 use crate::domain::model::permission::{action, resource};
 use crate::domain::model::product::ProductFullCreate;
 use crate::domain::model::product::{
-    Product, ProductCreate, ProductUpdate, ProductVariant, ProductVariantCreate,
-    ProductVariantUpdate,
+    Product, ProductUpdate, ProductVariant, ProductVariantCreate, ProductVariantUpdate,
 };
 use crate::snowflake::IdGenerator;
+use crate::storage::StockRepository;
+use crate::storage::sell_price_repo::SellPriceRepository;
 use crate::storage::{ProductRepository, RepoCtx};
 
 /// Trait defining the contract for product service operations.
@@ -210,25 +211,41 @@ pub trait ProductServiceTrait: Send + Sync {
 ///
 /// This implementation uses:
 /// - A `ProductRepository` for data persistence
+/// - A `StockRepository` for managing stock data
+/// - A `SellPriceRepository` for managing sell price data
 /// - An `IdGenerator` for generating unique IDs
 /// - A `DatabaseConnection` for SeaORM operations
-pub struct ProductService<R, I> {
+pub struct ProductService<R, S, P, I> {
     repository: R,
+    stock_repository: S,
+    sell_price_repository: P,
     id_generator: I,
     db: DatabaseConnection,
 }
 
-impl<R: ProductRepository, I: IdGenerator> ProductService<R, I> {
+impl<R: ProductRepository, S: StockRepository, P: SellPriceRepository, I: IdGenerator>
+    ProductService<R, S, P, I>
+{
     /// Creates a new ProductService instance.
     ///
     /// # Arguments
     ///
     /// * `repository` - The product repository implementation
+    /// * `stock_repository` - The stock repository implementation
+    /// * `sell_price_repository` - The sell price repository implementation
     /// * `id_generator` - The ID generator for creating unique IDs
     /// * `db` - The database connection for SeaORM operations
-    pub fn new(repository: R, id_generator: I, db: DatabaseConnection) -> Self {
+    pub fn new(
+        repository: R,
+        stock_repository: S,
+        sell_price_repository: P,
+        id_generator: I,
+        db: DatabaseConnection,
+    ) -> Self {
         Self {
             repository,
+            stock_repository,
+            sell_price_repository,
             id_generator,
             db,
         }
@@ -236,11 +253,13 @@ impl<R: ProductRepository, I: IdGenerator> ProductService<R, I> {
 }
 
 #[async_trait]
-impl<R: ProductRepository, I: IdGenerator> ProductServiceTrait for ProductService<R, I> {
+impl<R: ProductRepository, S: StockRepository, P: SellPriceRepository, I: IdGenerator>
+    ProductServiceTrait for ProductService<R, S, P, I>
+{
     async fn create_product(
         &self,
         ctx: &Context,
-        productCreate: &ProductFullCreate,
+        product_create: &ProductFullCreate,
     ) -> DomainResult<i64> {
         ctx.require_access(None, resource::PRODUCT, action::CREATE)?;
 
@@ -251,20 +270,40 @@ impl<R: ProductRepository, I: IdGenerator> ProductServiceTrait for ProductServic
 
         let id = self.id_generator.generate()?;
         self.repository
-            .create_product(&repo_ctx, id, &productCreate.product)
+            .create_product(&repo_ctx, id, &product_create.product)
             .await?;
 
         // Insert all variants
-        for variant in &productCreate.variants {
+        for variant in &product_create.variants {
             let variant_id = self.id_generator.generate()?;
+            let mut variant_with_product = variant.variant.clone();
+            variant_with_product.product_id = id;
             self.repository
-                .create_variant(&repo_ctx, variant_id, &variant.variant)
+                .create_variant(&repo_ctx, variant_id, &variant_with_product)
                 .await?;
 
             for stock in &variant.stocks {
-                self.repository
-                    .create_stock(&repo_ctx, variant_id, stock)
+                self.stock_repository
+                    .create(&repo_ctx, self.id_generator.generate()?, stock)
                     .await?;
+            }
+
+            for sell_price in &variant.sell_prices {
+                let price_id = self.id_generator.generate()?;
+                self.sell_price_repository
+                    .create(&repo_ctx, price_id, &sell_price.sell_price)
+                    .await?;
+                for discount in &sell_price.discounts {
+                    let mut discount_with_price_id = discount.clone();
+                    discount_with_price_id.price_id = price_id;
+                    self.sell_price_repository
+                        .create_discount(
+                            &repo_ctx,
+                            self.id_generator.generate()?,
+                            &discount_with_price_id,
+                        )
+                        .await?;
+                }
             }
         }
 
