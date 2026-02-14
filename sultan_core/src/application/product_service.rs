@@ -529,6 +529,8 @@ mod tests {
             Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<Vec<ProductVariant>> + Send>>>>,
         get_product_category_fn:
             Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<Vec<i64>> + Send>>>>,
+        get_variant_ids_by_product_id_fn:
+            Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<Vec<i64>> + Send>>>>,
     }
 
     impl MockProductRepo {
@@ -546,6 +548,7 @@ mod tests {
                 get_variant_by_id_fn: Arc::new(Mutex::new(None)),
                 get_variant_by_product_id_fn: Arc::new(Mutex::new(None)),
                 get_product_category_fn: Arc::new(Mutex::new(None)),
+                get_variant_ids_by_product_id_fn: Arc::new(Mutex::new(None)),
             }
         }
 
@@ -634,6 +637,13 @@ mod tests {
             F: Fn(i64) -> DomainResult<Vec<i64>> + Send + 'static,
         {
             *self.get_product_category_fn.lock().unwrap() = Some(Box::new(f));
+        }
+
+        fn expect_get_variant_ids_by_product_id<F>(&mut self, f: F)
+        where
+            F: Fn(i64) -> DomainResult<Vec<i64>> + Send + 'static,
+        {
+            *self.get_variant_ids_by_product_id_fn.lock().unwrap() = Some(Box::new(f));
         }
     }
 
@@ -802,9 +812,14 @@ mod tests {
         async fn get_variant_ids_by_product_id(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
-            _product_id: i64,
+            product_id: i64,
         ) -> DomainResult<Vec<i64>> {
-            panic!("get_variant_ids_by_product_id not mocked");
+            let lock = self.get_variant_ids_by_product_id_fn.lock().unwrap();
+            if let Some(f) = lock.as_ref() {
+                f(product_id)
+            } else {
+                panic!("get_variant_ids_by_product_id not mocked");
+            }
         }
     }
 
@@ -856,7 +871,25 @@ mod tests {
 
     // Mock Stock Repository
     #[derive(Clone)]
-    struct MockStockRepo;
+    struct MockStockRepo {
+        delete_by_product_variant_ids_fn:
+            Arc<Mutex<Option<Box<dyn Fn(Vec<i64>) -> DomainResult<()> + Send>>>>,
+    }
+
+    impl MockStockRepo {
+        fn new() -> Self {
+            Self {
+                delete_by_product_variant_ids_fn: Arc::new(Mutex::new(None)),
+            }
+        }
+
+        fn expect_delete_by_product_variant_ids<F>(&mut self, f: F)
+        where
+            F: Fn(Vec<i64>) -> DomainResult<()> + Send + 'static,
+        {
+            *self.delete_by_product_variant_ids_fn.lock().unwrap() = Some(Box::new(f));
+        }
+    }
 
     #[async_trait]
     impl StockRepository for MockStockRepo {
@@ -898,15 +931,38 @@ mod tests {
         async fn delete_by_product_variant_ids(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
-            _variant_ids: &[i64],
+            variant_ids: &[i64],
         ) -> DomainResult<()> {
-            Ok(())
+            let lock = self.delete_by_product_variant_ids_fn.lock().unwrap();
+            if let Some(f) = lock.as_ref() {
+                f(variant_ids.to_vec())
+            } else {
+                Ok(())
+            }
         }
     }
 
     // Mock SellPrice Repository
     #[derive(Clone)]
-    struct MockSellPriceRepo;
+    struct MockSellPriceRepo {
+        delete_by_product_variant_ids_fn:
+            Arc<Mutex<Option<Box<dyn Fn(Vec<i64>) -> DomainResult<()> + Send>>>>,
+    }
+
+    impl MockSellPriceRepo {
+        fn new() -> Self {
+            Self {
+                delete_by_product_variant_ids_fn: Arc::new(Mutex::new(None)),
+            }
+        }
+
+        fn expect_delete_by_product_variant_ids<F>(&mut self, f: F)
+        where
+            F: Fn(Vec<i64>) -> DomainResult<()> + Send + 'static,
+        {
+            *self.delete_by_product_variant_ids_fn.lock().unwrap() = Some(Box::new(f));
+        }
+    }
 
     #[async_trait]
     impl SellPriceRepository for MockSellPriceRepo {
@@ -969,9 +1025,14 @@ mod tests {
         async fn delete_by_product_variant_ids(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
-            _product_variant_ids: &[i64],
+            product_variant_ids: &[i64],
         ) -> DomainResult<()> {
-            panic!("delete_by_product_variant_ids not mocked")
+            let lock = self.delete_by_product_variant_ids_fn.lock().unwrap();
+            if let Some(f) = lock.as_ref() {
+                f(product_variant_ids.to_vec())
+            } else {
+                Ok(())
+            }
         }
         async fn delete_discounts_by_sell_price_id(
             &self,
@@ -1004,8 +1065,8 @@ mod tests {
 
         let id_gen = create_mock_id_gen(1);
         let db = create_test_db().await;
-        let mock_stock_repo = MockStockRepo;
-        let mock_sell_price_repo = MockSellPriceRepo;
+        let mock_stock_repo = MockStockRepo::new();
+        let mock_sell_price_repo = MockSellPriceRepo::new();
 
         let service =
             ProductService::new(mock_repo, mock_stock_repo, mock_sell_price_repo, id_gen, db);
@@ -1037,8 +1098,8 @@ mod tests {
         let mock_repo = MockProductRepo::new();
         let id_gen = create_mock_id_gen(1);
         let db = create_test_db().await;
-        let mock_stock_repo = MockStockRepo;
-        let mock_sell_price_repo = MockSellPriceRepo;
+        let mock_stock_repo = MockStockRepo::new();
+        let mock_sell_price_repo = MockSellPriceRepo::new();
 
         let service =
             ProductService::new(mock_repo, mock_stock_repo, mock_sell_price_repo, id_gen, db);
@@ -1071,8 +1132,8 @@ mod tests {
 
         let id_gen = create_mock_id_gen(1);
         let db = create_test_db().await;
-        let mock_stock_repo = MockStockRepo;
-        let mock_sell_price_repo = MockSellPriceRepo;
+        let mock_stock_repo = MockStockRepo::new();
+        let mock_sell_price_repo = MockSellPriceRepo::new();
 
         let service =
             ProductService::new(mock_repo, mock_stock_repo, mock_sell_price_repo, id_gen, db);
@@ -1101,8 +1162,8 @@ mod tests {
 
         let id_gen = create_mock_id_gen(1);
         let db = create_test_db().await;
-        let mock_stock_repo = MockStockRepo;
-        let mock_sell_price_repo = MockSellPriceRepo;
+        let mock_stock_repo = MockStockRepo::new();
+        let mock_sell_price_repo = MockSellPriceRepo::new();
 
         let service =
             ProductService::new(mock_repo, mock_stock_repo, mock_sell_price_repo, id_gen, db);
@@ -1127,13 +1188,25 @@ mod tests {
     #[tokio::test]
     async fn test_delete_product_success() {
         let mut mock_repo = MockProductRepo::new();
+        // Mock get_variant_ids_by_product_id to return some variant IDs
+        mock_repo.expect_get_variant_ids_by_product_id(|_| Ok(vec![100, 200]));
         mock_repo.expect_delete_product(|_| Ok(()));
         mock_repo.expect_delete_variants_by_product_id(|_| Ok(()));
 
         let id_gen = create_mock_id_gen(1);
         let db = create_test_db().await;
-        let mock_stock_repo = MockStockRepo;
-        let mock_sell_price_repo = MockSellPriceRepo;
+        let mut mock_stock_repo = MockStockRepo::new();
+        let mut mock_sell_price_repo = MockSellPriceRepo::new();
+
+        // Verify that delete_by_product_variant_ids is called with correct variant IDs
+        mock_stock_repo.expect_delete_by_product_variant_ids(move |ids| {
+            assert_eq!(ids, vec![100, 200]);
+            Ok(())
+        });
+        mock_sell_price_repo.expect_delete_by_product_variant_ids(move |ids| {
+            assert_eq!(ids, vec![100, 200]);
+            Ok(())
+        });
 
         let service =
             ProductService::new(mock_repo, mock_stock_repo, mock_sell_price_repo, id_gen, db);
@@ -1151,8 +1224,8 @@ mod tests {
 
         let id_gen = create_mock_id_gen(1);
         let db = create_test_db().await;
-        let mock_stock_repo = MockStockRepo;
-        let mock_sell_price_repo = MockSellPriceRepo;
+        let mock_stock_repo = MockStockRepo::new();
+        let mock_sell_price_repo = MockSellPriceRepo::new();
 
         let service =
             ProductService::new(mock_repo, mock_stock_repo, mock_sell_price_repo, id_gen, db);
@@ -1170,8 +1243,8 @@ mod tests {
 
         let id_gen = create_mock_id_gen(1);
         let db = create_test_db().await;
-        let mock_stock_repo = MockStockRepo;
-        let mock_sell_price_repo = MockSellPriceRepo;
+        let mock_stock_repo = MockStockRepo::new();
+        let mock_sell_price_repo = MockSellPriceRepo::new();
 
         let service =
             ProductService::new(mock_repo, mock_stock_repo, mock_sell_price_repo, id_gen, db);
@@ -1189,8 +1262,8 @@ mod tests {
 
         let id_gen = create_mock_id_gen(1);
         let db = create_test_db().await;
-        let mock_stock_repo = MockStockRepo;
-        let mock_sell_price_repo = MockSellPriceRepo;
+        let mock_stock_repo = MockStockRepo::new();
+        let mock_sell_price_repo = MockSellPriceRepo::new();
 
         let service =
             ProductService::new(mock_repo, mock_stock_repo, mock_sell_price_repo, id_gen, db);
@@ -1214,8 +1287,8 @@ mod tests {
 
         let id_gen = create_mock_id_gen(1);
         let db = create_test_db().await;
-        let mock_stock_repo = MockStockRepo;
-        let mock_sell_price_repo = MockSellPriceRepo;
+        let mock_stock_repo = MockStockRepo::new();
+        let mock_sell_price_repo = MockSellPriceRepo::new();
 
         let service =
             ProductService::new(mock_repo, mock_stock_repo, mock_sell_price_repo, id_gen, db);
@@ -1237,8 +1310,8 @@ mod tests {
 
         let id_gen = create_mock_id_gen(1);
         let db = create_test_db().await;
-        let mock_stock_repo = MockStockRepo;
-        let mock_sell_price_repo = MockSellPriceRepo;
+        let mock_stock_repo = MockStockRepo::new();
+        let mock_sell_price_repo = MockSellPriceRepo::new();
 
         let service =
             ProductService::new(mock_repo, mock_stock_repo, mock_sell_price_repo, id_gen, db);
@@ -1257,8 +1330,8 @@ mod tests {
 
         let id_gen = create_mock_id_gen(1);
         let db = create_test_db().await;
-        let mock_stock_repo = MockStockRepo;
-        let mock_sell_price_repo = MockSellPriceRepo;
+        let mock_stock_repo = MockStockRepo::new();
+        let mock_sell_price_repo = MockSellPriceRepo::new();
 
         let service =
             ProductService::new(mock_repo, mock_stock_repo, mock_sell_price_repo, id_gen, db);
