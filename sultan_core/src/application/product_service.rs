@@ -501,7 +501,7 @@ impl<R: ProductRepository, S: StockRepository, P: SellPriceRepository, I: IdGene
 #[allow(clippy::type_complexity)]
 mod tests {
     use super::*;
-    use crate::application::create_mock_id_gen;
+    use crate::application::{MockIdGen, create_mock_id_gen};
     use crate::domain::Error;
     use crate::domain::model::Update;
     use crate::domain::model::product::ProductCreate;
@@ -909,6 +909,7 @@ mod tests {
     // Mock Stock Repository
     #[derive(Clone)]
     struct MockStockRepo {
+        create_fn: Arc<Mutex<Option<Box<dyn Fn(i64, StockCreate) -> DomainResult<()> + Send>>>>,
         delete_by_product_variant_ids_fn:
             Arc<Mutex<Option<Box<dyn Fn(Vec<i64>) -> DomainResult<()> + Send>>>>,
     }
@@ -916,8 +917,17 @@ mod tests {
     impl MockStockRepo {
         fn new() -> Self {
             Self {
+                create_fn: Arc::new(Mutex::new(None)),
                 delete_by_product_variant_ids_fn: Arc::new(Mutex::new(None)),
             }
+        }
+
+        #[allow(dead_code)]
+        fn expect_create<F>(&mut self, f: F)
+        where
+            F: Fn(i64, StockCreate) -> DomainResult<()> + Send + 'static,
+        {
+            *self.create_fn.lock().unwrap() = Some(Box::new(f));
         }
 
         fn expect_delete_by_product_variant_ids<F>(&mut self, f: F)
@@ -933,10 +943,15 @@ mod tests {
         async fn create(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
-            _id: i64,
-            _stock: &StockCreate,
+            id: i64,
+            stock: &StockCreate,
         ) -> DomainResult<()> {
-            Ok(())
+            let lock = self.create_fn.lock().unwrap();
+            if let Some(f) = lock.as_ref() {
+                f(id, stock.clone())
+            } else {
+                Ok(())
+            }
         }
         async fn get_by_id(
             &self,
@@ -982,6 +997,9 @@ mod tests {
     // Mock SellPrice Repository
     #[derive(Clone)]
     struct MockSellPriceRepo {
+        create_fn: Arc<Mutex<Option<Box<dyn Fn(i64, SellPriceCreate) -> DomainResult<()> + Send>>>>,
+        create_discount_fn:
+            Arc<Mutex<Option<Box<dyn Fn(i64, SellDiscountCreate) -> DomainResult<()> + Send>>>>,
         delete_by_product_variant_ids_fn:
             Arc<Mutex<Option<Box<dyn Fn(Vec<i64>) -> DomainResult<()> + Send>>>>,
     }
@@ -989,8 +1007,26 @@ mod tests {
     impl MockSellPriceRepo {
         fn new() -> Self {
             Self {
+                create_fn: Arc::new(Mutex::new(None)),
+                create_discount_fn: Arc::new(Mutex::new(None)),
                 delete_by_product_variant_ids_fn: Arc::new(Mutex::new(None)),
             }
+        }
+
+        #[allow(dead_code)]
+        fn expect_create<F>(&mut self, f: F)
+        where
+            F: Fn(i64, SellPriceCreate) -> DomainResult<()> + Send + 'static,
+        {
+            *self.create_fn.lock().unwrap() = Some(Box::new(f));
+        }
+
+        #[allow(dead_code)]
+        fn expect_create_discount<F>(&mut self, f: F)
+        where
+            F: Fn(i64, SellDiscountCreate) -> DomainResult<()> + Send + 'static,
+        {
+            *self.create_discount_fn.lock().unwrap() = Some(Box::new(f));
         }
 
         fn expect_delete_by_product_variant_ids<F>(&mut self, f: F)
@@ -1006,10 +1042,15 @@ mod tests {
         async fn create(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
-            _id: i64,
-            _price: &SellPriceCreate,
+            id: i64,
+            price: &SellPriceCreate,
         ) -> DomainResult<()> {
-            Ok(())
+            let lock = self.create_fn.lock().unwrap();
+            if let Some(f) = lock.as_ref() {
+                f(id, price.clone())
+            } else {
+                Ok(())
+            }
         }
         async fn update(
             &self,
@@ -1039,10 +1080,15 @@ mod tests {
         async fn create_discount(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
-            _id: i64,
-            _discount: &SellDiscountCreate,
+            id: i64,
+            discount: &SellDiscountCreate,
         ) -> DomainResult<()> {
-            Ok(())
+            let lock = self.create_discount_fn.lock().unwrap();
+            if let Some(f) = lock.as_ref() {
+                f(id, discount.clone())
+            } else {
+                Ok(())
+            }
         }
         async fn update_discount(
             &self,
@@ -1096,38 +1142,171 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_product_success() {
+        use crate::domain::model::product::{ProductVariantFullCreate, SellPriceFullCreate};
+
         let mut mock_repo = MockProductRepo::new();
-        mock_repo.expect_create_product(|_, _| Ok(()));
-        mock_repo.expect_create_variant(|_, _| Ok(()));
+        let mut mock_stock_repo = MockStockRepo::new();
+        let mut mock_sell_price_repo = MockSellPriceRepo::new();
 
-        let id_gen = create_mock_id_gen(1);
+        // Track calls to verify all methods are invoked
+        let create_product_called = Arc::new(Mutex::new(false));
+        let add_category_called = Arc::new(Mutex::new(false));
+        let create_variant_called = Arc::new(Mutex::new(false));
+        let create_stock_called = Arc::new(Mutex::new(false));
+        let create_price_called = Arc::new(Mutex::new(false));
+        let create_discount_called = Arc::new(Mutex::new(false));
+
+        let create_product_flag = create_product_called.clone();
+        mock_repo.expect_create_product(move |id, product| {
+            *create_product_flag.lock().unwrap() = true;
+            assert_eq!(id, 1);
+            assert_eq!(product.name, "Test Product");
+            Ok(())
+        });
+
+        let add_category_flag = add_category_called.clone();
+        mock_repo.expect_add_product_category(move |product_id, categories| {
+            *add_category_flag.lock().unwrap() = true;
+            assert_eq!(product_id, 1);
+            assert_eq!(categories, vec![10, 20]);
+            Ok(())
+        });
+
+        let create_variant_flag = create_variant_called.clone();
+        mock_repo.expect_create_variant(move |id, variant| {
+            *create_variant_flag.lock().unwrap() = true;
+            assert_eq!(id, 2);
+            assert_eq!(variant.product_id, 1);
+            assert_eq!(variant.barcode, Some("123456".to_string()));
+            Ok(())
+        });
+
+        let create_stock_flag = create_stock_called.clone();
+        mock_stock_repo.expect_create(move |id, stock| {
+            *create_stock_flag.lock().unwrap() = true;
+            assert_eq!(id, 3);
+            assert_eq!(stock.product_variant_id, 2);
+            assert_eq!(stock.branch_id, 1);
+            Ok(())
+        });
+
+        let create_price_flag = create_price_called.clone();
+        mock_sell_price_repo.expect_create(move |id, price| {
+            *create_price_flag.lock().unwrap() = true;
+            assert_eq!(id, 4);
+            assert_eq!(price.product_variant_id, 2);
+            Ok(())
+        });
+
+        let create_discount_flag = create_discount_called.clone();
+        mock_sell_price_repo.expect_create_discount(move |id, discount| {
+            *create_discount_flag.lock().unwrap() = true;
+            assert_eq!(id, 5);
+            assert_eq!(discount.price_id, 4);
+            Ok(())
+        });
+
+        // Create a mock ID generator that returns sequential IDs
+        let mut mock_id_gen = MockIdGen::new();
+        let id_counter = Arc::new(Mutex::new(1i64));
+        mock_id_gen.expect_generate().returning(move || {
+            let mut counter = id_counter.lock().unwrap();
+            let id = *counter;
+            *counter += 1;
+            Ok(id)
+        });
+
         let db = create_test_db().await;
-        let mock_stock_repo = MockStockRepo::new();
-        let mock_sell_price_repo = MockSellPriceRepo::new();
 
-        let service =
-            ProductService::new(mock_repo, mock_stock_repo, mock_sell_price_repo, id_gen, db);
+        let service = ProductService::new(
+            mock_repo,
+            mock_stock_repo,
+            mock_sell_price_repo,
+            mock_id_gen,
+            db,
+        );
         let ctx = create_test_ctx();
+
+        // Create a complete product with categories, variants, stocks, prices, and discounts
         let product = ProductFullCreate {
             product: ProductCreate {
-                name: "Test".to_string(),
-                description: None,
+                name: "Test Product".to_string(),
+                description: Some("A test description".to_string()),
                 product_type: "product".to_string(),
                 main_image: None,
                 sellable: true,
                 buyable: true,
                 editable_price: false,
-                has_variant: false,
+                has_variant: true,
                 metadata: None,
                 category_ids: vec![],
             },
-            variants: vec![],
-            categories: vec![],
+            categories: vec![10, 20],
+            variants: vec![ProductVariantFullCreate {
+                variant: ProductVariantCreate {
+                    product_id: 0, // Will be set by service
+                    barcode: Some("123456".to_string()),
+                    name: Some("Variant 1".to_string()),
+                    metadata: None,
+                },
+                stocks: vec![StockCreate {
+                    branch_id: 1,
+                    product_variant_id: 0, // Will be set by service
+                    quantity: 100,
+                    min_stock: Some(10),
+                    max_stock: Some(500),
+                    last_buy_price: Some(800),
+                    metadata: None,
+                }],
+                sell_prices: vec![SellPriceFullCreate {
+                    sell_price: SellPriceCreate {
+                        branch_id: None,
+                        product_variant_id: 0, // Will be set by service
+                        uom_id: 1,
+                        quantity: 1,
+                        price: 1000,
+                        metadata: None,
+                    },
+                    discounts: vec![SellDiscountCreate {
+                        price_id: 0, // Will be set by service
+                        quantity: 10,
+                        discount_formula: "price * 0.9".to_string(),
+                        customer_level: Some(1),
+                        metadata: None,
+                    }],
+                }],
+            }],
         };
 
         let result = service.create_product(&ctx, &product).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 1);
+
+        // Verify all repository methods were called
+        assert!(
+            *create_product_called.lock().unwrap(),
+            "create_product was not called"
+        );
+        assert!(
+            *add_category_called.lock().unwrap(),
+            "add_product_category was not called"
+        );
+        assert!(
+            *create_variant_called.lock().unwrap(),
+            "create_variant was not called"
+        );
+        assert!(
+            *create_stock_called.lock().unwrap(),
+            "stock create was not called"
+        );
+        assert!(
+            *create_price_called.lock().unwrap(),
+            "sell_price create was not called"
+        );
+        assert!(
+            *create_discount_called.lock().unwrap(),
+            "create_discount was not called"
+        );
     }
 
     #[tokio::test]
