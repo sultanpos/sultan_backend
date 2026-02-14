@@ -497,4 +497,37 @@ impl ProductRepository for SqliteProductRepository {
 
         Ok(variant_ids)
     }
+
+    async fn add_product_category(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        product_id: i64,
+        category_ids: &[i64],
+    ) -> DomainResult<()> {
+        if category_ids.is_empty() {
+            return Ok(());
+        }
+
+        // Insert product categories
+        for category_id in category_ids {
+            let category_model = ProductCategoryActiveModel {
+                product_id: Set(product_id),
+                category_id: Set(*category_id),
+            };
+            // Ignore duplicate key errors (association already exists)
+            match category_model.insert(&ctx.db).await {
+                Ok(_) => {}
+                Err(e) => {
+                    // Only ignore unique constraint violations (duplicates)
+                    // Foreign key violations and other errors should propagate
+                    let err_str = e.to_string();
+                    if !err_str.contains("UNIQUE constraint") && !err_str.contains("duplicate") {
+                        return Err(e.into());
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
 }

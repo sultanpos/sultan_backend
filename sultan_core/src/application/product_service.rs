@@ -273,6 +273,12 @@ impl<R: ProductRepository, S: StockRepository, P: SellPriceRepository, I: IdGene
             .create_product(&repo_ctx, id, &product_create.product)
             .await?;
 
+        if !product_create.categories.is_empty() {
+            self.repository
+                .add_product_category(&repo_ctx, id, &product_create.categories)
+                .await?;
+        }
+
         // Insert all variants
         for variant in &product_create.variants {
             let variant_id = self.id_generator.generate()?;
@@ -349,21 +355,19 @@ impl<R: ProductRepository, S: StockRepository, P: SellPriceRepository, I: IdGene
             .get_variant_ids_by_product_id(&repo_ctx, id)
             .await?;
 
-        // Delete the product first
-        self.repository.delete_product(&repo_ctx, id).await?;
-
-        // Then delete all variants
-        self.repository
-            .delete_variants_by_product_id(&repo_ctx, id)
+        self.stock_repository
+            .delete_by_product_variant_ids(&repo_ctx, &variant_ids)
             .await?;
 
         self.sell_price_repository
             .delete_by_product_variant_ids(&repo_ctx, &variant_ids)
             .await?;
 
-        self.stock_repository
-            .delete_by_product_variant_ids(&repo_ctx, &variant_ids)
+        self.repository
+            .delete_variants_by_product_id(&repo_ctx, id)
             .await?;
+
+        self.repository.delete_product(&repo_ctx, id).await?;
 
         repo_ctx.db.commit().await?;
         Ok(())
@@ -539,6 +543,8 @@ mod tests {
             Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<Vec<i64>> + Send>>>>,
         get_variant_ids_by_product_id_fn:
             Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<Vec<i64>> + Send>>>>,
+        add_product_category_fn:
+            Arc<Mutex<Option<Box<dyn Fn(i64, Vec<i64>) -> DomainResult<()> + Send>>>>,
     }
 
     impl MockProductRepo {
@@ -557,6 +563,7 @@ mod tests {
                 get_variant_by_product_id_fn: Arc::new(Mutex::new(None)),
                 get_product_category_fn: Arc::new(Mutex::new(None)),
                 get_variant_ids_by_product_id_fn: Arc::new(Mutex::new(None)),
+                add_product_category_fn: Arc::new(Mutex::new(None)),
             }
         }
 
@@ -652,6 +659,14 @@ mod tests {
             F: Fn(i64) -> DomainResult<Vec<i64>> + Send + 'static,
         {
             *self.get_variant_ids_by_product_id_fn.lock().unwrap() = Some(Box::new(f));
+        }
+
+        #[allow(dead_code)]
+        fn expect_add_product_category<F>(&mut self, f: F)
+        where
+            F: Fn(i64, Vec<i64>) -> DomainResult<()> + Send + 'static,
+        {
+            *self.add_product_category_fn.lock().unwrap() = Some(Box::new(f));
         }
     }
 
@@ -827,6 +842,20 @@ mod tests {
                 f(product_id)
             } else {
                 panic!("get_variant_ids_by_product_id not mocked");
+            }
+        }
+
+        async fn add_product_category(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            product_id: i64,
+            category_ids: &[i64],
+        ) -> DomainResult<()> {
+            let lock = self.add_product_category_fn.lock().unwrap();
+            if let Some(f) = lock.as_ref() {
+                f(product_id, category_ids.to_vec())
+            } else {
+                panic!("add_product_category not mocked");
             }
         }
     }

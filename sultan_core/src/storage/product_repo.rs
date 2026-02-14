@@ -322,4 +322,33 @@ pub trait ProductRepository: Send + Sync {
         ctx: &super::RepoCtx<impl ConnectionTrait>,
         product_id: i64,
     ) -> DomainResult<Vec<i64>>;
+
+    /// Adds category associations to a product.
+    ///
+    /// This method creates associations between a product and one or more categories
+    /// in the product_categories junction table. If an association already exists,
+    /// it will be skipped (database constraint prevents duplicates).
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - Repository context with database connection
+    /// * `product_id` - ID of the product
+    /// * `category_ids` - Array of category IDs to associate with the product
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Categories added successfully (or already exist)
+    /// * `Err(Error)` - Database error
+    ///
+    /// # Notes
+    ///
+    /// - If the array is empty, this is a no-op and returns `Ok(())`
+    /// - Duplicate associations are handled gracefully (no error)
+    /// - This does not remove existing associations
+    async fn add_product_category(
+        &self,
+        ctx: &super::RepoCtx<impl ConnectionTrait>,
+        product_id: i64,
+        category_ids: &[i64],
+    ) -> DomainResult<()>;
 }
