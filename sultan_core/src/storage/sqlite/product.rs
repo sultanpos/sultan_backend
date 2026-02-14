@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect, Set,
+    sea_query::Expr,
 };
 
 use crate::{
@@ -485,12 +486,15 @@ impl ProductRepository for SqliteProductRepository {
         ctx: &RepoCtx<impl ConnectionTrait>,
         product_id: i64,
     ) -> DomainResult<Vec<i64>> {
-        let variants = ProductVariantEntity::find()
+        let variant_ids: Vec<i64> = ProductVariantEntity::find()
+            .select_only()
+            .column(ProductVariantColumn::Id)
             .filter(ProductVariantColumn::ProductId.eq(product_id))
             .filter(ProductVariantColumn::IsDeleted.eq(false))
+            .into_tuple::<i64>()
             .all(&ctx.db)
             .await?;
 
-        Ok(variants.into_iter().map(|v| v.id).collect())
+        Ok(variant_ids)
     }
 }
