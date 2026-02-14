@@ -785,6 +785,14 @@ mod tests {
                 panic!("get_product_category not mocked");
             }
         }
+
+        async fn get_variant_ids_by_product_id(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            _product_id: i64,
+        ) -> DomainResult<Vec<i64>> {
+            panic!("get_variant_ids_by_product_id not mocked");
+        }
     }
 
     fn create_test_ctx() -> Context {

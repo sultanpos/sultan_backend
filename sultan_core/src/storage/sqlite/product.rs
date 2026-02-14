@@ -479,4 +479,18 @@ impl ProductRepository for SqliteProductRepository {
 
         Ok(categories.into_iter().map(|c| c.category_id).collect())
     }
+
+    async fn get_variant_ids_by_product_id(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        product_id: i64,
+    ) -> DomainResult<Vec<i64>> {
+        let variants = ProductVariantEntity::find()
+            .filter(ProductVariantColumn::ProductId.eq(product_id))
+            .filter(ProductVariantColumn::IsDeleted.eq(false))
+            .all(&ctx.db)
+            .await?;
+
+        Ok(variants.into_iter().map(|v| v.id).collect())
+    }
 }

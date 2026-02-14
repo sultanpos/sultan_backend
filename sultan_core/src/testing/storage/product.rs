@@ -102,6 +102,11 @@ where
     product_test_get_variant_by_product_id_product_not_found(&ctx_factory().await, repo).await;
     product_test_get_variant_by_id_when_product_deleted(&ctx_factory().await, repo).await;
     product_test_get_variant_by_barcode_when_product_deleted(&ctx_factory().await, repo).await;
+
+    // Variant ID listing tests
+    product_test_get_variant_ids_by_product_id_success(&ctx_factory().await, repo).await;
+    product_test_get_variant_ids_by_product_id_empty(&ctx_factory().await, repo).await;
+    product_test_get_variant_ids_by_product_id_excludes_deleted(&ctx_factory().await, repo).await;
 }
 
 // =============================================================================
@@ -1662,4 +1667,110 @@ pub async fn product_test_get_variant_by_barcode_when_product_deleted<R: Product
         .expect("Failed to get variant");
 
     assert!(result.is_none());
+}
+
+// =============================================================================
+// Get Variant IDs by Product ID Tests
+// =============================================================================
+
+/// Test: Get variant IDs returns correct IDs for multiple variants
+pub async fn product_test_get_variant_ids_by_product_id_success<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+
+    let mut created_ids = Vec::new();
+    for i in 0..3 {
+        let variant_id = super::generate_test_id().await;
+        created_ids.push(variant_id);
+        let variant = ProductVariantCreate {
+            product_id,
+            barcode: Some(format!("IDS_BC_{}", i)),
+            name: Some(format!("Variant {}", i)),
+            metadata: None,
+        };
+        repo.create_variant(ctx, variant_id, &variant)
+            .await
+            .expect("Failed to create variant");
+    }
+
+    let ids = repo
+        .get_variant_ids_by_product_id(ctx, product_id)
+        .await
+        .expect("Failed to get variant ids");
+
+    assert_eq!(ids.len(), 3);
+    for id in &created_ids {
+        assert!(ids.contains(id));
+    }
+}
+
+/// Test: Get variant IDs returns empty list when no variants exist
+pub async fn product_test_get_variant_ids_by_product_id_empty<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+
+    let ids = repo
+        .get_variant_ids_by_product_id(ctx, product_id)
+        .await
+        .expect("Failed to get variant ids");
+
+    assert!(ids.is_empty());
+}
+
+/// Test: Get variant IDs excludes soft-deleted variants
+pub async fn product_test_get_variant_ids_by_product_id_excludes_deleted<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+
+    // Create 3 variants
+    let mut variant_ids = Vec::new();
+    for i in 0..3 {
+        let variant_id = super::generate_test_id().await;
+        variant_ids.push(variant_id);
+        let variant = ProductVariantCreate {
+            product_id,
+            barcode: Some(format!("DEL_BC_{}", i)),
+            name: Some(format!("Variant {}", i)),
+            metadata: None,
+        };
+        repo.create_variant(ctx, variant_id, &variant)
+            .await
+            .expect("Failed to create variant");
+    }
+
+    // Delete the first variant
+    repo.delete_variant(ctx, variant_ids[0])
+        .await
+        .expect("Failed to delete variant");
+
+    let ids = repo
+        .get_variant_ids_by_product_id(ctx, product_id)
+        .await
+        .expect("Failed to get variant ids");
+
+    assert_eq!(ids.len(), 2);
+    assert!(!ids.contains(&variant_ids[0]));
+    assert!(ids.contains(&variant_ids[1]));
+    assert!(ids.contains(&variant_ids[2]));
 }

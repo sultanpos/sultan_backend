@@ -285,6 +285,27 @@ pub trait ProductRepository: Send + Sync {
         product_id: i64,
     ) -> DomainResult<Vec<ProductVariant>>;
 
+    /// Retrieves the IDs of all non-deleted variants for a product.
+    ///
+    /// This is a lightweight alternative to [`get_variant_by_product_id`](Self::get_variant_by_product_id)
+    /// that only returns IDs instead of full variant objects (with their associated product).
+    /// Useful for cascading operations such as deleting related sell prices or stock records.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - Repository context with database connection
+    /// * `product_id` - ID of the product
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<i64>)` - List of variant IDs (empty if product has no active variants)
+    /// * `Err(Error)` - Database error
+    async fn get_variant_ids_by_product_id(
+        &self,
+        ctx: &super::RepoCtx<impl ConnectionTrait>,
+        product_id: i64,
+    ) -> DomainResult<Vec<i64>>;
+
     /// Lists all category IDs associated with a product.
     ///
     /// # Arguments
