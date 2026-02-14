@@ -5,6 +5,7 @@ pub mod customer;
 pub mod number;
 pub mod product;
 pub mod sell_price;
+pub mod stock;
 pub mod supplier;
 pub mod token;
 pub mod unit;

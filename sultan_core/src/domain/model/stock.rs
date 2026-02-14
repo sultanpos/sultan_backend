@@ -8,6 +8,7 @@ pub struct Stock {
     pub id: i64,
     pub created_at: chrono::DateTime<Utc>,
     pub updated_at: chrono::DateTime<Utc>,
+    pub branch_id: i64,
     pub product_variant_id: i64,
     pub quantity: i64,
     pub min_stock: Option<i64>,
@@ -18,6 +19,7 @@ pub struct Stock {
 
 #[derive(Debug, Clone)]
 pub struct StockCreate {
+    pub branch_id: i64,
     pub product_variant_id: i64,
     pub quantity: i64,
     pub min_stock: Option<i64>,
@@ -28,7 +30,6 @@ pub struct StockCreate {
 
 #[derive(Debug, Clone)]
 pub struct StockUpdate {
-    pub quantity: Option<i64>,
     pub min_stock: Update<i64>,
     pub max_stock: Update<i64>,
     pub last_buy_price: Update<i64>,
