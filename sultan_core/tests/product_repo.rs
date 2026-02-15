@@ -6,7 +6,8 @@
 mod common;
 
 use sultan_core::{
-    storage::sqlite::SqliteProductRepository, testing::storage::product::product_test_all,
+    storage::sqlite::{SqliteProductRepository, SqliteSellPriceRepository},
+    testing::storage::product::product_test_all,
 };
 
 /// Runs all ProductRepository tests against the SQLite implementation.
@@ -16,10 +17,15 @@ use sultan_core::{
 /// - Product CRUD operations (create, read, update, delete)
 /// - Product variant CRUD operations
 /// - Variant lookup by barcode, ID, and product ID
+/// - Variant nested data (SellPrices and Discounts)
 /// - Soft delete behavior
 /// - Edge cases and error handling
 #[tokio::test]
 async fn test_product_repo_integration() {
     let repo = SqliteProductRepository::new();
-    product_test_all(&repo, || async { common::init_sqlite_repo_ctx().await }).await;
+    let sell_price_repo = SqliteSellPriceRepository::new();
+    product_test_all(&repo, &sell_price_repo, || async {
+        common::init_sqlite_repo_ctx().await
+    })
+    .await;
 }

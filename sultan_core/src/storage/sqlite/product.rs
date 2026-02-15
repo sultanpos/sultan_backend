@@ -405,21 +405,46 @@ impl ProductRepository for SqliteProductRepository {
         ctx: &RepoCtx<impl ConnectionTrait>,
         barcode: &str,
     ) -> DomainResult<Option<ProductVariant>> {
-        let variant = ProductVariantEntity::find()
+        // Query 1: Variant JOIN Product — fetch variant with parent product
+        let result = ProductVariantEntity::find()
             .filter(ProductVariantColumn::Barcode.eq(barcode))
             .filter(ProductVariantColumn::IsDeleted.eq(false))
+            .find_also_related(ProductEntity)
             .one(&ctx.db)
             .await?;
 
-        match variant {
-            Some(variant_model) => {
-                let product = self
-                    .fetch_product_by_id(ctx, variant_model.product_id)
-                    .await?;
-                Ok(product.map(|p| variant_model.to_domain(p)))
-            }
-            None => Ok(None),
-        }
+        let (variant_model, product_model) = match result {
+            Some((v, Some(p))) if !p.is_deleted => (v, p),
+            _ => return Ok(None),
+        };
+
+        // Query 2: SellPrice LEFT JOIN SellDiscount — fetch prices with nested discounts
+        let prices_with_discounts = SellPriceEntity::find()
+            .filter(SellPriceColumn::ProductVariantId.eq(variant_model.id))
+            .filter(SellPriceColumn::IsDeleted.eq(false))
+            .find_with_related(SellDiscountEntity)
+            .all(&ctx.db)
+            .await?;
+
+        // Build nested sell_prices with discounts (filter soft-deleted discounts in Rust)
+        let sell_prices = prices_with_discounts
+            .into_iter()
+            .map(|(price_model, discount_models)| {
+                let mut sell_price = price_model.to_domain();
+                sell_price.discounts = discount_models
+                    .into_iter()
+                    .filter(|d| !d.is_deleted)
+                    .map(|d| d.to_domain())
+                    .collect();
+                sell_price
+            })
+            .collect();
+
+        // Assemble the full ProductVariant
+        let mut variant = variant_model.to_domain(product_model.to_domain());
+        variant.sell_prices = sell_prices;
+
+        Ok(Some(variant))
     }
 
     async fn get_variant_by_id(
@@ -447,7 +472,7 @@ impl ProductRepository for SqliteProductRepository {
             .all(&ctx.db)
             .await?;
 
-        // Build nested sell_prices with discounts
+        // Build nested sell_prices with discounts (filter soft-deleted discounts in Rust)
         let sell_prices = prices_with_discounts
             .into_iter()
             .map(|(price_model, discount_models)| {
@@ -473,25 +498,29 @@ impl ProductRepository for SqliteProductRepository {
         ctx: &RepoCtx<impl ConnectionTrait>,
         product_id: i64,
     ) -> DomainResult<Vec<ProductVariant>> {
-        let variants = ProductVariantEntity::find()
+        // Single query: Variants JOIN Product — fetch all variants with parent product
+        let results = ProductVariantEntity::find()
             .filter(ProductVariantColumn::ProductId.eq(product_id))
             .filter(ProductVariantColumn::IsDeleted.eq(false))
+            .find_also_related(ProductEntity)
             .all(&ctx.db)
             .await?;
 
-        if variants.is_empty() {
-            return Ok(Vec::new());
-        }
+        // Filter out variants whose parent product is deleted and map to domain
+        let variants: Vec<ProductVariant> = results
+            .into_iter()
+            .filter_map(|(variant_model, product_model)| {
+                product_model.and_then(|p| {
+                    if !p.is_deleted {
+                        Some(variant_model.to_domain(p.to_domain()))
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect();
 
-        let product = self.fetch_product_by_id(ctx, product_id).await?;
-
-        match product {
-            Some(product) => Ok(variants
-                .into_iter()
-                .map(|v| v.to_domain(product.clone()))
-                .collect()),
-            None => Ok(Vec::new()),
-        }
+        Ok(variants)
     }
 
     async fn get_product_category(
