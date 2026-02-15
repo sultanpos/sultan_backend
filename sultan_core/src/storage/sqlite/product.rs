@@ -17,7 +17,8 @@ use crate::{
         sqlite::entity::{
             ProductActiveModel, ProductCategoryActiveModel, ProductCategoryColumn,
             ProductCategoryEntity, ProductColumn, ProductEntity, ProductVariantActiveModel,
-            ProductVariantColumn, ProductVariantEntity,
+            ProductVariantColumn, ProductVariantEntity, SellDiscountEntity, SellPriceColumn,
+            SellPriceEntity,
         },
     },
 };
@@ -426,20 +427,45 @@ impl ProductRepository for SqliteProductRepository {
         ctx: &RepoCtx<impl ConnectionTrait>,
         id: i64,
     ) -> DomainResult<Option<ProductVariant>> {
-        let variant = ProductVariantEntity::find_by_id(id)
+        // Query 1: Variant JOIN Product — fetch variant with parent product
+        let result = ProductVariantEntity::find_by_id(id)
             .filter(ProductVariantColumn::IsDeleted.eq(false))
+            .find_also_related(ProductEntity)
             .one(&ctx.db)
             .await?;
 
-        match variant {
-            Some(variant_model) => {
-                let product = self
-                    .fetch_product_by_id(ctx, variant_model.product_id)
-                    .await?;
-                Ok(product.map(|p| variant_model.to_domain(p)))
-            }
-            None => Ok(None),
-        }
+        let (variant_model, product_model) = match result {
+            Some((v, Some(p))) if !p.is_deleted => (v, p),
+            _ => return Ok(None),
+        };
+
+        // Query 2: SellPrice LEFT JOIN SellDiscount — fetch prices with nested discounts
+        let prices_with_discounts = SellPriceEntity::find()
+            .filter(SellPriceColumn::ProductVariantId.eq(id))
+            .filter(SellPriceColumn::IsDeleted.eq(false))
+            .find_with_related(SellDiscountEntity)
+            .all(&ctx.db)
+            .await?;
+
+        // Build nested sell_prices with discounts
+        let sell_prices = prices_with_discounts
+            .into_iter()
+            .map(|(price_model, discount_models)| {
+                let mut sell_price = price_model.to_domain();
+                sell_price.discounts = discount_models
+                    .into_iter()
+                    .filter(|d| !d.is_deleted)
+                    .map(|d| d.to_domain())
+                    .collect();
+                sell_price
+            })
+            .collect();
+
+        // Assemble the full ProductVariant
+        let mut variant = variant_model.to_domain(product_model.to_domain());
+        variant.sell_prices = sell_prices;
+
+        Ok(Some(variant))
     }
 
     async fn get_variant_by_product_id(

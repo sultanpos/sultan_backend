@@ -927,6 +927,7 @@ mod tests {
             barcode: Some("1234567890".to_string()),
             name: Some("Default Variant".to_string()),
             metadata: None,
+            sell_prices: vec![],
         }
     }
 

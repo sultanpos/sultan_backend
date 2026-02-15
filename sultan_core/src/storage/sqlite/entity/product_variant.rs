@@ -33,11 +33,20 @@ pub enum Relation {
         to = "super::product::Column::Id"
     )]
     Product,
+
+    #[sea_orm(has_many = "super::sell_price::Entity")]
+    SellPrice,
 }
 
 impl Related<super::product::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Product.def()
+    }
+}
+
+impl Related<super::sell_price::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SellPrice.def()
     }
 }
 
@@ -65,6 +74,7 @@ impl Model {
                 .metadata
                 .as_ref()
                 .and_then(|m| serde_json::from_str(m).ok()),
+            sell_prices: vec![],
         }
     }
 }
