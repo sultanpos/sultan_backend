@@ -424,10 +424,22 @@ impl<R: ProductRepository, S: StockRepository, P: SellPriceRepository, I: IdGene
 
         let repo_ctx = RepoCtx {
             ctx: ctx.clone(),
-            db: self.db.clone(),
+            db: self.db.begin().await?,
         };
 
-        self.repository.delete_variant(&repo_ctx, id).await
+        self.stock_repository
+            .delete_by_product_variant_ids(&repo_ctx, &[id])
+            .await?;
+
+        self.sell_price_repository
+            .delete_by_product_variant_ids(&repo_ctx, &[id])
+            .await?;
+
+        self.repository.delete_variant(&repo_ctx, id).await?;
+
+        repo_ctx.db.commit().await?;
+
+        Ok(())
     }
 
     async fn delete_variants_by_product_id(
@@ -439,12 +451,29 @@ impl<R: ProductRepository, S: StockRepository, P: SellPriceRepository, I: IdGene
 
         let repo_ctx = RepoCtx {
             ctx: ctx.clone(),
-            db: self.db.clone(),
+            db: self.db.begin().await?,
         };
+
+        let variant_ids = self
+            .repository
+            .get_variant_ids_by_product_id(&repo_ctx, product_id)
+            .await?;
+
+        self.stock_repository
+            .delete_by_product_variant_ids(&repo_ctx, &variant_ids)
+            .await?;
+
+        self.sell_price_repository
+            .delete_by_product_variant_ids(&repo_ctx, &variant_ids)
+            .await?;
 
         self.repository
             .delete_variants_by_product_id(&repo_ctx, product_id)
-            .await
+            .await?;
+
+        repo_ctx.db.commit().await?;
+
+        Ok(())
     }
 
     async fn get_variant_by_barcode(
@@ -1526,14 +1555,54 @@ mod tests {
 
         let id_gen = create_mock_id_gen(1);
         let db = create_test_db().await;
-        let mock_stock_repo = MockStockRepo::new();
-        let mock_sell_price_repo = MockSellPriceRepo::new();
+        let mut mock_stock_repo = MockStockRepo::new();
+        let mut mock_sell_price_repo = MockSellPriceRepo::new();
+
+        // Verify that delete_by_product_variant_ids is called with correct variant ID
+        mock_stock_repo.expect_delete_by_product_variant_ids(|ids| {
+            assert_eq!(ids, vec![1]);
+            Ok(())
+        });
+        mock_sell_price_repo.expect_delete_by_product_variant_ids(|ids| {
+            assert_eq!(ids, vec![1]);
+            Ok(())
+        });
 
         let service =
             ProductService::new(mock_repo, mock_stock_repo, mock_sell_price_repo, id_gen, db);
         let ctx = create_test_ctx();
 
         let result = service.delete_variant(&ctx, 1).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_delete_variants_by_product_id_success() {
+        let mut mock_repo = MockProductRepo::new();
+        // Mock get_variant_ids_by_product_id to return some variant IDs
+        mock_repo.expect_get_variant_ids_by_product_id(|_| Ok(vec![100, 200]));
+        mock_repo.expect_delete_variants_by_product_id(|_| Ok(()));
+
+        let id_gen = create_mock_id_gen(1);
+        let db = create_test_db().await;
+        let mut mock_stock_repo = MockStockRepo::new();
+        let mut mock_sell_price_repo = MockSellPriceRepo::new();
+
+        // Verify that delete_by_product_variant_ids is called with correct variant IDs
+        mock_stock_repo.expect_delete_by_product_variant_ids(|ids| {
+            assert_eq!(ids, vec![100, 200]);
+            Ok(())
+        });
+        mock_sell_price_repo.expect_delete_by_product_variant_ids(|ids| {
+            assert_eq!(ids, vec![100, 200]);
+            Ok(())
+        });
+
+        let service =
+            ProductService::new(mock_repo, mock_stock_repo, mock_sell_price_repo, id_gen, db);
+        let ctx = create_test_ctx();
+
+        let result = service.delete_variants_by_product_id(&ctx, 1).await;
         assert!(result.is_ok());
     }
 
