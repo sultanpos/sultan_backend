@@ -27,7 +27,29 @@ pub struct Model {
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::product_variant::Entity",
+        from = "Column::ProductVariantId",
+        to = "super::product_variant::Column::Id"
+    )]
+    ProductVariant,
+
+    #[sea_orm(has_many = "super::sell_discount::Entity")]
+    SellDiscount,
+}
+
+impl Related<super::product_variant::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ProductVariant.def()
+    }
+}
+
+impl Related<super::sell_discount::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SellDiscount.def()
+    }
+}
 
 impl ActiveModelBehavior for ActiveModel {}
 
@@ -52,6 +74,7 @@ impl Model {
                 .metadata
                 .as_ref()
                 .and_then(|m| serde_json::from_str(m).ok()),
+            discounts: vec![],
         }
     }
 }

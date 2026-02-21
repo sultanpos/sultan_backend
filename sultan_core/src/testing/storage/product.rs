@@ -8,9 +8,12 @@ use crate::{
             Update,
             category::CategoryCreate,
             product::{ProductCreate, ProductUpdate, ProductVariantCreate, ProductVariantUpdate},
+            sell_price::{SellDiscountCreate, SellPriceCreate},
         },
     },
-    storage::{CategoryRepository, ProductRepository, RepoCtx},
+    storage::{
+        CategoryRepository, ProductRepository, RepoCtx, sell_price_repo::SellPriceRepository,
+    },
 };
 
 /// Creates a test product with default values.
@@ -44,10 +47,12 @@ fn create_test_variant(product_id: i64) -> ProductVariantCreate {
 /// # Arguments
 ///
 /// * `repo` - The repository implementation to test
+/// * `sell_price_repo` - The sell price repository for testing nested relations
 /// * `ctx_factory` - A factory function that creates a fresh RepoCtx for each test
-pub async fn product_test_all<C, F, Fut>(repo: &C, ctx_factory: F)
+pub async fn product_test_all<C, S, F, Fut>(repo: &C, sell_price_repo: &S, ctx_factory: F)
 where
     C: ProductRepository,
+    S: SellPriceRepository,
     F: Fn() -> Fut,
     Fut: std::future::Future<Output = RepoCtx<DatabaseConnection>>,
 {
@@ -103,6 +108,22 @@ where
     product_test_get_variant_by_product_id_product_not_found(&ctx_factory().await, repo).await;
     product_test_get_variant_by_id_when_product_deleted(&ctx_factory().await, repo).await;
     product_test_get_variant_by_barcode_when_product_deleted(&ctx_factory().await, repo).await;
+
+    // Variant nested data tests (with SellPrices and Discounts)
+    product_test_get_variant_by_id_with_nested_data(&ctx_factory().await, repo, sell_price_repo)
+        .await;
+    product_test_get_variant_by_barcode_with_nested_data(
+        &ctx_factory().await,
+        repo,
+        sell_price_repo,
+    )
+    .await;
+    product_test_get_variant_excludes_soft_deleted_relations(
+        &ctx_factory().await,
+        repo,
+        sell_price_repo,
+    )
+    .await;
 
     // Variant ID listing tests
     product_test_get_variant_ids_by_product_id_success(&ctx_factory().await, repo).await;
@@ -1908,4 +1929,469 @@ pub async fn product_test_add_product_category_duplicate<R: ProductRepository>(
     assert!(categories.contains(&2));
     assert!(categories.contains(&3));
     assert!(categories.contains(&4));
+}
+
+// =============================================================================
+// Variant Nested Data Tests (SellPrices and Discounts)
+// =============================================================================
+
+/// Test: get_variant_by_id fetches all nested data (Product, SellPrices, Discounts)
+pub async fn product_test_get_variant_by_id_with_nested_data<R, S>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+    sell_price_repo: &S,
+) where
+    R: ProductRepository,
+    S: SellPriceRepository,
+{
+    // Create product
+    let product_id = super::generate_test_id().await;
+    let product = ProductCreate {
+        name: "Test Product with Relations".to_string(),
+        description: Some("Product for testing nested relations".to_string()),
+        product_type: "product".to_string(),
+        main_image: None,
+        sellable: true,
+        buyable: true,
+        editable_price: false,
+        has_variant: true,
+        metadata: None,
+        category_ids: vec![],
+    };
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+
+    // Create variant
+    let variant_id = super::generate_test_id().await;
+    let variant = ProductVariantCreate {
+        product_id,
+        barcode: Some("TEST-BARCODE-123".to_string()),
+        name: Some("Variant with Prices".to_string()),
+        metadata: None,
+    };
+    repo.create_variant(ctx, variant_id, &variant)
+        .await
+        .expect("Failed to create variant");
+
+    // Create first sell price
+    let price_id_1 = super::generate_test_id().await;
+    let price_1 = SellPriceCreate {
+        branch_id: Some(1),
+        product_variant_id: variant_id,
+        uom_id: 1,
+        quantity: 1,
+        price: 10000, // $100.00
+        metadata: None,
+    };
+    sell_price_repo
+        .create(ctx, price_id_1, &price_1)
+        .await
+        .expect("Failed to create first sell price");
+
+    // Create discounts for first price
+    let discount_id_1 = super::generate_test_id().await;
+    let discount_1 = SellDiscountCreate {
+        price_id: price_id_1,
+        quantity: 10,
+        discount_formula: "price * 0.9".to_string(),
+        customer_level: Some(1),
+        metadata: None,
+    };
+    sell_price_repo
+        .create_discount(ctx, discount_id_1, &discount_1)
+        .await
+        .expect("Failed to create first discount");
+
+    let discount_id_2 = super::generate_test_id().await;
+    let discount_2 = SellDiscountCreate {
+        price_id: price_id_1,
+        quantity: 50,
+        discount_formula: "price * 0.8".to_string(),
+        customer_level: Some(2),
+        metadata: None,
+    };
+    sell_price_repo
+        .create_discount(ctx, discount_id_2, &discount_2)
+        .await
+        .expect("Failed to create second discount");
+
+    // Create second sell price
+    let price_id_2 = super::generate_test_id().await;
+    let price_2 = SellPriceCreate {
+        branch_id: Some(2),
+        product_variant_id: variant_id,
+        uom_id: 1,
+        quantity: 1,
+        price: 12000, // $120.00
+        metadata: None,
+    };
+    sell_price_repo
+        .create(ctx, price_id_2, &price_2)
+        .await
+        .expect("Failed to create second sell price");
+
+    // Create discount for second price
+    let discount_id_3 = super::generate_test_id().await;
+    let discount_3 = SellDiscountCreate {
+        price_id: price_id_2,
+        quantity: 5,
+        discount_formula: "price * 0.95".to_string(),
+        customer_level: None,
+        metadata: None,
+    };
+    sell_price_repo
+        .create_discount(ctx, discount_id_3, &discount_3)
+        .await
+        .expect("Failed to create third discount");
+
+    // Test get_variant_by_id
+    let result = repo
+        .get_variant_by_id(ctx, variant_id)
+        .await
+        .expect("Failed to get variant by id");
+
+    assert!(result.is_some(), "Variant should be found");
+    let fetched_variant = result.unwrap();
+
+    // Verify variant data
+    assert_eq!(fetched_variant.id, variant_id);
+    assert_eq!(
+        fetched_variant.barcode,
+        Some("TEST-BARCODE-123".to_string())
+    );
+    assert_eq!(
+        fetched_variant.name,
+        Some("Variant with Prices".to_string())
+    );
+
+    // Verify product data
+    assert_eq!(fetched_variant.product.id, product_id);
+    assert_eq!(fetched_variant.product.name, "Test Product with Relations");
+
+    // Verify sell prices are fetched
+    assert_eq!(
+        fetched_variant.sell_prices.len(),
+        2,
+        "Should have 2 sell prices"
+    );
+
+    // Find price 1 and verify its discounts
+    let price_1_fetched = fetched_variant
+        .sell_prices
+        .iter()
+        .find(|p| p.id == price_id_1)
+        .expect("Price 1 should be present");
+    assert_eq!(price_1_fetched.price, 10000);
+    assert_eq!(price_1_fetched.branch_id, Some(1));
+    assert_eq!(
+        price_1_fetched.discounts.len(),
+        2,
+        "Price 1 should have 2 discounts"
+    );
+
+    // Verify discounts for price 1
+    let discount_1_fetched = price_1_fetched
+        .discounts
+        .iter()
+        .find(|d| d.id == discount_id_1)
+        .expect("Discount 1 should be present");
+    assert_eq!(discount_1_fetched.quantity, 10);
+    assert_eq!(
+        discount_1_fetched.discount_formula,
+        Some("price * 0.9".to_string())
+    );
+    assert_eq!(discount_1_fetched.customer_level, Some(1));
+
+    let discount_2_fetched = price_1_fetched
+        .discounts
+        .iter()
+        .find(|d| d.id == discount_id_2)
+        .expect("Discount 2 should be present");
+    assert_eq!(discount_2_fetched.quantity, 50);
+    assert_eq!(
+        discount_2_fetched.discount_formula,
+        Some("price * 0.8".to_string())
+    );
+    assert_eq!(discount_2_fetched.customer_level, Some(2));
+
+    // Find price 2 and verify its discount
+    let price_2_fetched = fetched_variant
+        .sell_prices
+        .iter()
+        .find(|p| p.id == price_id_2)
+        .expect("Price 2 should be present");
+    assert_eq!(price_2_fetched.price, 12000);
+    assert_eq!(price_2_fetched.branch_id, Some(2));
+    assert_eq!(
+        price_2_fetched.discounts.len(),
+        1,
+        "Price 2 should have 1 discount"
+    );
+
+    let discount_3_fetched = price_2_fetched
+        .discounts
+        .iter()
+        .find(|d| d.id == discount_id_3)
+        .expect("Discount 3 should be present");
+    assert_eq!(discount_3_fetched.quantity, 5);
+    assert_eq!(
+        discount_3_fetched.discount_formula,
+        Some("price * 0.95".to_string())
+    );
+    assert_eq!(discount_3_fetched.customer_level, None);
+}
+
+/// Test: get_variant_by_barcode fetches all nested data (Product, SellPrices, Discounts)
+pub async fn product_test_get_variant_by_barcode_with_nested_data<R, S>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+    sell_price_repo: &S,
+) where
+    R: ProductRepository,
+    S: SellPriceRepository,
+{
+    // Create product
+    let product_id = super::generate_test_id().await;
+    let product = ProductCreate {
+        name: "Barcode Test Product".to_string(),
+        description: Some("Product for testing barcode lookup".to_string()),
+        product_type: "product".to_string(),
+        main_image: None,
+        sellable: true,
+        buyable: true,
+        editable_price: false,
+        has_variant: true,
+        metadata: None,
+        category_ids: vec![],
+    };
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+
+    // Create variant
+    let variant_id = super::generate_test_id().await;
+    let variant = ProductVariantCreate {
+        product_id,
+        barcode: Some("BARCODE-XYZ-789".to_string()),
+        name: Some("Barcode Variant".to_string()),
+        metadata: None,
+    };
+    repo.create_variant(ctx, variant_id, &variant)
+        .await
+        .expect("Failed to create variant");
+
+    // Create sell price
+    let price_id = super::generate_test_id().await;
+    let price = SellPriceCreate {
+        branch_id: None,
+        product_variant_id: variant_id,
+        uom_id: 2,
+        quantity: 1,
+        price: 25000, // $250.00
+        metadata: None,
+    };
+    sell_price_repo
+        .create(ctx, price_id, &price)
+        .await
+        .expect("Failed to create sell price");
+
+    // Create discount
+    let discount_id = super::generate_test_id().await;
+    let discount = SellDiscountCreate {
+        price_id,
+        quantity: 100,
+        discount_formula: "price * 0.7".to_string(),
+        customer_level: Some(3),
+        metadata: None,
+    };
+    sell_price_repo
+        .create_discount(ctx, discount_id, &discount)
+        .await
+        .expect("Failed to create discount");
+
+    // Test get_variant_by_barcode
+    let result = repo
+        .get_variant_by_barcode(ctx, "BARCODE-XYZ-789")
+        .await
+        .expect("Failed to get variant by barcode");
+
+    assert!(result.is_some(), "Variant should be found by barcode");
+    let fetched_variant = result.unwrap();
+
+    // Verify variant data
+    assert_eq!(fetched_variant.id, variant_id);
+    assert_eq!(fetched_variant.barcode, Some("BARCODE-XYZ-789".to_string()));
+    assert_eq!(fetched_variant.name, Some("Barcode Variant".to_string()));
+
+    // Verify product data
+    assert_eq!(fetched_variant.product.id, product_id);
+    assert_eq!(fetched_variant.product.name, "Barcode Test Product");
+
+    // Verify sell prices are fetched
+    assert_eq!(
+        fetched_variant.sell_prices.len(),
+        1,
+        "Should have 1 sell price"
+    );
+
+    let fetched_price = &fetched_variant.sell_prices[0];
+    assert_eq!(fetched_price.id, price_id);
+    assert_eq!(fetched_price.price, 25000);
+    assert_eq!(fetched_price.branch_id, None);
+    assert_eq!(fetched_price.uom_id, 2);
+
+    // Verify discounts are fetched
+    assert_eq!(fetched_price.discounts.len(), 1, "Should have 1 discount");
+
+    let fetched_discount = &fetched_price.discounts[0];
+    assert_eq!(fetched_discount.id, discount_id);
+    assert_eq!(fetched_discount.quantity, 100);
+    assert_eq!(
+        fetched_discount.discount_formula,
+        Some("price * 0.7".to_string())
+    );
+    assert_eq!(fetched_discount.customer_level, Some(3));
+}
+
+/// Test: Soft-deleted prices and discounts are excluded from variant results
+pub async fn product_test_get_variant_excludes_soft_deleted_relations<R, S>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+    sell_price_repo: &S,
+) where
+    R: ProductRepository,
+    S: SellPriceRepository,
+{
+    // Create product and variant
+    let product_id = super::generate_test_id().await;
+    let product = ProductCreate {
+        name: "Soft Delete Test Product".to_string(),
+        description: None,
+        product_type: "product".to_string(),
+        main_image: None,
+        sellable: true,
+        buyable: true,
+        editable_price: false,
+        has_variant: true,
+        metadata: None,
+        category_ids: vec![],
+    };
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+
+    let variant_id = super::generate_test_id().await;
+    let variant = ProductVariantCreate {
+        product_id,
+        barcode: Some("SOFT-DELETE-TEST".to_string()),
+        name: Some("Soft Delete Variant".to_string()),
+        metadata: None,
+    };
+    repo.create_variant(ctx, variant_id, &variant)
+        .await
+        .expect("Failed to create variant");
+
+    // Create two prices with different branches
+    let price_id_1 = super::generate_test_id().await;
+    let price_1 = SellPriceCreate {
+        branch_id: Some(1), // Branch 1
+        product_variant_id: variant_id,
+        uom_id: 1,
+        quantity: 1,
+        price: 1000,
+        metadata: None,
+    };
+    sell_price_repo
+        .create(ctx, price_id_1, &price_1)
+        .await
+        .expect("Failed to create price 1");
+
+    let price_id_2 = super::generate_test_id().await;
+    let price_2 = SellPriceCreate {
+        branch_id: Some(2), // Branch 2
+        product_variant_id: variant_id,
+        uom_id: 1,
+        quantity: 1,
+        price: 2000,
+        metadata: None,
+    };
+    sell_price_repo
+        .create(ctx, price_id_2, &price_2)
+        .await
+        .expect("Failed to create price 2");
+
+    // Create discounts for both prices
+    let discount_id_1 = super::generate_test_id().await;
+    let discount_1 = SellDiscountCreate {
+        price_id: price_id_1,
+        quantity: 10,
+        discount_formula: "formula1".to_string(),
+        customer_level: None,
+        metadata: None,
+    };
+    sell_price_repo
+        .create_discount(ctx, discount_id_1, &discount_1)
+        .await
+        .expect("Failed to create discount 1");
+
+    let discount_id_2 = super::generate_test_id().await;
+    let discount_2 = SellDiscountCreate {
+        price_id: price_id_2,
+        quantity: 20,
+        discount_formula: "formula2".to_string(),
+        customer_level: None,
+        metadata: None,
+    };
+    sell_price_repo
+        .create_discount(ctx, discount_id_2, &discount_2)
+        .await
+        .expect("Failed to create discount 2");
+
+    // Fetch and verify all data is present
+    let result = repo
+        .get_variant_by_id(ctx, variant_id)
+        .await
+        .expect("Failed to get variant");
+    let variant_before = result.unwrap();
+    assert_eq!(variant_before.sell_prices.len(), 2);
+    assert_eq!(variant_before.sell_prices[0].discounts.len(), 1);
+    assert_eq!(variant_before.sell_prices[1].discounts.len(), 1);
+
+    // Soft delete price 1
+    sell_price_repo
+        .delete(ctx, price_id_1)
+        .await
+        .expect("Failed to delete price 1");
+
+    // Soft delete discount 2 (price 2 is still active)
+    sell_price_repo
+        .delete_discount(ctx, discount_id_2)
+        .await
+        .expect("Failed to delete discount 2");
+
+    // Fetch again and verify deleted items are excluded
+    let result = repo
+        .get_variant_by_id(ctx, variant_id)
+        .await
+        .expect("Failed to get variant after deletions");
+    let variant_after = result.unwrap();
+
+    // Should only have price 2 now (price 1 was deleted)
+    assert_eq!(
+        variant_after.sell_prices.len(),
+        1,
+        "Should only have 1 active price"
+    );
+    assert_eq!(
+        variant_after.sell_prices[0].id, price_id_2,
+        "Should be price 2"
+    );
+
+    // Price 2 should have no discounts (discount 2 was deleted)
+    assert_eq!(
+        variant_after.sell_prices[0].discounts.len(),
+        0,
+        "Price 2 should have no active discounts"
+    );
 }

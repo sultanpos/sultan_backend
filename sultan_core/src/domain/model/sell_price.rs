@@ -16,6 +16,7 @@ pub struct SellPrice {
     pub quantity: i64,
     pub price: i64,
     pub metadata: Option<Value>,
+    pub discounts: Vec<SellDiscount>,
 }
 
 #[derive(Debug, Clone)]
