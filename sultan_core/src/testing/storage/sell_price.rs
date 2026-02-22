@@ -5,21 +5,21 @@ use crate::{
         Update,
         sell_price::{SellDiscountCreate, SellDiscountUpdate, SellPriceCreate, SellPriceUpdate},
     },
-    storage::{RepoCtx, sell_price_repo::SellPriceRepository},
+    storage::{ProductRepository, RepoCtx},
 };
 
 /// Run all SellPrice repository tests.
 ///
-/// This function runs a comprehensive suite of tests for the SellPriceRepository
-/// implementation. Each test receives a fresh RepoCtx from the ctx_factory.
+/// This function runs a comprehensive suite of tests for the SellPrice operations
+/// in the ProductRepository implementation. Each test receives a fresh RepoCtx from the ctx_factory.
 ///
 /// # Arguments
 ///
-/// * `repo` - The SellPriceRepository implementation to test
+/// * `repo` - The ProductRepository implementation to test
 /// * `ctx_factory` - A factory function that creates new RepoCtx instances
 pub async fn sell_price_test_all<C, F, Fut>(repo: &C, ctx_factory: F)
 where
-    C: SellPriceRepository,
+    C: ProductRepository,
     F: Fn() -> Fut,
     Fut: std::future::Future<Output = RepoCtx<DatabaseConnection>>,
 {
@@ -79,7 +79,7 @@ async fn create_test_product_variant(ctx: &RepoCtx<DatabaseConnection>) -> i64 {
 // SellPrice Tests
 // =============================================================================
 
-pub async fn sell_price_test_repo_integration<P: SellPriceRepository>(
+pub async fn sell_price_test_repo_integration<P: ProductRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &P,
 ) {
@@ -97,13 +97,13 @@ pub async fn sell_price_test_repo_integration<P: SellPriceRepository>(
     };
 
     // Test Create
-    repo.create(ctx, id, &price)
+    repo.create_sell_price(ctx, id, &price)
         .await
         .expect("Failed to create sell price");
 
     // Test Get By ID
     let fetched = repo
-        .get_by_id(ctx, id)
+        .get_sell_price_by_id(ctx, id)
         .await
         .expect("Failed to get sell price")
         .expect("SellPrice not found");
@@ -119,12 +119,12 @@ pub async fn sell_price_test_repo_integration<P: SellPriceRepository>(
         price: Some(15000),
         metadata: Update::Unchanged,
     };
-    repo.update(ctx, id, &update_data)
+    repo.update_sell_price(ctx, id, &update_data)
         .await
         .expect("Failed to update sell price");
 
     let fetched_updated = repo
-        .get_by_id(ctx, id)
+        .get_sell_price_by_id(ctx, id)
         .await
         .expect("Failed to get updated sell price")
         .expect("Updated sell price not found");
@@ -132,27 +132,27 @@ pub async fn sell_price_test_repo_integration<P: SellPriceRepository>(
     assert_eq!(fetched_updated.price, 15000);
 
     // Test Delete
-    repo.delete(ctx, id)
+    repo.delete_sell_price(ctx, id)
         .await
         .expect("Failed to delete sell price");
     let deleted = repo
-        .get_by_id(ctx, id)
+        .get_sell_price_by_id(ctx, id)
         .await
         .expect("Failed to get deleted sell price");
     assert!(deleted.is_none());
 }
 
-pub async fn sell_price_test_get_by_id_not_found<P: SellPriceRepository>(
+pub async fn sell_price_test_get_by_id_not_found<P: ProductRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &P,
 ) {
     let non_existent_id = super::generate_test_id().await;
-    let result = repo.get_by_id(ctx, non_existent_id).await;
+    let result = repo.get_sell_price_by_id(ctx, non_existent_id).await;
     assert!(result.is_ok());
     assert!(result.unwrap().is_none());
 }
 
-pub async fn sell_price_test_update_not_found<P: SellPriceRepository>(
+pub async fn sell_price_test_update_not_found<P: ProductRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &P,
 ) {
@@ -163,20 +163,22 @@ pub async fn sell_price_test_update_not_found<P: SellPriceRepository>(
         price: None,
         metadata: Update::Unchanged,
     };
-    let result = repo.update(ctx, non_existent_id, &update_data).await;
+    let result = repo
+        .update_sell_price(ctx, non_existent_id, &update_data)
+        .await;
     assert!(result.is_err());
 }
 
-pub async fn sell_price_test_delete_not_found<P: SellPriceRepository>(
+pub async fn sell_price_test_delete_not_found<P: ProductRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &P,
 ) {
     let non_existent_id = super::generate_test_id().await;
-    let result = repo.delete(ctx, non_existent_id).await;
+    let result = repo.delete_sell_price(ctx, non_existent_id).await;
     assert!(result.is_err());
 }
 
-pub async fn sell_price_test_get_deleted<P: SellPriceRepository>(
+pub async fn sell_price_test_get_deleted<P: ProductRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &P,
 ) {
@@ -193,20 +195,20 @@ pub async fn sell_price_test_get_deleted<P: SellPriceRepository>(
         metadata: None,
     };
 
-    repo.create(ctx, id, &price)
+    repo.create_sell_price(ctx, id, &price)
         .await
         .expect("Failed to create sell price");
-    repo.delete(ctx, id)
+    repo.delete_sell_price(ctx, id)
         .await
         .expect("Failed to delete sell price");
 
     // Should not find deleted price
-    let result = repo.get_by_id(ctx, id).await;
+    let result = repo.get_sell_price_by_id(ctx, id).await;
     assert!(result.is_ok());
     assert!(result.unwrap().is_none());
 }
 
-pub async fn sell_price_test_partial_update<P: SellPriceRepository>(
+pub async fn sell_price_test_partial_update<P: ProductRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &P,
 ) {
@@ -223,7 +225,7 @@ pub async fn sell_price_test_partial_update<P: SellPriceRepository>(
         metadata: Some(serde_json::json!({"note": "original"})),
     };
 
-    repo.create(ctx, id, &price)
+    repo.create_sell_price(ctx, id, &price)
         .await
         .expect("Failed to create sell price");
 
@@ -234,12 +236,12 @@ pub async fn sell_price_test_partial_update<P: SellPriceRepository>(
         price: Some(75000),
         metadata: Update::Unchanged,
     };
-    repo.update(ctx, id, &partial_update)
+    repo.update_sell_price(ctx, id, &partial_update)
         .await
         .expect("Failed to update sell price");
 
     let fetched = repo
-        .get_by_id(ctx, id)
+        .get_sell_price_by_id(ctx, id)
         .await
         .expect("Failed to get sell price")
         .expect("SellPrice not found");
@@ -249,7 +251,7 @@ pub async fn sell_price_test_partial_update<P: SellPriceRepository>(
     assert_eq!(fetched.quantity, 10);
 }
 
-pub async fn sell_price_test_get_all_by_product_variant_id<P: SellPriceRepository>(
+pub async fn sell_price_test_get_all_by_product_variant_id<P: ProductRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &P,
 ) {
@@ -269,13 +271,13 @@ pub async fn sell_price_test_get_all_by_product_variant_id<P: SellPriceRepositor
             price: (i + 1) * 10000,
             metadata: None,
         };
-        repo.create(ctx, id, &price)
+        repo.create_sell_price(ctx, id, &price)
             .await
             .expect("Failed to create sell price");
     }
 
     let prices = repo
-        .get_all_by_product_variant_id(ctx, product_variant_id)
+        .get_all_sell_prices_by_product_variant_id(ctx, product_variant_id)
         .await
         .expect("Failed to get all prices");
     assert_eq!(prices.len(), 3);
@@ -285,7 +287,7 @@ pub async fn sell_price_test_get_all_by_product_variant_id<P: SellPriceRepositor
 // SellDiscount Tests
 // =============================================================================
 
-async fn create_test_sell_price<P: SellPriceRepository>(
+async fn create_test_sell_price<P: ProductRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &P,
 ) -> i64 {
@@ -301,13 +303,13 @@ async fn create_test_sell_price<P: SellPriceRepository>(
         price: 10000,
         metadata: None,
     };
-    repo.create(ctx, id, &price)
+    repo.create_sell_price(ctx, id, &price)
         .await
         .expect("Failed to create sell price");
     id
 }
 
-pub async fn sell_discount_test_repo_integration<P: SellPriceRepository>(
+pub async fn sell_discount_test_repo_integration<P: ProductRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &P,
 ) {
@@ -323,13 +325,13 @@ pub async fn sell_discount_test_repo_integration<P: SellPriceRepository>(
     };
 
     // Test Create
-    repo.create_discount(ctx, id, &discount)
+    repo.create_sell_discount(ctx, id, &discount)
         .await
         .expect("Failed to create discount");
 
     // Test Get By ID
     let fetched = repo
-        .get_discount_by_id(ctx, id)
+        .get_sell_discount_by_id(ctx, id)
         .await
         .expect("Failed to get discount")
         .expect("Discount not found");
@@ -344,12 +346,12 @@ pub async fn sell_discount_test_repo_integration<P: SellPriceRepository>(
         customer_level: Update::Unchanged,
         metadata: Update::Unchanged,
     };
-    repo.update_discount(ctx, id, &update_data)
+    repo.update_sell_discount(ctx, id, &update_data)
         .await
         .expect("Failed to update discount");
 
     let fetched_updated = repo
-        .get_discount_by_id(ctx, id)
+        .get_sell_discount_by_id(ctx, id)
         .await
         .expect("Failed to get updated discount")
         .expect("Updated discount not found");
@@ -357,27 +359,27 @@ pub async fn sell_discount_test_repo_integration<P: SellPriceRepository>(
     assert_eq!(fetched_updated.discount_formula, Some("-15%".to_string()));
 
     // Test Delete
-    repo.delete_discount(ctx, id)
+    repo.delete_sell_discount(ctx, id)
         .await
         .expect("Failed to delete discount");
     let deleted = repo
-        .get_discount_by_id(ctx, id)
+        .get_sell_discount_by_id(ctx, id)
         .await
         .expect("Failed to get deleted discount");
     assert!(deleted.is_none());
 }
 
-pub async fn sell_discount_test_get_by_id_not_found<P: SellPriceRepository>(
+pub async fn sell_discount_test_get_by_id_not_found<P: ProductRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &P,
 ) {
     let non_existent_id = super::generate_test_id().await;
-    let result = repo.get_discount_by_id(ctx, non_existent_id).await;
+    let result = repo.get_sell_discount_by_id(ctx, non_existent_id).await;
     assert!(result.is_ok());
     assert!(result.unwrap().is_none());
 }
 
-pub async fn sell_discount_test_update_not_found<P: SellPriceRepository>(
+pub async fn sell_discount_test_update_not_found<P: ProductRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &P,
 ) {
@@ -389,21 +391,21 @@ pub async fn sell_discount_test_update_not_found<P: SellPriceRepository>(
         metadata: Update::Unchanged,
     };
     let result = repo
-        .update_discount(ctx, non_existent_id, &update_data)
+        .update_sell_discount(ctx, non_existent_id, &update_data)
         .await;
     assert!(result.is_err());
 }
 
-pub async fn sell_discount_test_delete_not_found<P: SellPriceRepository>(
+pub async fn sell_discount_test_delete_not_found<P: ProductRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &P,
 ) {
     let non_existent_id = super::generate_test_id().await;
-    let result = repo.delete_discount(ctx, non_existent_id).await;
+    let result = repo.delete_sell_discount(ctx, non_existent_id).await;
     assert!(result.is_err());
 }
 
-pub async fn sell_discount_test_get_deleted<P: SellPriceRepository>(
+pub async fn sell_discount_test_get_deleted<P: ProductRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &P,
 ) {
@@ -418,20 +420,20 @@ pub async fn sell_discount_test_get_deleted<P: SellPriceRepository>(
         metadata: None,
     };
 
-    repo.create_discount(ctx, id, &discount)
+    repo.create_sell_discount(ctx, id, &discount)
         .await
         .expect("Failed to create discount");
-    repo.delete_discount(ctx, id)
+    repo.delete_sell_discount(ctx, id)
         .await
         .expect("Failed to delete discount");
 
     // Should not find deleted discount
-    let result = repo.get_discount_by_id(ctx, id).await;
+    let result = repo.get_sell_discount_by_id(ctx, id).await;
     assert!(result.is_ok());
     assert!(result.unwrap().is_none());
 }
 
-pub async fn sell_discount_test_partial_update<P: SellPriceRepository>(
+pub async fn sell_discount_test_partial_update<P: ProductRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &P,
 ) {
@@ -446,7 +448,7 @@ pub async fn sell_discount_test_partial_update<P: SellPriceRepository>(
         metadata: Some(serde_json::json!({"note": "original"})),
     };
 
-    repo.create_discount(ctx, id, &discount)
+    repo.create_sell_discount(ctx, id, &discount)
         .await
         .expect("Failed to create discount");
 
@@ -457,12 +459,12 @@ pub async fn sell_discount_test_partial_update<P: SellPriceRepository>(
         customer_level: Update::Unchanged,
         metadata: Update::Unchanged,
     };
-    repo.update_discount(ctx, id, &partial_update)
+    repo.update_sell_discount(ctx, id, &partial_update)
         .await
         .expect("Failed to update discount");
 
     let fetched = repo
-        .get_discount_by_id(ctx, id)
+        .get_sell_discount_by_id(ctx, id)
         .await
         .expect("Failed to get discount")
         .expect("Discount not found");
@@ -474,7 +476,7 @@ pub async fn sell_discount_test_partial_update<P: SellPriceRepository>(
 }
 
 /// Tests that `delete_by_product_variant_ids` soft-deletes sell prices for given variant IDs.
-pub async fn sell_price_test_delete_by_product_variant_ids<P: SellPriceRepository>(
+pub async fn sell_price_test_delete_by_product_variant_ids<P: ProductRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &P,
 ) {
@@ -494,7 +496,7 @@ pub async fn sell_price_test_delete_by_product_variant_ids<P: SellPriceRepositor
             price: 10000,
             metadata: None,
         };
-        repo.create(ctx, id, &price)
+        repo.create_sell_price(ctx, id, &price)
             .await
             .expect("Failed to create sell price");
     }
@@ -510,51 +512,49 @@ pub async fn sell_price_test_delete_by_product_variant_ids<P: SellPriceRepositor
         price: 20000,
         metadata: None,
     };
-    repo.create(ctx, other_id, &other_price)
+    repo.create_sell_price(ctx, other_id, &other_price)
         .await
         .expect("Failed to create other sell price");
 
     // Delete by variant IDs
-    repo.delete_by_product_variant_ids(ctx, &[variant_id_1, variant_id_2])
+    repo.delete_sell_prices_by_product_variant_ids(ctx, &[variant_id_1, variant_id_2])
         .await
         .expect("Failed to delete by product variant ids");
 
     // Prices for variant 1 and 2 should be gone
     let prices_1 = repo
-        .get_all_by_product_variant_id(ctx, variant_id_1)
+        .get_all_sell_prices_by_product_variant_id(ctx, variant_id_1)
         .await
         .expect("Failed to get prices");
     assert!(prices_1.is_empty());
 
     let prices_2 = repo
-        .get_all_by_product_variant_id(ctx, variant_id_2)
+        .get_all_sell_prices_by_product_variant_id(ctx, variant_id_2)
         .await
         .expect("Failed to get prices");
     assert!(prices_2.is_empty());
 
     // Price for other variant should still exist
     let prices_other = repo
-        .get_all_by_product_variant_id(ctx, variant_id_other)
+        .get_all_sell_prices_by_product_variant_id(ctx, variant_id_other)
         .await
         .expect("Failed to get prices");
     assert_eq!(prices_other.len(), 1);
 }
 
 /// Tests that `delete_by_product_variant_ids` with an empty slice is a no-op.
-pub async fn sell_price_test_delete_by_product_variant_ids_empty<P: SellPriceRepository>(
+pub async fn sell_price_test_delete_by_product_variant_ids_empty<P: ProductRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &P,
 ) {
     // Should not error on empty slice
-    repo.delete_by_product_variant_ids(ctx, &[])
+    repo.delete_sell_prices_by_product_variant_ids(ctx, &[])
         .await
         .expect("Failed to delete by empty product variant ids");
 }
 
 /// Tests that `delete_by_product_variant_ids` also soft-deletes associated discounts.
-pub async fn sell_price_test_delete_by_product_variant_ids_with_discounts<
-    P: SellPriceRepository,
->(
+pub async fn sell_price_test_delete_by_product_variant_ids_with_discounts<P: ProductRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &P,
 ) {
@@ -571,7 +571,7 @@ pub async fn sell_price_test_delete_by_product_variant_ids_with_discounts<
         price: 10000,
         metadata: None,
     };
-    repo.create(ctx, price_id, &price)
+    repo.create_sell_price(ctx, price_id, &price)
         .await
         .expect("Failed to create sell price");
 
@@ -585,39 +585,39 @@ pub async fn sell_price_test_delete_by_product_variant_ids_with_discounts<
             customer_level: None,
             metadata: None,
         };
-        repo.create_discount(ctx, discount_id, &discount)
+        repo.create_sell_discount(ctx, discount_id, &discount)
             .await
             .expect("Failed to create discount");
     }
 
     // Verify discounts exist
     let discounts_before = repo
-        .get_all_discount_by_price_id(ctx, price_id)
+        .get_all_sell_discount_by_price_id(ctx, price_id)
         .await
         .expect("Failed to get discounts");
     assert_eq!(discounts_before.len(), 3);
 
     // Delete by variant IDs — should cascade to discounts
-    repo.delete_by_product_variant_ids(ctx, &[variant_id])
+    repo.delete_sell_prices_by_product_variant_ids(ctx, &[variant_id])
         .await
         .expect("Failed to delete by product variant ids");
 
     // Sell price should be gone
     let prices_after = repo
-        .get_all_by_product_variant_id(ctx, variant_id)
+        .get_all_sell_prices_by_product_variant_id(ctx, variant_id)
         .await
         .expect("Failed to get prices");
     assert!(prices_after.is_empty());
 
     // Discounts should also be gone
     let discounts_after = repo
-        .get_all_discount_by_price_id(ctx, price_id)
+        .get_all_sell_discount_by_price_id(ctx, price_id)
         .await
         .expect("Failed to get discounts");
     assert!(discounts_after.is_empty());
 }
 
-pub async fn sell_discount_test_delete_by_sell_price_id<P: SellPriceRepository>(
+pub async fn sell_discount_test_delete_by_sell_price_id<P: ProductRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &P,
 ) {
@@ -633,26 +633,26 @@ pub async fn sell_discount_test_delete_by_sell_price_id<P: SellPriceRepository>(
             customer_level: None,
             metadata: None,
         };
-        repo.create_discount(ctx, id, &discount)
+        repo.create_sell_discount(ctx, id, &discount)
             .await
             .expect("Failed to create discount");
     }
 
     // Verify discounts were created
     let discounts = repo
-        .get_all_discount_by_price_id(ctx, sell_price_id)
+        .get_all_sell_discount_by_price_id(ctx, sell_price_id)
         .await
         .expect("Failed to get all discounts");
     assert_eq!(discounts.len(), 3);
 
     // Delete all discounts by sell_price_id
-    repo.delete_discounts_by_sell_price_id(ctx, sell_price_id)
+    repo.delete_sell_discounts_by_sell_price_id(ctx, sell_price_id)
         .await
         .expect("Failed to delete discounts by sell_price_id");
 
     // Verify discounts were deleted
     let discounts_after = repo
-        .get_all_discount_by_price_id(ctx, sell_price_id)
+        .get_all_sell_discount_by_price_id(ctx, sell_price_id)
         .await
         .expect("Failed to get all discounts");
     assert!(discounts_after.is_empty());

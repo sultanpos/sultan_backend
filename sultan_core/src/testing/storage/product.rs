@@ -11,9 +11,7 @@ use crate::{
             sell_price::{SellDiscountCreate, SellPriceCreate},
         },
     },
-    storage::{
-        CategoryRepository, ProductRepository, RepoCtx, sell_price_repo::SellPriceRepository,
-    },
+    storage::{CategoryRepository, ProductRepository, RepoCtx},
 };
 
 /// Creates a test product with default values.
@@ -47,12 +45,10 @@ fn create_test_variant(product_id: i64) -> ProductVariantCreate {
 /// # Arguments
 ///
 /// * `repo` - The repository implementation to test
-/// * `sell_price_repo` - The sell price repository for testing nested relations
 /// * `ctx_factory` - A factory function that creates a fresh RepoCtx for each test
-pub async fn product_test_all<C, S, F, Fut>(repo: &C, sell_price_repo: &S, ctx_factory: F)
+pub async fn product_test_all<C, F, Fut>(repo: &C, ctx_factory: F)
 where
     C: ProductRepository,
-    S: SellPriceRepository,
     F: Fn() -> Fut,
     Fut: std::future::Future<Output = RepoCtx<DatabaseConnection>>,
 {
@@ -110,20 +106,9 @@ where
     product_test_get_variant_by_barcode_when_product_deleted(&ctx_factory().await, repo).await;
 
     // Variant nested data tests (with SellPrices and Discounts)
-    product_test_get_variant_by_id_with_nested_data(&ctx_factory().await, repo, sell_price_repo)
-        .await;
-    product_test_get_variant_by_barcode_with_nested_data(
-        &ctx_factory().await,
-        repo,
-        sell_price_repo,
-    )
-    .await;
-    product_test_get_variant_excludes_soft_deleted_relations(
-        &ctx_factory().await,
-        repo,
-        sell_price_repo,
-    )
-    .await;
+    product_test_get_variant_by_id_with_nested_data(&ctx_factory().await, repo).await;
+    product_test_get_variant_by_barcode_with_nested_data(&ctx_factory().await, repo).await;
+    product_test_get_variant_excludes_soft_deleted_relations(&ctx_factory().await, repo).await;
 
     // Variant ID listing tests
     product_test_get_variant_ids_by_product_id_success(&ctx_factory().await, repo).await;
@@ -1936,13 +1921,11 @@ pub async fn product_test_add_product_category_duplicate<R: ProductRepository>(
 // =============================================================================
 
 /// Test: get_variant_by_id fetches all nested data (Product, SellPrices, Discounts)
-pub async fn product_test_get_variant_by_id_with_nested_data<R, S>(
+pub async fn product_test_get_variant_by_id_with_nested_data<R>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &R,
-    sell_price_repo: &S,
 ) where
     R: ProductRepository,
-    S: SellPriceRepository,
 {
     // Create product
     let product_id = super::generate_test_id().await;
@@ -1984,8 +1967,7 @@ pub async fn product_test_get_variant_by_id_with_nested_data<R, S>(
         price: 10000, // $100.00
         metadata: None,
     };
-    sell_price_repo
-        .create(ctx, price_id_1, &price_1)
+    repo.create_sell_price(ctx, price_id_1, &price_1)
         .await
         .expect("Failed to create first sell price");
 
@@ -1998,8 +1980,7 @@ pub async fn product_test_get_variant_by_id_with_nested_data<R, S>(
         customer_level: Some(1),
         metadata: None,
     };
-    sell_price_repo
-        .create_discount(ctx, discount_id_1, &discount_1)
+    repo.create_sell_discount(ctx, discount_id_1, &discount_1)
         .await
         .expect("Failed to create first discount");
 
@@ -2011,8 +1992,7 @@ pub async fn product_test_get_variant_by_id_with_nested_data<R, S>(
         customer_level: Some(2),
         metadata: None,
     };
-    sell_price_repo
-        .create_discount(ctx, discount_id_2, &discount_2)
+    repo.create_sell_discount(ctx, discount_id_2, &discount_2)
         .await
         .expect("Failed to create second discount");
 
@@ -2026,8 +2006,7 @@ pub async fn product_test_get_variant_by_id_with_nested_data<R, S>(
         price: 12000, // $120.00
         metadata: None,
     };
-    sell_price_repo
-        .create(ctx, price_id_2, &price_2)
+    repo.create_sell_price(ctx, price_id_2, &price_2)
         .await
         .expect("Failed to create second sell price");
 
@@ -2040,8 +2019,7 @@ pub async fn product_test_get_variant_by_id_with_nested_data<R, S>(
         customer_level: None,
         metadata: None,
     };
-    sell_price_repo
-        .create_discount(ctx, discount_id_3, &discount_3)
+    repo.create_sell_discount(ctx, discount_id_3, &discount_3)
         .await
         .expect("Failed to create third discount");
 
@@ -2143,13 +2121,11 @@ pub async fn product_test_get_variant_by_id_with_nested_data<R, S>(
 }
 
 /// Test: get_variant_by_barcode fetches all nested data (Product, SellPrices, Discounts)
-pub async fn product_test_get_variant_by_barcode_with_nested_data<R, S>(
+pub async fn product_test_get_variant_by_barcode_with_nested_data<R>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &R,
-    sell_price_repo: &S,
 ) where
     R: ProductRepository,
-    S: SellPriceRepository,
 {
     // Create product
     let product_id = super::generate_test_id().await;
@@ -2191,8 +2167,7 @@ pub async fn product_test_get_variant_by_barcode_with_nested_data<R, S>(
         price: 25000, // $250.00
         metadata: None,
     };
-    sell_price_repo
-        .create(ctx, price_id, &price)
+    repo.create_sell_price(ctx, price_id, &price)
         .await
         .expect("Failed to create sell price");
 
@@ -2205,8 +2180,7 @@ pub async fn product_test_get_variant_by_barcode_with_nested_data<R, S>(
         customer_level: Some(3),
         metadata: None,
     };
-    sell_price_repo
-        .create_discount(ctx, discount_id, &discount)
+    repo.create_sell_discount(ctx, discount_id, &discount)
         .await
         .expect("Failed to create discount");
 
@@ -2255,13 +2229,11 @@ pub async fn product_test_get_variant_by_barcode_with_nested_data<R, S>(
 }
 
 /// Test: Soft-deleted prices and discounts are excluded from variant results
-pub async fn product_test_get_variant_excludes_soft_deleted_relations<R, S>(
+pub async fn product_test_get_variant_excludes_soft_deleted_relations<R>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &R,
-    sell_price_repo: &S,
 ) where
     R: ProductRepository,
-    S: SellPriceRepository,
 {
     // Create product and variant
     let product_id = super::generate_test_id().await;
@@ -2302,8 +2274,7 @@ pub async fn product_test_get_variant_excludes_soft_deleted_relations<R, S>(
         price: 1000,
         metadata: None,
     };
-    sell_price_repo
-        .create(ctx, price_id_1, &price_1)
+    repo.create_sell_price(ctx, price_id_1, &price_1)
         .await
         .expect("Failed to create price 1");
 
@@ -2316,8 +2287,7 @@ pub async fn product_test_get_variant_excludes_soft_deleted_relations<R, S>(
         price: 2000,
         metadata: None,
     };
-    sell_price_repo
-        .create(ctx, price_id_2, &price_2)
+    repo.create_sell_price(ctx, price_id_2, &price_2)
         .await
         .expect("Failed to create price 2");
 
@@ -2330,8 +2300,7 @@ pub async fn product_test_get_variant_excludes_soft_deleted_relations<R, S>(
         customer_level: None,
         metadata: None,
     };
-    sell_price_repo
-        .create_discount(ctx, discount_id_1, &discount_1)
+    repo.create_sell_discount(ctx, discount_id_1, &discount_1)
         .await
         .expect("Failed to create discount 1");
 
@@ -2343,8 +2312,7 @@ pub async fn product_test_get_variant_excludes_soft_deleted_relations<R, S>(
         customer_level: None,
         metadata: None,
     };
-    sell_price_repo
-        .create_discount(ctx, discount_id_2, &discount_2)
+    repo.create_sell_discount(ctx, discount_id_2, &discount_2)
         .await
         .expect("Failed to create discount 2");
 
@@ -2359,14 +2327,12 @@ pub async fn product_test_get_variant_excludes_soft_deleted_relations<R, S>(
     assert_eq!(variant_before.sell_prices[1].discounts.len(), 1);
 
     // Soft delete price 1
-    sell_price_repo
-        .delete(ctx, price_id_1)
+    repo.delete_sell_price(ctx, price_id_1)
         .await
         .expect("Failed to delete price 1");
 
     // Soft delete discount 2 (price 2 is still active)
-    sell_price_repo
-        .delete_discount(ctx, discount_id_2)
+    repo.delete_sell_discount(ctx, discount_id_2)
         .await
         .expect("Failed to delete discount 2");
 
