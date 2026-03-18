@@ -3,6 +3,7 @@ pub mod branch;
 pub mod category;
 pub mod customer;
 pub mod login;
+pub mod product;
 pub mod supplier;
 pub mod user;
 
@@ -10,6 +11,9 @@ pub use branch::{BranchCreateRequest, BranchCreateResponse};
 pub use category::{CategoryCreateRequest, CategoryCreateResponse};
 pub use customer::{CustomerCreateRequest, CustomerCreateResponse};
 pub use login::{LoginRequest, LoginResponse, LogoutRequest, RefreshTokenRequest};
+pub use product::{
+    ProductCreateRequest, ProductCreateResponse, ProductResponse, ProductUpdateRequest,
+};
 use sultan_core::domain::model::Update;
 pub use supplier::{SupplierCreateRequest, SupplierCreateResponse};
 pub use user::{PermissionCreateRequest, UserCreateRequest, UserResponse, UserUpdateRequest};
