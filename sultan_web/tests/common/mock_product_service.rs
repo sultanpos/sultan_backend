@@ -1,12 +1,12 @@
 use async_trait::async_trait;
 use sultan_core::application::ProductServiceTrait;
 use sultan_core::domain::{
+    DomainResult, Error,
     context::Context,
     model::product::{
         Product, ProductFullCreate, ProductUpdate, ProductVariant, ProductVariantCreate,
         ProductVariantUpdate,
     },
-    DomainResult, Error,
 };
 
 pub struct MockProductService {
@@ -88,10 +88,7 @@ impl ProductServiceTrait for MockProductService {
             return Err(Error::Internal("Failed to update product".to_string()));
         }
         if id != self.id {
-            return Err(Error::NotFound(format!(
-                "Product with id {} not found",
-                id
-            )));
+            return Err(Error::NotFound(format!("Product with id {} not found", id)));
         }
         Ok(())
     }
@@ -101,10 +98,7 @@ impl ProductServiceTrait for MockProductService {
             return Err(Error::Internal("Failed to delete product".to_string()));
         }
         if id != self.id {
-            return Err(Error::NotFound(format!(
-                "Product with id {} not found",
-                id
-            )));
+            return Err(Error::NotFound(format!("Product with id {} not found", id)));
         }
         Ok(())
     }
@@ -141,10 +135,7 @@ impl ProductServiceTrait for MockProductService {
             return Err(Error::Internal("Failed to update variant".to_string()));
         }
         if id != self.id {
-            return Err(Error::NotFound(format!(
-                "Variant with id {} not found",
-                id
-            )));
+            return Err(Error::NotFound(format!("Variant with id {} not found", id)));
         }
         Ok(())
     }
@@ -154,10 +145,7 @@ impl ProductServiceTrait for MockProductService {
             return Err(Error::Internal("Failed to delete variant".to_string()));
         }
         if id != self.id {
-            return Err(Error::NotFound(format!(
-                "Variant with id {} not found",
-                id
-            )));
+            return Err(Error::NotFound(format!("Variant with id {} not found", id)));
         }
         Ok(())
     }
@@ -187,7 +175,9 @@ impl ProductServiceTrait for MockProductService {
         barcode: &str,
     ) -> DomainResult<Option<ProductVariant>> {
         if !self.should_succeed {
-            return Err(Error::Internal("Failed to get variant by barcode".to_string()));
+            return Err(Error::Internal(
+                "Failed to get variant by barcode".to_string(),
+            ));
         }
         if barcode == "1234567890" {
             let product = self.create_mock_product();

@@ -1,25 +1,24 @@
 use axum::Extension;
-use axum::extract::{Path, Query};
+use axum::extract::Path;
 use axum::routing::get;
 use axum::{
     Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::delete,
-    routing::post, routing::put,
+    routing::post,
 };
 use std::sync::Arc;
 use sultan_core::application::ProductServiceTrait;
 use sultan_core::domain::context::Context;
-use sultan_core::domain::model::product::Product;
 use sultan_core::domain::{DomainResult, Error};
 use tracing::instrument;
 use utoipa::OpenApi;
 use validator::Validate;
 
 use crate::AppState;
-use crate::dto::product::ProductFullCreateRequest;
-use crate::dto::{
-    ErrorResponse, ListResponse, ProductCreateResponse, SupplierCreateRequest,
-    SupplierCreateResponse,
+use crate::dto::product::{
+    ProductFullCreateRequest, ProductResponse, ProductUpdateRequest, ProductVariantCreateRequest,
+    ProductVariantCreateResponse, ProductVariantResponse, ProductVariantUpdateRequest,
 };
+use crate::dto::{ErrorResponse, ProductCreateResponse};
 
 // ============================================================================
 // OpenAPI Documentation
@@ -27,10 +26,20 @@ use crate::dto::{
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(create),
+    paths(
+        create,        
+        delete_product,
+        get_by_id
+    ),
     components(schemas(
         ProductFullCreateRequest,
         ProductCreateResponse,
+        ProductUpdateRequest,
+        ProductResponse,
+        ProductVariantCreateRequest,
+        ProductVariantCreateResponse,
+        ProductVariantUpdateRequest,
+        ProductVariantResponse,
         ErrorResponse,
     )),
     tags(
@@ -43,12 +52,12 @@ use crate::dto::{
 pub struct ProductApiDoc;
 
 // ============================================================================
-// HTTP Handlers
+// Product Handlers
 // ============================================================================
 
-/// Create a new supplier
+/// Create a new product
 ///
-/// Creates a new supplier with the provided information. Requires authentication.
+/// Creates a new product with optional variants, sell prices, and stocks. Requires authentication.
 #[utoipa::path(
     post,
     path = "/api/product",
@@ -69,7 +78,6 @@ async fn create(
     Extension(ctx): Extension<Context>,
     Json(payload): Json<ProductFullCreateRequest>,
 ) -> DomainResult<impl IntoResponse> {
-    // Validate input
     payload
         .validate()
         .map_err(|e| Error::ValidationError(format!("{}", e)))?;
@@ -79,4 +87,77 @@ async fn create(
         .await?;
 
     Ok((StatusCode::CREATED, Json(ProductCreateResponse { id })))
+}
+
+/// Delete a product
+///
+/// Soft deletes a product and all its variants by ID. Requires authentication.
+#[utoipa::path(
+    delete,
+    path = "/api/product/{id}",
+    tag = "product",
+    params(
+        ("id" = i64, Path, description = "Product ID")
+    ),
+    responses(
+        (status = 204, description = "Product deleted successfully"),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse),
+        (status = 404, description = "Product not found", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+#[instrument(skip(product_service, ctx))]
+async fn delete_product(
+    State(product_service): State<Arc<dyn ProductServiceTrait>>,
+    Extension(ctx): Extension<Context>,
+    Path(id): Path<i64>,
+) -> DomainResult<impl IntoResponse> {
+    product_service.delete_product(&ctx, id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Get a product by ID
+///
+/// Retrieves a single product by its ID. Requires authentication.
+#[utoipa::path(
+    get,
+    path = "/api/product/{id}",
+    tag = "product",
+    params(
+        ("id" = i64, Path, description = "Product ID")
+    ),
+    responses(
+        (status = 200, description = "Product retrieved successfully", body = ProductResponse),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse),
+        (status = 404, description = "Product not found", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+#[instrument(skip(product_service, ctx))]
+async fn get_by_id(
+    State(product_service): State<Arc<dyn ProductServiceTrait>>,
+    Extension(ctx): Extension<Context>,
+    Path(id): Path<i64>,
+) -> DomainResult<impl IntoResponse> {
+    let product = product_service
+        .get_by_id(&ctx, id)
+        .await?
+        .ok_or(Error::NotFound(format!("Product with id {} not found", id)))?;
+
+    Ok((StatusCode::OK, Json(ProductResponse::from(product))))
+}
+
+// ============================================================================
+// Router
+// ============================================================================
+
+pub fn product_router() -> Router<AppState> {
+    Router::new()
+        .route("/", post(create))
+        .route("/{id}", delete(delete_product))
+        .route("/{id}", get(get_by_id))
 }

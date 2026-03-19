@@ -53,6 +53,7 @@ use sultan_web::{
         category_router::{CategoryApiDoc, category_router},
         customer_router::{CustomerApiDoc, customer_router},
         middleware::{context_middleware, verify_jwt},
+        product_router::{ProductApiDoc, product_router},
     },
     supplier_routes::SupplierApiDoc,
 };
@@ -276,6 +277,7 @@ pub async fn create_app() -> anyhow::Result<Router> {
         .nest("/category", category_router())
         .nest("/customer", customer_router())
         .nest("/supplier", supplier_router())
+        .nest("/product", product_router())
         .nest("/user", user_router())
         .route_layer(axum::middleware::from_fn_with_state(
             app_state.clone(),
@@ -289,6 +291,7 @@ pub async fn create_app() -> anyhow::Result<Router> {
     openapi.merge(CustomerApiDoc::openapi());
     openapi.merge(SupplierApiDoc::openapi());
     openapi.merge(UserApiDoc::openapi());
+    openapi.merge(ProductApiDoc::openapi());
     // Add Bearer token security scheme
     if let Some(components) = openapi.components.as_mut() {
         components.add_security_scheme(
