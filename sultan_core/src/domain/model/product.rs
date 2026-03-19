@@ -47,6 +47,7 @@ pub struct Product {
     pub editable_price: bool,
     pub has_variant: bool,
     pub metadata: Option<Value>,
+    pub categories: Vec<i64>,
 }
 
 #[derive(Debug, Clone)]
