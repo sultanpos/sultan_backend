@@ -19,11 +19,11 @@ use crate::{
     storage::{
         ProductRepository, RepoCtx,
         sqlite::entity::{
-            ProductActiveModel, ProductCategoryActiveModel, ProductCategoryColumn,
-            ProductCategoryEntity, ProductColumn, ProductEntity, ProductVariantActiveModel,
-            ProductVariantColumn, ProductVariantEntity, SellDiscountActiveModel,
-            SellDiscountColumn, SellDiscountEntity, SellPriceActiveModel, SellPriceColumn,
-            SellPriceEntity,
+            CategoryColumn, CategoryEntity, ProductActiveModel, ProductCategoryActiveModel,
+            ProductCategoryColumn, ProductCategoryEntity, ProductColumn, ProductEntity,
+            ProductVariantActiveModel, ProductVariantColumn, ProductVariantEntity,
+            SellDiscountActiveModel, SellDiscountColumn, SellDiscountEntity, SellPriceActiveModel,
+            SellPriceColumn, SellPriceEntity,
         },
     },
 };
@@ -54,21 +54,6 @@ pub struct SqliteProductRepository {}
 impl SqliteProductRepository {
     pub fn new() -> Self {
         SqliteProductRepository {}
-    }
-
-    /// Fetches a product by its ID from the database.
-    /// This is a helper method used by variant queries to fetch the associated product.
-    async fn fetch_product_by_id(
-        &self,
-        ctx: &RepoCtx<impl ConnectionTrait>,
-        id: i64,
-    ) -> DomainResult<Option<Product>> {
-        let product = ProductEntity::find_by_id(id)
-            .filter(ProductColumn::IsDeleted.eq(false))
-            .one(&ctx.db)
-            .await?;
-
-        Ok(product.map(|p| p.to_domain()))
     }
 }
 
@@ -254,7 +239,76 @@ impl ProductRepository for SqliteProductRepository {
         ctx: &RepoCtx<impl ConnectionTrait>,
         id: i64,
     ) -> DomainResult<Option<Product>> {
-        self.fetch_product_by_id(ctx, id).await
+        let product_model = match ProductEntity::find_by_id(id)
+            .filter(ProductColumn::IsDeleted.eq(false))
+            .one(&ctx.db)
+            .await?
+        {
+            Some(p) => p,
+            None => return Ok(None),
+        };
+
+        // Fetch full Category objects via product_categories join
+        let category_ids: Vec<i64> = ProductCategoryEntity::find()
+            .filter(ProductCategoryColumn::ProductId.eq(id))
+            .all(&ctx.db)
+            .await?
+            .into_iter()
+            .map(|pc| pc.category_id)
+            .collect();
+
+        let categories = if category_ids.is_empty() {
+            vec![]
+        } else {
+            CategoryEntity::find()
+                .filter(CategoryColumn::Id.is_in(category_ids))
+                .filter(CategoryColumn::IsDeleted.eq(false))
+                .all(&ctx.db)
+                .await?
+                .into_iter()
+                .map(|c| c.to_domain())
+                .collect()
+        };
+
+        // Fetch variants with their sell prices and discounts
+        let variant_models = ProductVariantEntity::find()
+            .filter(ProductVariantColumn::ProductId.eq(id))
+            .filter(ProductVariantColumn::IsDeleted.eq(false))
+            .all(&ctx.db)
+            .await?;
+
+        let mut variants = Vec::with_capacity(variant_models.len());
+        for variant_model in variant_models {
+            let prices_with_discounts = SellPriceEntity::find()
+                .filter(SellPriceColumn::ProductVariantId.eq(variant_model.id))
+                .filter(SellPriceColumn::IsDeleted.eq(false))
+                .find_with_related(SellDiscountEntity)
+                .all(&ctx.db)
+                .await?;
+
+            let sell_prices = prices_with_discounts
+                .into_iter()
+                .map(|(price_model, discount_models)| {
+                    let mut sell_price = price_model.to_domain();
+                    sell_price.discounts = discount_models
+                        .into_iter()
+                        .filter(|d| !d.is_deleted)
+                        .map(|d| d.to_domain())
+                        .collect();
+                    sell_price
+                })
+                .collect();
+
+            let mut variant = variant_model.to_domain();
+            variant.sell_prices = sell_prices;
+            variants.push(variant);
+        }
+
+        let mut product = product_model.to_domain();
+        product.categories = categories;
+        product.variants = variants;
+
+        Ok(Some(product))
     }
 
     async fn create_variant(
