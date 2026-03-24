@@ -431,31 +431,185 @@ mod tests {
 
 #### Integration Tests (`sultan/tests/` and `sultan_core/tests/`)
 
-**Repository Integration Tests** (`sultan_core/tests/`):
+**Storage Test Architecture**
+
+Repository tests follow a shared-test-functions pattern split across three files:
+
+```
+sultan_core/
+├── src/testing/storage/
+│   ├── mod.rs              # generate_test_id(), default_pagination()
+│   └── branch.rs           # branch_test_all(), individual test functions
+│   └── product.rs          # product_test_all(), individual test functions
+│   └── ...                 # one module per repository
+├── tests/
+│   ├── common/mod.rs       # init_sqlite_repo_ctx(), init_sqlite_db()
+│   └── branch_repo.rs      # single #[tokio::test] that calls branch_test_all()
+│   └── product_repo.rs     # single #[tokio::test] that calls product_test_all()
+│   └── ...
+```
+
+**`sultan_core/tests/common/mod.rs`** — Test database helpers:
 ```rust
-use sultan_core::{
-    domain::Context,
-    storage::{BranchRepository, RepoCtx},
-    testing::storage::init_sqlite_repo_ctx,
-};
+use once_cell::sync::Lazy;
+use sea_orm::{Database, DatabaseConnection};
+use sqlx::SqlitePool;
+use sultan_core::{domain::model::pagination::PaginationOptions, snowflake::SnowflakeGenerator, storage::RepoCtx};
+use tokio::sync::Mutex;
+use uuid::Uuid;
+
+pub static ID_GENERATOR: Lazy<Mutex<SnowflakeGenerator>> =
+    Lazy::new(|| Mutex::new(SnowflakeGenerator::new(1).unwrap()));
+
+pub async fn generate_test_id() -> i64 {
+    let generator = ID_GENERATOR.lock().await;
+    generator.generate().unwrap()
+}
+
+/// Creates a fresh in-memory SQLite database with all migrations applied.
+/// Uses a named shared in-memory database so both sqlx (migrations) and
+/// sea-orm can connect to the same instance.
+pub async fn init_sqlite_repo_ctx() -> RepoCtx<DatabaseConnection> {
+    let db_name = Uuid::new_v4().to_string().replace('-', "");
+    let connection_string = format!("sqlite:file:{}?mode=memory&cache=shared", db_name);
+
+    let new_pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .min_connections(1)
+        .connect(&connection_string)
+        .await
+        .expect("Failed to create in-memory SQLite database");
+
+    let crate_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let migrations = std::path::Path::new(&crate_dir).join("../migrations");
+    sqlx::migrate::Migrator::new(migrations)
+        .await
+        .expect("Failed to load migrations")
+        .run(&new_pool)
+        .await
+        .expect("Failed to run SQLite migrations");
+
+    let db_connection = Database::connect(connection_string)
+        .await
+        .expect("unable to connect sqlite");
+
+    // Close sqlx pool — sea-orm keeps the named in-memory DB alive
+    new_pool.close().await;
+
+    RepoCtx {
+        ctx: sultan_core::domain::Context::new(),
+        db: db_connection,
+    }
+}
+
+/// Use init_sqlite_db() instead of init_sqlite_repo_ctx() for transaction tests.
+/// In-memory SQLite doesn't support WAL mode required for concurrent transaction testing.
+pub async fn init_sqlite_db() -> DatabaseConnection {
+    let temp_file = format!("/tmp/test_{}.db", Uuid::new_v4());
+    // run migrations with sqlx, then connect sea-orm with max_connections(5)
+    // ...
+}
+```
+
+**`sultan_core/tests/branch_repo.rs`** — The actual test file (one function per repo):
+```rust
+mod common;
+use sultan_core::testing::storage::branch;
 
 #[tokio::test]
 async fn test_branch_repo_integration() {
-    // Create test database with migrations
-    let repo_ctx = init_sqlite_repo_ctx().await;
-    let repo = SqliteBranchRepository::new();
-    
-    // Test create
+    let repo = sultan_core::storage::sqlite::branch::SqliteBranchRepository::new();
+    branch::branch_test_all(&repo, || async { common::init_sqlite_repo_ctx().await }).await;
+}
+```
+
+**`sultan_core/src/testing/storage/branch.rs`** — Shared test logic:
+```rust
+use sea_orm::DatabaseConnection;
+use crate::{
+    domain::model::branch::{BranchCreate, BranchUpdate},
+    storage::{BranchRepository, RepoCtx},
+};
+
+/// Runs all BranchRepository tests using the provided repo and a ctx_factory.
+/// The ctx_factory is called once per test case to provide a fresh database.
+pub async fn branch_test_all<C, F, Fut>(repo: &C, ctx_factory: F)
+where
+    C: BranchRepository,
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = RepoCtx<DatabaseConnection>>,
+{
+    branch_test_repo_integration(&ctx_factory().await, repo).await;
+    branch_test_partial_update(&ctx_factory().await, repo).await;
+    branch_test_non_existent(&ctx_factory().await, repo).await;
+    // ... more test cases
+}
+
+/// Test: basic CRUD for a branch
+pub async fn branch_test_repo_integration<B: BranchRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &B,
+) {
+    let id = super::generate_test_id().await;
     let branch = BranchCreate {
-        name: "Test Branch".to_string(),
-        code: "TEST".to_string(),
-        // ...
+        is_main: true,
+        name: "Main Branch".to_string(),
+        code: "MAIN".to_string(),
+        address: Some("123 Main St".to_string()),
+        phone: None,
+        npwp: None,
+        image: None,
     };
-    repo.create(&repo_ctx, 1, &branch).await.unwrap();
-    
-    // Test read
-    let result = repo.get_by_id(&repo_ctx, 1).await.unwrap();
-    assert!(result.is_some());
+
+    repo.create(ctx, id, &branch).await.expect("Failed to create branch");
+
+    let fetched = repo.get_by_id(ctx, id).await.unwrap().expect("Branch not found");
+    assert_eq!(fetched.name, branch.name);
+    assert_eq!(fetched.is_main, branch.is_main);
+
+    let update_data = BranchUpdate { name: Some("Updated Branch".to_string()), ..Default::default() };
+    repo.update(ctx, id, &update_data).await.expect("Failed to update");
+
+    let updated = repo.get_by_id(ctx, id).await.unwrap().expect("Not found after update");
+    assert_eq!(updated.name, "Updated Branch");
+
+    repo.delete(ctx, id).await.expect("Failed to delete");
+
+    let deleted = repo.get_by_id(ctx, id).await.unwrap();
+    assert!(deleted.is_none(), "Deleted branch should not be found");
+}
+```
+
+**Key rules for storage tests**:
+- Each test case (`branch_test_*`) gets its **own `RepoCtx`** via `ctx_factory().await` — never share ctx between test cases
+- Use `super::generate_test_id().await` for Snowflake IDs (thread-safe static generator)
+- Use `SqliteCategoryRepository::new()` (or other repos) inside test functions when you need to create cross-entity dependencies
+- If repo method returns `Option<T>`, assert on both `is_some()` and field values
+- Test both the happy path and error paths: `NotFound`, soft-delete exclusion, etc.
+- For repos with cross-entity relations (e.g. product → categories, product → variants → sell prices), test that `get_by_id` returns fully populated objects and that soft-deleted relations are excluded
+
+**Coverage checklist per repository**:
+- `create` — success, with/without optional fields
+- `get_by_id` — found, not found, soft-deleted returns None
+- `update` — each optional field individually, not-found error
+- `delete` — success, then `get_by_id` returns None; not-found error; update after delete fails
+- Relations — populated on fetch, soft-deleted relations excluded
+
+**`sultan_core/src/testing/storage/mod.rs`** — Shared utilities:
+```rust
+pub mod branch;
+pub mod product;
+// ...
+
+use crate::snowflake::SnowflakeGenerator;
+use once_cell::sync::Lazy;
+use tokio::sync::Mutex;
+
+pub static ID_GENERATOR: Lazy<Mutex<SnowflakeGenerator>> =
+    Lazy::new(|| Mutex::new(SnowflakeGenerator::new(1).unwrap()));
+
+pub async fn generate_test_id() -> i64 {
+    let generator = ID_GENERATOR.lock().await;
+    generator.generate().unwrap()
 }
 ```
 
@@ -596,12 +750,27 @@ These three commands are **mandatory** and will be checked in CI/CD. Never skip 
 
 1. **Create entity** in `sultan_core/src/storage/sqlite/entity/` with SeaORM derives
 2. **Export entity** in `sultan_core/src/storage/sqlite/entity/mod.rs`
-3. **Create repository trait** in `sultan_core/src/storage/` with `impl ConnectionTrait`
-4. **Implement repository** in `sultan_core/src/storage/sqlite/` using SeaORM queries
-5. **Write integration tests** in `sultan_core/tests/`
-6. **Create domain models** in `sultan_core/src/domain/model/`
-7. **Add `to_domain()` method** on entity Model
-8. **Run tests**: `cargo test --package sultan_core`
+3. **Create domain models** in `sultan_core/src/domain/model/`
+4. **Add `to_domain()` method** on entity Model
+5. **Create repository trait** in `sultan_core/src/storage/` with `impl ConnectionTrait`
+6. **Implement repository** in `sultan_core/src/storage/sqlite/` using SeaORM queries
+7. **Write shared test functions** in `sultan_core/src/testing/storage/<name>.rs` following the pattern:
+   - One `<name>_test_all<C, F, Fut>(repo, ctx_factory)` entry-point function
+   - Individual `<name>_test_<case>` functions, each taking `ctx: &RepoCtx<DatabaseConnection>`
+   - Call `super::generate_test_id().await` for every ID
+   - Register module in `sultan_core/src/testing/storage/mod.rs`
+8. **Write the integration test file** at `sultan_core/tests/<name>_repo.rs`:
+   ```rust
+   mod common;
+   use sultan_core::testing::storage::<name>;
+   
+   #[tokio::test]
+   async fn test_<name>_repo_integration() {
+       let repo = sultan_core::storage::sqlite::Sqlite<Name>Repository::new();
+       <name>::<name>_test_all(&repo, || async { common::init_sqlite_repo_ctx().await }).await;
+   }
+   ```
+9. **Run tests**: `cargo test --package sultan_core`
 
 ### Adding New Endpoints
 
