@@ -67,6 +67,31 @@ where
     s.parse().map_err(serde::de::Error::custom)
 }
 
+pub fn vec_string_to_i64<'de, D>(deserializer: D) -> Result<Vec<i64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let vec = Vec::<String>::deserialize(deserializer)?;
+    vec.iter()
+        .map(|s| s.parse::<i64>().map_err(serde::de::Error::custom))
+        .collect()
+}
+
+pub fn option_vec_string_to_i64<'de, D>(deserializer: D) -> Result<Option<Vec<i64>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt = Option::<Vec<String>>::deserialize(deserializer)?;
+    match opt {
+        Some(vec) => vec
+            .iter()
+            .map(|s| s.parse::<i64>().map_err(serde::de::Error::custom))
+            .collect::<Result<Vec<i64>, _>>()
+            .map(Some),
+        None => Ok(None),
+    }
+}
+
 pub fn option_string_to_i64<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
 where
     D: Deserializer<'de>,

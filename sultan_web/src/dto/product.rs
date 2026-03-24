@@ -1,7 +1,7 @@
 use super::category::CategoryChildResponse;
 use super::{
     default_page, default_page_size, i64_to_string, option_i64_to_string, option_string_to_i64,
-    string_to_i64,
+    option_vec_string_to_i64, string_to_i64, vec_string_to_i64,
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -64,16 +64,12 @@ pub struct ProductCreateRequest {
 
     /// Category IDs this product belongs to
     #[schema(example = json!(["1234567890", "9876543210"]))]
-    #[serde(default)]
-    pub category_ids: Vec<String>,
+    #[serde(default, deserialize_with = "vec_string_to_i64")]
+    pub category_ids: Vec<i64>,
 }
 
 impl ProductCreateRequest {
-    /// Convert category_ids from strings to i64
     pub fn to_domain(&self) -> sultan_core::domain::model::product::ProductCreate {
-        let category_ids: Result<Vec<i64>, _> =
-            self.category_ids.iter().map(|s| s.parse::<i64>()).collect();
-
         sultan_core::domain::model::product::ProductCreate {
             name: self.name.clone(),
             description: self.description.clone(),
@@ -84,9 +80,7 @@ impl ProductCreateRequest {
             editable_price: self.editable_price,
             has_variant: self.has_variant,
             metadata: self.metadata.clone(),
-            category_ids: category_ids
-                .map_err(|e| format!("Invalid category ID: {}", e))
-                .unwrap_or_default(),
+            category_ids: self.category_ids.clone(),
         }
     }
 }
@@ -146,20 +140,13 @@ pub struct ProductUpdateRequest {
 
     /// Category IDs this product belongs to
     #[schema(example = json!(["1234567890", "9876543210"]))]
-    pub category_ids: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "option_vec_string_to_i64")]
+    pub category_ids: Option<Vec<i64>>,
 }
 
 impl ProductUpdateRequest {
-    /// Convert to domain ProductUpdate
-    pub fn to_domain(&self) -> Result<sultan_core::domain::model::product::ProductUpdate, String> {
-        let category_ids = if let Some(ref ids) = self.category_ids {
-            let parsed: Result<Vec<i64>, _> = ids.iter().map(|s| s.parse::<i64>()).collect();
-            Some(parsed.map_err(|e| format!("Invalid category ID: {}", e))?)
-        } else {
-            None
-        };
-
-        Ok(sultan_core::domain::model::product::ProductUpdate {
+    pub fn to_domain(&self) -> sultan_core::domain::model::product::ProductUpdate {
+        sultan_core::domain::model::product::ProductUpdate {
             name: self.name.clone(),
             description: self.description.clone(),
             product_type: self.product_type.clone(),
@@ -169,8 +156,8 @@ impl ProductUpdateRequest {
             editable_price: self.editable_price,
             has_variant: self.has_variant,
             metadata: self.metadata.clone(),
-            category_ids,
-        })
+            category_ids: self.category_ids.clone(),
+        }
     }
 }
 
@@ -750,25 +737,16 @@ pub struct ProductFullCreateRequest {
 
     /// Category IDs (can also be specified in product.category_ids)
     #[schema(example = json!(["1234567890", "9876543210"]))]
-    #[serde(default)]
-    pub categories: Vec<String>,
+    #[serde(default, deserialize_with = "vec_string_to_i64")]
+    pub categories: Vec<i64>,
 }
 
 impl ProductFullCreateRequest {
     pub fn to_domain(&self) -> sultan_core::domain::model::product::ProductFullCreate {
-        let product = self.product.to_domain();
-
-        let categories: Result<Vec<i64>, _> =
-            self.categories.iter().map(|s| s.parse::<i64>()).collect();
-
-        let categories = categories
-            .map_err(|e| format!("Invalid category ID: {}", e))
-            .unwrap_or_default();
-
         sultan_core::domain::model::product::ProductFullCreate {
-            product,
+            product: self.product.to_domain(),
             variants: self.variants.iter().map(|v| v.to_domain()).collect(),
-            categories,
+            categories: self.categories.clone(),
         }
     }
 }
