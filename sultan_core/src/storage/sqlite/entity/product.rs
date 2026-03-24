@@ -68,6 +68,7 @@ impl Model {
                 .as_ref()
                 .and_then(|m| serde_json::from_str(m).ok()),
             categories: vec![],
+            variants: vec![],
         }
     }
 }

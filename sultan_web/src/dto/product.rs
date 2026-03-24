@@ -394,9 +394,6 @@ pub struct ProductVariantResponse {
     /// Last update timestamp
     pub updated_at: chrono::DateTime<Utc>,
 
-    /// Product this variant belongs to
-    pub product: ProductResponse,
-
     /// Variant barcode
     #[schema(example = "8901234567890")]
     pub barcode: Option<String>,
@@ -415,7 +412,6 @@ impl From<sultan_core::domain::model::product::ProductVariant> for ProductVarian
             id: variant.id,
             created_at: variant.created_at,
             updated_at: variant.updated_at,
-            product: variant.product.into(),
             barcode: variant.barcode,
             name: variant.name,
             metadata: variant.metadata,

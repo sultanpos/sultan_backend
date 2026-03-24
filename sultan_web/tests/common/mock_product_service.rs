@@ -47,17 +47,17 @@ impl MockProductService {
             has_variant: false,
             metadata: None,
             categories: vec![],
+            variants: vec![],
         }
     }
 
-    fn create_mock_variant(&self, product: Product) -> ProductVariant {
+    fn create_mock_variant(&self) -> ProductVariant {
         ProductVariant {
             id: self.id,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
             deleted_at: None,
             is_deleted: false,
-            product,
             barcode: Some("1234567890".to_string()),
             name: Some("Test Variant".to_string()),
             metadata: None,
@@ -181,8 +181,7 @@ impl ProductServiceTrait for MockProductService {
             ));
         }
         if barcode == "1234567890" {
-            let product = self.create_mock_product();
-            Ok(Some(self.create_mock_variant(product)))
+            Ok(Some(self.create_mock_variant()))
         } else {
             Ok(None)
         }
@@ -197,8 +196,7 @@ impl ProductServiceTrait for MockProductService {
             return Err(Error::Internal("Failed to get variant by id".to_string()));
         }
         if id == self.id {
-            let product = self.create_mock_product();
-            Ok(Some(self.create_mock_variant(product)))
+            Ok(Some(self.create_mock_variant()))
         } else {
             Ok(None)
         }
@@ -215,8 +213,7 @@ impl ProductServiceTrait for MockProductService {
             ));
         }
         if product_id == self.id {
-            let product = self.create_mock_product();
-            Ok(vec![self.create_mock_variant(product)])
+            Ok(vec![self.create_mock_variant()])
         } else {
             Ok(vec![])
         }

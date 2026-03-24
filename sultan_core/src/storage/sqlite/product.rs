@@ -418,7 +418,7 @@ impl ProductRepository for SqliteProductRepository {
             .one(&ctx.db)
             .await?;
 
-        let (variant_model, product_model) = match result {
+        let (variant_model, _) = match result {
             Some((v, Some(p))) if !p.is_deleted => (v, p),
             _ => return Ok(None),
         };
@@ -446,7 +446,7 @@ impl ProductRepository for SqliteProductRepository {
             .collect();
 
         // Assemble the full ProductVariant
-        let mut variant = variant_model.to_domain(product_model.to_domain());
+        let mut variant = variant_model.to_domain();
         variant.sell_prices = sell_prices;
 
         Ok(Some(variant))
@@ -464,7 +464,7 @@ impl ProductRepository for SqliteProductRepository {
             .one(&ctx.db)
             .await?;
 
-        let (variant_model, product_model) = match result {
+        let (variant_model, _) = match result {
             Some((v, Some(p))) if !p.is_deleted => (v, p),
             _ => return Ok(None),
         };
@@ -492,7 +492,7 @@ impl ProductRepository for SqliteProductRepository {
             .collect();
 
         // Assemble the full ProductVariant
-        let mut variant = variant_model.to_domain(product_model.to_domain());
+        let mut variant = variant_model.to_domain();
         variant.sell_prices = sell_prices;
 
         Ok(Some(variant))
@@ -517,7 +517,7 @@ impl ProductRepository for SqliteProductRepository {
             .filter_map(|(variant_model, product_model)| {
                 product_model.and_then(|p| {
                     if !p.is_deleted {
-                        Some(variant_model.to_domain(p.to_domain()))
+                        Some(variant_model.to_domain())
                     } else {
                         None
                     }

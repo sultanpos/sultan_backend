@@ -783,7 +783,6 @@ pub async fn product_test_create_variant_success<R: ProductRepository>(
         .expect("Variant not found");
 
     assert_eq!(saved.id, variant_id);
-    assert_eq!(saved.product.id, product_id);
     assert_eq!(saved.barcode, Some("1234567890".to_string()));
     assert_eq!(saved.name, Some("Default Variant".to_string()));
     assert_eq!(saved.metadata, Some(json!({"sku": "SKU001"})));
@@ -1383,11 +1382,6 @@ pub async fn product_test_multiple_variants_for_single_product<R: ProductReposit
         .expect("Failed to get variants");
 
     assert_eq!(variants.len(), 5);
-
-    // Verify each variant belongs to the same product
-    for variant in &variants {
-        assert_eq!(variant.product.id, product_id);
-    }
 }
 
 /// Test: Delete variants by product ID preserves other products
@@ -1483,7 +1477,6 @@ pub async fn product_test_get_variant_by_barcode_success<R: ProductRepository>(
 
     assert_eq!(saved.id, variant_id);
     assert_eq!(saved.barcode, Some(unique_barcode));
-    assert_eq!(saved.product.id, product_id);
 }
 
 /// Test: Get variant by barcode not found
@@ -1526,7 +1519,6 @@ pub async fn product_test_get_variant_by_id_success<R: ProductRepository>(
     assert!(result.is_some());
     let saved_variant = result.unwrap();
     assert_eq!(saved_variant.id, variant_id);
-    assert_eq!(saved_variant.product.id, product_id);
     assert_eq!(saved_variant.barcode, Some("1234567890".to_string()));
 }
 
@@ -1575,9 +1567,6 @@ pub async fn product_test_get_variant_by_product_id_success<R: ProductRepository
         .expect("Failed to get variants");
 
     assert_eq!(variants.len(), 3);
-    for variant in &variants {
-        assert_eq!(variant.product.id, product_id);
-    }
 }
 
 /// Test: Get variant by product ID returns empty list
@@ -2043,10 +2032,6 @@ pub async fn product_test_get_variant_by_id_with_nested_data<R>(
         Some("Variant with Prices".to_string())
     );
 
-    // Verify product data
-    assert_eq!(fetched_variant.product.id, product_id);
-    assert_eq!(fetched_variant.product.name, "Test Product with Relations");
-
     // Verify sell prices are fetched
     assert_eq!(
         fetched_variant.sell_prices.len(),
@@ -2197,10 +2182,6 @@ pub async fn product_test_get_variant_by_barcode_with_nested_data<R>(
     assert_eq!(fetched_variant.id, variant_id);
     assert_eq!(fetched_variant.barcode, Some("BARCODE-XYZ-789".to_string()));
     assert_eq!(fetched_variant.name, Some("Barcode Variant".to_string()));
-
-    // Verify product data
-    assert_eq!(fetched_variant.product.id, product_id);
-    assert_eq!(fetched_variant.product.name, "Barcode Test Product");
 
     // Verify sell prices are fetched
     assert_eq!(

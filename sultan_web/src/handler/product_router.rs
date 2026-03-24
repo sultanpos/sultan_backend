@@ -27,7 +27,7 @@ use crate::dto::{ErrorResponse, ProductCreateResponse};
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        create,        
+        create,
         delete_product,
         get_by_id
     ),

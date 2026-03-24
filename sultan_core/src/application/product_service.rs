@@ -1049,17 +1049,17 @@ mod tests {
             has_variant: false,
             metadata: None,
             categories: vec![],
+            variants: vec![],
         }
     }
 
-    fn create_test_variant(product: Product) -> ProductVariant {
+    fn create_test_variant() -> ProductVariant {
         ProductVariant {
             id: 1,
             created_at: Utc::now(),
             updated_at: Utc::now(),
             deleted_at: None,
             is_deleted: false,
-            product,
             barcode: Some("1234567890".to_string()),
             name: Some("Default Variant".to_string()),
             metadata: None,
@@ -1573,8 +1573,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_variant_by_id_success() {
         let mut mock_repo = MockProductRepo::new();
-        let product = create_test_product();
-        let variant = create_test_variant(product);
+        let variant = create_test_variant();
         mock_repo.expect_get_variant_by_id(move |_| Ok(Some(variant.clone())));
 
         let id_gen = create_mock_id_gen(1);

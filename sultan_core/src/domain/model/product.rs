@@ -2,6 +2,7 @@ use chrono::Utc;
 use serde_json::Value;
 
 use crate::domain::model::{
+    category::Category,
     sell_price::{SellDiscountCreate, SellPrice, SellPriceCreate},
     stock::StockCreate,
 };
@@ -47,7 +48,8 @@ pub struct Product {
     pub editable_price: bool,
     pub has_variant: bool,
     pub metadata: Option<Value>,
-    pub categories: Vec<i64>,
+    pub categories: Vec<Category>,
+    pub variants: Vec<ProductVariant>,
 }
 
 #[derive(Debug, Clone)]
@@ -57,7 +59,6 @@ pub struct ProductVariant {
     pub updated_at: chrono::DateTime<Utc>,
     pub deleted_at: Option<chrono::DateTime<Utc>>,
     pub is_deleted: bool,
-    pub product: Product,
     pub barcode: Option<String>,
     pub name: Option<String>,
     pub metadata: Option<Value>,
