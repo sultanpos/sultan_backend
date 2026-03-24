@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect, Set,
-    sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ModelTrait, QueryFilter,
+    QuerySelect, Set, sea_query::Expr,
 };
 
 use crate::{
@@ -19,11 +19,11 @@ use crate::{
     storage::{
         ProductRepository, RepoCtx,
         sqlite::entity::{
-            CategoryColumn, CategoryEntity, ProductActiveModel, ProductCategoryActiveModel,
-            ProductCategoryColumn, ProductCategoryEntity, ProductColumn, ProductEntity,
-            ProductVariantActiveModel, ProductVariantColumn, ProductVariantEntity,
-            SellDiscountActiveModel, SellDiscountColumn, SellDiscountEntity, SellPriceActiveModel,
-            SellPriceColumn, SellPriceEntity,
+            CategoryColumn, ProductActiveModel, ProductCategoryActiveModel, ProductCategoryColumn,
+            ProductCategoryEntity, ProductColumn, ProductEntity, ProductVariantActiveModel,
+            ProductVariantColumn, ProductVariantEntity, SellDiscountActiveModel,
+            SellDiscountColumn, SellDiscountEntity, SellPriceActiveModel, SellPriceColumn,
+            SellPriceEntity,
         },
     },
 };
@@ -248,27 +248,15 @@ impl ProductRepository for SqliteProductRepository {
             None => return Ok(None),
         };
 
-        // Fetch full Category objects via product_categories join
-        let category_ids: Vec<i64> = ProductCategoryEntity::find()
-            .filter(ProductCategoryColumn::ProductId.eq(id))
+        // Fetch categories via Product → ProductCategory → Category join (single query)
+        let categories = product_model
+            .find_linked(crate::storage::sqlite::entity::product::ProductToCategories)
+            .filter(CategoryColumn::IsDeleted.eq(false))
             .all(&ctx.db)
             .await?
             .into_iter()
-            .map(|pc| pc.category_id)
+            .map(|c| c.to_domain())
             .collect();
-
-        let categories = if category_ids.is_empty() {
-            vec![]
-        } else {
-            CategoryEntity::find()
-                .filter(CategoryColumn::Id.is_in(category_ids))
-                .filter(CategoryColumn::IsDeleted.eq(false))
-                .all(&ctx.db)
-                .await?
-                .into_iter()
-                .map(|c| c.to_domain())
-                .collect()
-        };
 
         // Fetch variants
         let variant_models = ProductVariantEntity::find()
