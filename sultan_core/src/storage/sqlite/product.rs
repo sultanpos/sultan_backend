@@ -270,39 +270,51 @@ impl ProductRepository for SqliteProductRepository {
                 .collect()
         };
 
-        // Fetch variants with their sell prices and discounts
+        // Fetch variants
         let variant_models = ProductVariantEntity::find()
             .filter(ProductVariantColumn::ProductId.eq(id))
             .filter(ProductVariantColumn::IsDeleted.eq(false))
             .all(&ctx.db)
             .await?;
 
-        let mut variants = Vec::with_capacity(variant_models.len());
-        for variant_model in variant_models {
-            let prices_with_discounts = SellPriceEntity::find()
-                .filter(SellPriceColumn::ProductVariantId.eq(variant_model.id))
+        // Bulk-fetch all sell prices (with discounts) for every variant in one query
+        let variant_ids: Vec<i64> = variant_models.iter().map(|v| v.id).collect();
+
+        let mut prices_by_variant: std::collections::HashMap<i64, Vec<_>> =
+            std::collections::HashMap::new();
+
+        if !variant_ids.is_empty() {
+            let all_prices_with_discounts = SellPriceEntity::find()
+                .filter(SellPriceColumn::ProductVariantId.is_in(variant_ids))
                 .filter(SellPriceColumn::IsDeleted.eq(false))
                 .find_with_related(SellDiscountEntity)
                 .all(&ctx.db)
                 .await?;
 
-            let sell_prices = prices_with_discounts
-                .into_iter()
-                .map(|(price_model, discount_models)| {
-                    let mut sell_price = price_model.to_domain();
-                    sell_price.discounts = discount_models
-                        .into_iter()
-                        .filter(|d| !d.is_deleted)
-                        .map(|d| d.to_domain())
-                        .collect();
-                    sell_price
-                })
-                .collect();
-
-            let mut variant = variant_model.to_domain();
-            variant.sell_prices = sell_prices;
-            variants.push(variant);
+            for (price_model, discount_models) in all_prices_with_discounts {
+                let variant_id = price_model.product_variant_id;
+                let mut sell_price = price_model.to_domain();
+                sell_price.discounts = discount_models
+                    .into_iter()
+                    .filter(|d| !d.is_deleted)
+                    .map(|d| d.to_domain())
+                    .collect();
+                prices_by_variant
+                    .entry(variant_id)
+                    .or_default()
+                    .push(sell_price);
+            }
         }
+
+        let variants: Vec<_> = variant_models
+            .into_iter()
+            .map(|vm| {
+                let sell_prices = prices_by_variant.remove(&vm.id).unwrap_or_default();
+                let mut variant = vm.to_domain();
+                variant.sell_prices = sell_prices;
+                variant
+            })
+            .collect();
 
         let mut product = product_model.to_domain();
         product.categories = categories;

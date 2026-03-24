@@ -741,6 +741,7 @@ impl ProductVariantFullCreateRequest {
 #[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct ProductFullCreateRequest {
     /// Product details
+    #[validate(nested)]
     pub product: ProductCreateRequest,
 
     /// List of product variants with prices and stocks

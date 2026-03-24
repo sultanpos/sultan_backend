@@ -4,7 +4,7 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter, Set,
     sea_query::Expr,
 };
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 
 use crate::{
     domain::{DomainResult, model::number::NumberGenerateParams},
@@ -94,10 +94,7 @@ impl NumberRepository for SqliteNumberRepository {
         } else {
             // Sequence doesn't exist, create it with initial value
             let initial_number = 1;
-            let id = ID_GEN
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .generate()?;
+            let id = ID_GEN.lock().await.generate()?;
 
             let new_sequence = NumberSequenceActiveModel {
                 id: Set(id),
