@@ -48,9 +48,14 @@ pub async fn init_sqlite_pool() -> SqlitePool {
 }
 
 pub async fn init_sqlite_repo_ctx() -> RepoCtx<DatabaseConnection> {
-    // Create an isolated in-memory database for each test to avoid schema conflicts
-    let temp_file = format!("/tmp/test_{}.db", Uuid::new_v4());
-    let connection_string = format!("sqlite://{}?mode=rwc", temp_file);
+    // Use a named shared in-memory database so both sqlx (migrations) and
+    // sea-orm can connect to the same database without leaving temp files.
+    let db_name = Uuid::new_v4().to_string().replace('-', "");
+    let connection_string = format!("sqlite:file:{}?mode=memory&cache=shared", db_name);
+
+    // for using file
+    // let temp_file = format!("/tmp/test_{}.db", Uuid::new_v4());
+    // let connection_string = format!("sqlite://{}?mode=rwc", temp_file);
 
     let new_pool = sqlx::sqlite::SqlitePoolOptions::new()
         .min_connections(1)
@@ -60,10 +65,6 @@ pub async fn init_sqlite_repo_ctx() -> RepoCtx<DatabaseConnection> {
 
     let crate_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let migrations = std::path::Path::new(&crate_dir).join("../migrations");
-    print!(
-        "migration folder {}",
-        migrations.as_path().to_string_lossy()
-    );
 
     sqlx::migrate::Migrator::new(migrations)
         .await
@@ -76,6 +77,10 @@ pub async fn init_sqlite_repo_ctx() -> RepoCtx<DatabaseConnection> {
         .await
         .expect("unable to connect sqlite");
 
+    // Keep new_pool alive until sea-orm is connected, then close it.
+    // This ensures the shared in-memory DB persists via db_connection.
+    new_pool.close().await;
+
     RepoCtx {
         ctx: sultan_core::domain::Context::new(),
         db: db_connection,
@@ -83,7 +88,8 @@ pub async fn init_sqlite_repo_ctx() -> RepoCtx<DatabaseConnection> {
 }
 
 pub async fn init_sqlite_db() -> DatabaseConnection {
-    // Create an isolated in-memory database for each test to avoid schema conflicts
+    // Use a temp file for transaction tests — in-memory SQLite doesn't support
+    // WAL mode, which is required for concurrent transaction + read isolation.
     let temp_file = format!("/tmp/test_{}.db", Uuid::new_v4());
     let connection_string = format!("sqlite://{}?mode=rwc", temp_file);
 
@@ -95,10 +101,6 @@ pub async fn init_sqlite_db() -> DatabaseConnection {
 
     let crate_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let migrations = std::path::Path::new(&crate_dir).join("../migrations");
-    print!(
-        "migration folder {}",
-        migrations.as_path().to_string_lossy()
-    );
 
     sqlx::migrate::Migrator::new(migrations)
         .await
@@ -113,9 +115,14 @@ pub async fn init_sqlite_db() -> DatabaseConnection {
         .min_connections(1)
         .sqlx_logging(false);
 
-    Database::connect(opt)
+    let db = Database::connect(opt)
         .await
-        .expect("unable to connect sqlite")
+        .expect("unable to connect sqlite");
+
+    // Close migrations pool before returning; temp file is cleaned up by the OS.
+    new_pool.close().await;
+
+    db
 }
 
 pub async fn setup_test_db() -> SqlitePool {

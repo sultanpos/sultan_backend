@@ -1,8 +1,10 @@
 use async_trait::async_trait;
+use once_cell::sync::Lazy;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter, Set,
     sea_query::Expr,
 };
+use std::sync::Mutex;
 
 use crate::{
     domain::{DomainResult, model::number::NumberGenerateParams},
@@ -11,6 +13,13 @@ use crate::{
         sqlite::entity::{NumberSequenceActiveModel, NumberSequenceColumn, NumberSequenceEntity},
     },
 };
+
+/// Shared Snowflake generator for number sequence IDs.
+/// Using a module-level static ensures step counters persist between calls,
+/// preventing ID collisions when multiple new sequences are created within
+/// the same millisecond.
+static ID_GEN: Lazy<Mutex<crate::snowflake::SnowflakeGenerator>> =
+    Lazy::new(|| Mutex::new(crate::snowflake::SnowflakeGenerator::new(1).unwrap()));
 
 /// SQLite implementation of NumberRepository using SeaORM.
 ///
@@ -85,7 +94,10 @@ impl NumberRepository for SqliteNumberRepository {
         } else {
             // Sequence doesn't exist, create it with initial value
             let initial_number = 1;
-            let id = crate::snowflake::SnowflakeGenerator::new(1)?.generate()?;
+            let id = ID_GEN
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .generate()?;
 
             let new_sequence = NumberSequenceActiveModel {
                 id: Set(id),
