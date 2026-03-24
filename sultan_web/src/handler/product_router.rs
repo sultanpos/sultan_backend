@@ -14,9 +14,11 @@ use utoipa::OpenApi;
 use validator::Validate;
 
 use crate::AppState;
+use crate::dto::category::CategoryChildResponse;
 use crate::dto::product::{
     ProductFullCreateRequest, ProductResponse, ProductUpdateRequest, ProductVariantCreateRequest,
     ProductVariantCreateResponse, ProductVariantResponse, ProductVariantUpdateRequest,
+    SellDiscountResponse, SellPriceResponse,
 };
 use crate::dto::{ErrorResponse, ProductCreateResponse};
 
@@ -40,6 +42,9 @@ use crate::dto::{ErrorResponse, ProductCreateResponse};
         ProductVariantCreateResponse,
         ProductVariantUpdateRequest,
         ProductVariantResponse,
+        SellPriceResponse,
+        SellDiscountResponse,
+        CategoryChildResponse,
         ErrorResponse,
     )),
     tags(

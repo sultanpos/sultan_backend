@@ -1,4 +1,8 @@
-use super::{default_page, default_page_size, i64_to_string, option_string_to_i64, string_to_i64};
+use super::category::CategoryChildResponse;
+use super::{
+    default_page, default_page_size, i64_to_string, option_i64_to_string, option_string_to_i64,
+    string_to_i64,
+};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -218,6 +222,12 @@ pub struct ProductResponse {
 
     /// Additional metadata
     pub metadata: Option<Value>,
+
+    /// Categories this product belongs to
+    pub categories: Vec<CategoryChildResponse>,
+
+    /// Product variants
+    pub variants: Vec<ProductVariantResponse>,
 }
 
 impl From<Product> for ProductResponse {
@@ -235,6 +245,20 @@ impl From<Product> for ProductResponse {
             editable_price: product.editable_price,
             has_variant: product.has_variant,
             metadata: product.metadata,
+            categories: product
+                .categories
+                .into_iter()
+                .map(|c| CategoryChildResponse {
+                    id: c.id,
+                    name: c.name,
+                    description: c.description,
+                })
+                .collect(),
+            variants: product
+                .variants
+                .into_iter()
+                .map(ProductVariantResponse::from)
+                .collect(),
         }
     }
 }
@@ -404,6 +428,9 @@ pub struct ProductVariantResponse {
 
     /// Additional metadata
     pub metadata: Option<Value>,
+
+    /// Sell prices for this variant
+    pub sell_prices: Vec<SellPriceResponse>,
 }
 
 impl From<sultan_core::domain::model::product::ProductVariant> for ProductVariantResponse {
@@ -415,6 +442,122 @@ impl From<sultan_core::domain::model::product::ProductVariant> for ProductVarian
             barcode: variant.barcode,
             name: variant.name,
             metadata: variant.metadata,
+            sell_prices: variant
+                .sell_prices
+                .into_iter()
+                .map(SellPriceResponse::from)
+                .collect(),
+        }
+    }
+}
+
+// ===== Response DTOs for nested resources =====
+
+/// Sell discount response
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SellDiscountResponse {
+    /// Discount ID
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "i64_to_string")]
+    pub id: i64,
+
+    /// Creation timestamp
+    pub created_at: chrono::DateTime<Utc>,
+
+    /// Last update timestamp
+    pub updated_at: chrono::DateTime<Utc>,
+
+    /// Sell price ID this discount belongs to
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "i64_to_string")]
+    pub sell_price_id: i64,
+
+    /// Minimum quantity for this discount
+    pub quantity: i64,
+
+    /// Discount formula (e.g., "price * 0.9" for 10% off)
+    #[schema(example = "price * 0.9")]
+    pub discount_formula: Option<String>,
+
+    /// Calculated price after applying the discount
+    pub calculated_price: i64,
+
+    /// Customer level this discount applies to
+    pub customer_level: Option<i64>,
+
+    /// Additional metadata
+    pub metadata: Option<Value>,
+}
+
+impl From<sultan_core::domain::model::sell_price::SellDiscount> for SellDiscountResponse {
+    fn from(d: sultan_core::domain::model::sell_price::SellDiscount) -> Self {
+        Self {
+            id: d.id,
+            created_at: d.created_at,
+            updated_at: d.updated_at,
+            sell_price_id: d.sell_price_id,
+            quantity: d.quantity,
+            discount_formula: d.discount_formula,
+            calculated_price: d.calculated_price,
+            customer_level: d.customer_level,
+            metadata: d.metadata,
+        }
+    }
+}
+
+/// Sell price response
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SellPriceResponse {
+    /// Price ID
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "i64_to_string")]
+    pub id: i64,
+
+    /// Creation timestamp
+    pub created_at: chrono::DateTime<Utc>,
+
+    /// Last update timestamp
+    pub updated_at: chrono::DateTime<Utc>,
+
+    /// Branch ID (null means all branches)
+    #[schema(example = "1234567890", value_type = Option<String>)]
+    #[serde(serialize_with = "option_i64_to_string")]
+    pub branch_id: Option<i64>,
+
+    /// Unit of measure ID
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "i64_to_string")]
+    pub uom_id: i64,
+
+    /// Quantity for this price point
+    pub quantity: i64,
+
+    /// Price in cents/smallest currency unit
+    pub price: i64,
+
+    /// Additional metadata
+    pub metadata: Option<Value>,
+
+    /// Discounts for this price
+    pub discounts: Vec<SellDiscountResponse>,
+}
+
+impl From<sultan_core::domain::model::sell_price::SellPrice> for SellPriceResponse {
+    fn from(sp: sultan_core::domain::model::sell_price::SellPrice) -> Self {
+        Self {
+            id: sp.id,
+            created_at: sp.created_at,
+            updated_at: sp.updated_at,
+            branch_id: sp.branch_id,
+            uom_id: sp.uom_id,
+            quantity: sp.quantity,
+            price: sp.price,
+            metadata: sp.metadata,
+            discounts: sp
+                .discounts
+                .into_iter()
+                .map(SellDiscountResponse::from)
+                .collect(),
         }
     }
 }

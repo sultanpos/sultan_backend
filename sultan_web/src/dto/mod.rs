@@ -49,6 +49,16 @@ where
     s.serialize_str(&v.to_string())
 }
 
+fn option_i64_to_string<S>(v: &Option<i64>, s: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match v {
+        Some(id) => s.serialize_some(&id.to_string()),
+        None => s.serialize_none(),
+    }
+}
+
 fn string_to_i64<'de, D>(d: D) -> Result<i64, D::Error>
 where
     D: Deserializer<'de>,
