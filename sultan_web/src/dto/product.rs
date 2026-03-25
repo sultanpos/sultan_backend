@@ -1,12 +1,12 @@
 use super::category::CategoryChildResponse;
 use super::{
     default_page, default_page_size, i64_to_string, option_i64_to_string, option_string_to_i64,
-    option_vec_string_to_i64, string_to_i64, vec_string_to_i64,
+    string_to_i64, vec_string_to_i64,
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sultan_core::domain::model::{Update, product::Product};
+use sultan_core::domain::model::product::Product;
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
 
