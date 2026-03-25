@@ -166,6 +166,12 @@ build_target() {
     mkdir -p "${dest_dir}"
     cp "${so_src}" "${dest_dir}/libsultan_android.so"
 
+    # Strip remaining symbols using the NDK's llvm-strip
+    local strip_tool="${TOOLCHAIN}/bin/llvm-strip"
+    if [[ -f "${strip_tool}" ]]; then
+        "${strip_tool}" --strip-unneeded "${dest_dir}/libsultan_android.so"
+    fi
+
     local size
     size=$(du -h "${dest_dir}/libsultan_android.so" | cut -f1)
     echo ""
