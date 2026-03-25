@@ -1,12 +1,10 @@
 mod common;
 
 use axum::Router;
-use axum::body::Body;
-use axum::http::{Request, StatusCode};
+use axum::http::StatusCode;
 use axum::middleware::from_fn;
 use serde_json::json;
 use std::sync::Arc;
-use tower::ServiceExt;
 
 use common::{MockAppStateBuilder, make_request, mock_product_service::MockProductService};
 use sultan_web::{handler::product_router::product_router, middleware::context_middleware};
@@ -158,15 +156,17 @@ async fn test_create_product_validation_error_missing_name() {
         "categories": []
     });
 
-    let request = Request::builder()
-        .method("POST")
-        .uri("/api/product")
-        .header("content-type", "application/json")
-        .body(Body::from(serde_json::to_vec(&body).unwrap()))
-        .unwrap();
+    let (status, response) = make_request(app, "POST", "/api/product", Some(body))
+        .await
+        .expect("Request failed");
 
-    let response = app.oneshot(request).await.unwrap();
-    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let error_msg = response["error"].as_str().unwrap();
+    assert!(
+        error_msg.contains("Name must be between 1 and 256 characters"),
+        "Expected name validation error, got: {}",
+        error_msg
+    );
 }
 
 #[tokio::test]
@@ -193,15 +193,17 @@ async fn test_create_product_validation_error_missing_product_type() {
         "categories": []
     });
 
-    let request = Request::builder()
-        .method("POST")
-        .uri("/api/product")
-        .header("content-type", "application/json")
-        .body(Body::from(serde_json::to_vec(&body).unwrap()))
-        .unwrap();
+    let (status, response) = make_request(app, "POST", "/api/product", Some(body))
+        .await
+        .expect("Request failed");
 
-    let response = app.oneshot(request).await.unwrap();
-    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let error_msg = response["error"].as_str().unwrap();
+    assert!(
+        error_msg.contains("Product type must be between 1 and 50 characters"),
+        "Expected product_type validation error, got: {}",
+        error_msg
+    );
 }
 
 #[tokio::test]

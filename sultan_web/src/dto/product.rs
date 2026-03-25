@@ -13,7 +13,8 @@ use validator::Validate;
 // ===== Product DTOs =====
 
 /// Request to create a new product
-#[derive(Debug, Deserialize, Validate, ToSchema)]
+#[derive(Debug, Default, Deserialize, Validate, ToSchema)]
+#[serde(default)]
 pub struct ProductCreateRequest {
     /// Product name
     #[validate(length(
