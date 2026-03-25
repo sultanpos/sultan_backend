@@ -16,9 +16,8 @@ use validator::Validate;
 use crate::AppState;
 use crate::dto::category::CategoryChildResponse;
 use crate::dto::product::{
-    ProductFullCreateRequest, ProductResponse, ProductUpdateRequest, ProductVariantCreateRequest,
-    ProductVariantCreateResponse, ProductVariantResponse, ProductVariantUpdateRequest,
-    SellDiscountResponse, SellPriceResponse,
+    ProductFullCreateRequest, ProductResponse, ProductVariantCreateRequest,
+    ProductVariantCreateResponse, ProductVariantResponse, SellDiscountResponse, SellPriceResponse,
 };
 use crate::dto::{ErrorResponse, ProductCreateResponse};
 
@@ -36,11 +35,9 @@ use crate::dto::{ErrorResponse, ProductCreateResponse};
     components(schemas(
         ProductFullCreateRequest,
         ProductCreateResponse,
-        ProductUpdateRequest,
         ProductResponse,
         ProductVariantCreateRequest,
         ProductVariantCreateResponse,
-        ProductVariantUpdateRequest,
         ProductVariantResponse,
         SellPriceResponse,
         SellDiscountResponse,

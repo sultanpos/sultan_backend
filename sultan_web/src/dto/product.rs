@@ -95,73 +95,6 @@ pub struct ProductCreateResponse {
     pub id: i64,
 }
 
-/// Request to update a product
-#[derive(Debug, Deserialize, Validate, ToSchema)]
-pub struct ProductUpdateRequest {
-    /// Product name
-    #[validate(length(
-        min = 1,
-        max = 256,
-        message = "Name must be between 1 and 256 characters"
-    ))]
-    #[schema(example = "Laptop ASUS ROG Updated")]
-    pub name: Option<String>,
-
-    /// Product description (optional)
-    #[schema(example = "Updated description", value_type = Option<String>)]
-    pub description: Update<String>,
-
-    /// Product type
-    #[schema(example = "goods")]
-    pub product_type: Option<String>,
-
-    /// Main product image URL
-    #[schema(example = "https://example.com/images/laptop-new.jpg", value_type = Option<String>)]
-    pub main_image: Update<String>,
-
-    /// Whether the product can be sold
-    #[schema(example = true)]
-    pub sellable: Option<bool>,
-
-    /// Whether the product can be purchased
-    #[schema(example = true)]
-    pub buyable: Option<bool>,
-
-    /// Whether the price can be edited during sale
-    #[schema(example = false)]
-    pub editable_price: Option<bool>,
-
-    /// Whether the product has variants
-    #[schema(example = true)]
-    pub has_variant: Option<bool>,
-
-    /// Additional metadata
-    #[schema(value_type = Option<Value>)]
-    pub metadata: Update<Value>,
-
-    /// Category IDs this product belongs to
-    #[schema(example = json!(["1234567890", "9876543210"]))]
-    #[serde(default, deserialize_with = "option_vec_string_to_i64")]
-    pub category_ids: Option<Vec<i64>>,
-}
-
-impl ProductUpdateRequest {
-    pub fn to_domain(&self) -> sultan_core::domain::model::product::ProductUpdate {
-        sultan_core::domain::model::product::ProductUpdate {
-            name: self.name.clone(),
-            description: self.description.clone(),
-            product_type: self.product_type.clone(),
-            main_image: self.main_image.clone(),
-            sellable: self.sellable,
-            buyable: self.buyable,
-            editable_price: self.editable_price,
-            has_variant: self.has_variant,
-            metadata: self.metadata.clone(),
-            category_ids: self.category_ids.clone(),
-        }
-    }
-}
-
 /// Product response
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ProductResponse {
@@ -313,12 +246,6 @@ impl ProductQueryParams {
     }
 }
 
-/// List of products response
-#[derive(Debug, Serialize, ToSchema)]
-pub struct ProductListResponse {
-    pub products: Vec<ProductResponse>,
-}
-
 // ===== Product Variant DTOs =====
 
 /// Request to create a new product variant
@@ -362,34 +289,6 @@ pub struct ProductVariantCreateResponse {
     #[schema(example = "1234567890", value_type = String)]
     #[serde(serialize_with = "i64_to_string")]
     pub id: i64,
-}
-
-/// Request to update a product variant
-#[derive(Debug, Deserialize, Validate, ToSchema)]
-pub struct ProductVariantUpdateRequest {
-    /// Variant barcode
-    #[schema(example = "8901234567890", value_type = Option<String>)]
-    pub barcode: Update<String>,
-
-    /// Variant name
-    #[schema(example = "Black - 16GB RAM", value_type = Option<String>)]
-    pub name: Update<String>,
-
-    /// Additional metadata
-    #[schema(value_type = Option<Value>)]
-    pub metadata: Update<Value>,
-}
-
-impl From<ProductVariantUpdateRequest>
-    for sultan_core::domain::model::product::ProductVariantUpdate
-{
-    fn from(req: ProductVariantUpdateRequest) -> Self {
-        Self {
-            barcode: req.barcode,
-            name: req.name,
-            metadata: req.metadata,
-        }
-    }
 }
 
 /// Product variant response
