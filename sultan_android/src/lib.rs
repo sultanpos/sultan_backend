@@ -11,7 +11,7 @@ static RUNTIME: Lazy<Mutex<Option<tokio::runtime::Runtime>>> = Lazy::new(|| Mute
 static SHUTDOWN_TX: Lazy<Mutex<Option<tokio::sync::oneshot::Sender<()>>>> =
     Lazy::new(|| Mutex::new(None));
 
-/// JNI: com.sultan.android.SultanServer.start(dbPath, jwtSecret, port)
+/// JNI: com.lekapin.sultan.SultanServer.start(dbPath, jwtSecret, port)
 ///
 /// Starts the Sultan server in a background Tokio runtime.
 ///
@@ -22,7 +22,7 @@ static SHUTDOWN_TX: Lazy<Mutex<Option<tokio::sync::oneshot::Sender<()>>>> =
 ///
 /// Returns true on success, false on failure.
 #[unsafe(no_mangle)]
-pub extern "C" fn Java_com_sultan_android_SultanServer_start(
+pub extern "C" fn Java_com_lekapin_sultan_SultanServer_start(
     mut env: JNIEnv,
     _class: JClass,
     db_path: JString,
@@ -138,11 +138,11 @@ pub extern "C" fn Java_com_sultan_android_SultanServer_start(
     }
 }
 
-/// JNI: com.sultan.android.SultanServer.stop()
+/// JNI: com.lekapin.sultan.SultanServer.stop()
 ///
 /// Gracefully stops the Sultan server.
 #[unsafe(no_mangle)]
-pub extern "C" fn Java_com_sultan_android_SultanServer_stop(_env: JNIEnv, _class: JClass) {
+pub extern "C" fn Java_com_lekapin_sultan_SultanServer_stop(_env: JNIEnv, _class: JClass) {
     // Send shutdown signal
     {
         let mut tx_lock = SHUTDOWN_TX.lock().unwrap();
@@ -159,11 +159,11 @@ pub extern "C" fn Java_com_sultan_android_SultanServer_stop(_env: JNIEnv, _class
     }
 }
 
-/// JNI: com.sultan.android.SultanServer.isRunning()
+/// JNI: com.lekapin.sultan.SultanServer.isRunning()
 ///
 /// Returns true if the server is currently running.
 #[unsafe(no_mangle)]
-pub extern "C" fn Java_com_sultan_android_SultanServer_isRunning(
+pub extern "C" fn Java_com_lekapin_sultan_SultanServer_isRunning(
     _env: JNIEnv,
     _class: JClass,
 ) -> jboolean {

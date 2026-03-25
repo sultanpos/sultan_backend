@@ -102,10 +102,10 @@ OUTPUT_DIR=../MyAndroidApp/app/src/main/jniLibs ./build-android.sh all
 
 Create the `SultanServer` class that matches the JNI function names:
 
-**Kotlin** (`app/src/main/java/com/sultan/android/SultanServer.kt`):
+**Kotlin** (`app/src/main/java/com/lekapin/sultan/SultanServer.kt`):
 
 ```kotlin
-package com.sultan.android
+package com.lekapin.sultan
 
 object SultanServer {
 
@@ -136,10 +136,10 @@ object SultanServer {
 }
 ```
 
-**Java** (`app/src/main/java/com/sultan/android/SultanServer.java`):
+**Java** (`app/src/main/java/com/lekapin/sultan/SultanServer.java`):
 
 ```java
-package com.sultan.android;
+package com.lekapin.sultan;
 
 public class SultanServer {
 
@@ -162,7 +162,7 @@ package com.myapp
 
 import android.app.Application
 import android.util.Log
-import com.sultan.android.SultanServer
+import com.lekapin.sultan.SultanServer
 
 class MyApplication : Application() {
 
@@ -242,7 +242,7 @@ Change the password after first login.
 ### `java.lang.UnsatisfiedLinkError: sultan_android`
 
 - Make sure `libsultan_android.so` is in the correct `jniLibs/<abi>/` directory.
-- Confirm the package name in the Kotlin/Java class matches `com.sultan.android`.
+- Confirm the package name in the Kotlin/Java class matches `com.lekapin.sultan`.
 - Check that `System.loadLibrary("sultan_android")` is called (without `lib` prefix and without `.so`).
 
 ### Check which ABI your device uses
