@@ -11,7 +11,8 @@ use std::{fs::File, sync::Arc};
 use sultan_core::{
     application::{
         AuthService, AuthServiceTrait, BranchService, CategoryService, CustomerService,
-        InMemoryCache, NumberService, SupplierService, UserService, UserServiceTrait,
+        InMemoryCache, NumberService, ProductService, SupplierService, UserService,
+        UserServiceTrait,
     },
     crypto::{Argon2PasswordHasher, DefaultJwtManager, JwtConfig, JwtManager},
     domain::{
@@ -24,10 +25,11 @@ use sultan_core::{
     },
     snowflake::SnowflakeGenerator,
     storage::{
-        BranchRepository, RepoCtx, SqliteUserRepository,
+        BranchRepository, RepoCtx, SqliteStockRepository, SqliteUserRepository,
         sqlite::{
             SqliteBranchRepository, SqliteCategoryRepository, SqliteCustomerRepository,
-            SqliteNumberRepository, SqliteSupplierRepository, SqliteTokenRepository,
+            SqliteNumberRepository, SqliteProductRepository, SqliteSupplierRepository,
+            SqliteTokenRepository,
         },
     },
 };
@@ -51,6 +53,7 @@ use sultan_web::{
         category_router::{CategoryApiDoc, category_router},
         customer_router::{CustomerApiDoc, customer_router},
         middleware::{context_middleware, verify_jwt},
+        product_router::{ProductApiDoc, product_router},
     },
     supplier_routes::SupplierApiDoc,
 };
@@ -95,6 +98,8 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
     let supplier_repository = SqliteSupplierRepository::new();
     let customer_repository = SqliteCustomerRepository::new();
     let number_repository = SqliteNumberRepository::new();
+    let product_repository = SqliteProductRepository::new();
+    let stock_repository = SqliteStockRepository::new();
 
     let password_hasher = Argon2PasswordHasher::default();
     let jwt_manager = DefaultJwtManager::new(JwtConfig::new(
@@ -141,6 +146,12 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
         Arc::new(Argon2PasswordHasher::default()),
         SnowflakeGenerator::new(1)?,
         Arc::new(permission_cache),
+        db_connection.clone(),
+    );
+    let product_service = ProductService::new(
+        product_repository.clone(),
+        stock_repository.clone(),
+        SnowflakeGenerator::new(1)?,
         db_connection.clone(),
     );
 
@@ -198,6 +209,7 @@ async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
         customer_service: Arc::new(customer_service),
         supplier_service: Arc::new(supplier_service),
         user_service: Arc::new(user_service),
+        product_service: Arc::new(product_service),
         extensions: Arc::new(std::collections::HashMap::new()),
     })
 }
@@ -265,6 +277,7 @@ pub async fn create_app() -> anyhow::Result<Router> {
         .nest("/category", category_router())
         .nest("/customer", customer_router())
         .nest("/supplier", supplier_router())
+        .nest("/product", product_router())
         .nest("/user", user_router())
         .route_layer(axum::middleware::from_fn_with_state(
             app_state.clone(),
@@ -278,6 +291,7 @@ pub async fn create_app() -> anyhow::Result<Router> {
     openapi.merge(CustomerApiDoc::openapi());
     openapi.merge(SupplierApiDoc::openapi());
     openapi.merge(UserApiDoc::openapi());
+    openapi.merge(ProductApiDoc::openapi());
     // Add Bearer token security scheme
     if let Some(components) = openapi.components.as_mut() {
         components.add_security_scheme(

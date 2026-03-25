@@ -43,6 +43,21 @@ impl Related<super::product_variant::Entity> for Entity {
 
 impl ActiveModelBehavior for ActiveModel {}
 
+/// Linked definition for traversing Product → ProductCategory → Category
+pub struct ProductToCategories;
+
+impl Linked for ProductToCategories {
+    type FromEntity = Entity;
+    type ToEntity = super::category::Entity;
+
+    fn link(&self) -> Vec<RelationDef> {
+        vec![
+            super::product_category::Relation::Product.def().rev(),
+            super::product_category::Relation::Category.def(),
+        ]
+    }
+}
+
 impl Model {
     /// Converts the SeaORM model to the domain model
     pub fn to_domain(&self) -> crate::domain::model::product::Product {
@@ -67,6 +82,8 @@ impl Model {
                 .metadata
                 .as_ref()
                 .and_then(|m| serde_json::from_str(m).ok()),
+            categories: vec![],
+            variants: vec![],
         }
     }
 }

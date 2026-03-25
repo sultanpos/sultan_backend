@@ -53,11 +53,8 @@ impl Related<super::sell_price::Entity> for Entity {
 impl ActiveModelBehavior for ActiveModel {}
 
 impl Model {
-    /// Converts the SeaORM model to a domain ProductVariant with the given Product
-    pub fn to_domain(
-        &self,
-        product: crate::domain::model::product::Product,
-    ) -> crate::domain::model::product::ProductVariant {
+    /// Converts the SeaORM model to a domain ProductVariant
+    pub fn to_domain(&self) -> crate::domain::model::product::ProductVariant {
         crate::domain::model::product::ProductVariant {
             id: self.id,
             created_at: super::super::parse_sqlite_date(&self.created_at),
@@ -67,7 +64,6 @@ impl Model {
                 .as_ref()
                 .map(|d| super::super::parse_sqlite_date(d)),
             is_deleted: self.is_deleted,
-            product,
             barcode: self.barcode.clone(),
             name: self.name.clone(),
             metadata: self

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect, Set,
-    sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ModelTrait, QueryFilter,
+    QuerySelect, Set, sea_query::Expr,
 };
 
 use crate::{
@@ -19,7 +19,7 @@ use crate::{
     storage::{
         ProductRepository, RepoCtx,
         sqlite::entity::{
-            ProductActiveModel, ProductCategoryActiveModel, ProductCategoryColumn,
+            CategoryColumn, ProductActiveModel, ProductCategoryActiveModel, ProductCategoryColumn,
             ProductCategoryEntity, ProductColumn, ProductEntity, ProductVariantActiveModel,
             ProductVariantColumn, ProductVariantEntity, SellDiscountActiveModel,
             SellDiscountColumn, SellDiscountEntity, SellPriceActiveModel, SellPriceColumn,
@@ -54,21 +54,6 @@ pub struct SqliteProductRepository {}
 impl SqliteProductRepository {
     pub fn new() -> Self {
         SqliteProductRepository {}
-    }
-
-    /// Fetches a product by its ID from the database.
-    /// This is a helper method used by variant queries to fetch the associated product.
-    async fn fetch_product_by_id(
-        &self,
-        ctx: &RepoCtx<impl ConnectionTrait>,
-        id: i64,
-    ) -> DomainResult<Option<Product>> {
-        let product = ProductEntity::find_by_id(id)
-            .filter(ProductColumn::IsDeleted.eq(false))
-            .one(&ctx.db)
-            .await?;
-
-        Ok(product.map(|p| p.to_domain()))
     }
 }
 
@@ -254,7 +239,76 @@ impl ProductRepository for SqliteProductRepository {
         ctx: &RepoCtx<impl ConnectionTrait>,
         id: i64,
     ) -> DomainResult<Option<Product>> {
-        self.fetch_product_by_id(ctx, id).await
+        let product_model = match ProductEntity::find_by_id(id)
+            .filter(ProductColumn::IsDeleted.eq(false))
+            .one(&ctx.db)
+            .await?
+        {
+            Some(p) => p,
+            None => return Ok(None),
+        };
+
+        // Fetch categories via Product → ProductCategory → Category join (single query)
+        let categories = product_model
+            .find_linked(crate::storage::sqlite::entity::product::ProductToCategories)
+            .filter(CategoryColumn::IsDeleted.eq(false))
+            .all(&ctx.db)
+            .await?
+            .into_iter()
+            .map(|c| c.to_domain())
+            .collect();
+
+        // Fetch variants
+        let variant_models = ProductVariantEntity::find()
+            .filter(ProductVariantColumn::ProductId.eq(id))
+            .filter(ProductVariantColumn::IsDeleted.eq(false))
+            .all(&ctx.db)
+            .await?;
+
+        // Bulk-fetch all sell prices (with discounts) for every variant in one query
+        let variant_ids: Vec<i64> = variant_models.iter().map(|v| v.id).collect();
+
+        let mut prices_by_variant: std::collections::HashMap<i64, Vec<_>> =
+            std::collections::HashMap::new();
+
+        if !variant_ids.is_empty() {
+            let all_prices_with_discounts = SellPriceEntity::find()
+                .filter(SellPriceColumn::ProductVariantId.is_in(variant_ids))
+                .filter(SellPriceColumn::IsDeleted.eq(false))
+                .find_with_related(SellDiscountEntity)
+                .all(&ctx.db)
+                .await?;
+
+            for (price_model, discount_models) in all_prices_with_discounts {
+                let variant_id = price_model.product_variant_id;
+                let mut sell_price = price_model.to_domain();
+                sell_price.discounts = discount_models
+                    .into_iter()
+                    .filter(|d| !d.is_deleted)
+                    .map(|d| d.to_domain())
+                    .collect();
+                prices_by_variant
+                    .entry(variant_id)
+                    .or_default()
+                    .push(sell_price);
+            }
+        }
+
+        let variants: Vec<_> = variant_models
+            .into_iter()
+            .map(|vm| {
+                let sell_prices = prices_by_variant.remove(&vm.id).unwrap_or_default();
+                let mut variant = vm.to_domain();
+                variant.sell_prices = sell_prices;
+                variant
+            })
+            .collect();
+
+        let mut product = product_model.to_domain();
+        product.categories = categories;
+        product.variants = variants;
+
+        Ok(Some(product))
     }
 
     async fn create_variant(
@@ -418,7 +472,7 @@ impl ProductRepository for SqliteProductRepository {
             .one(&ctx.db)
             .await?;
 
-        let (variant_model, product_model) = match result {
+        let (variant_model, _) = match result {
             Some((v, Some(p))) if !p.is_deleted => (v, p),
             _ => return Ok(None),
         };
@@ -446,7 +500,7 @@ impl ProductRepository for SqliteProductRepository {
             .collect();
 
         // Assemble the full ProductVariant
-        let mut variant = variant_model.to_domain(product_model.to_domain());
+        let mut variant = variant_model.to_domain();
         variant.sell_prices = sell_prices;
 
         Ok(Some(variant))
@@ -464,7 +518,7 @@ impl ProductRepository for SqliteProductRepository {
             .one(&ctx.db)
             .await?;
 
-        let (variant_model, product_model) = match result {
+        let (variant_model, _) = match result {
             Some((v, Some(p))) if !p.is_deleted => (v, p),
             _ => return Ok(None),
         };
@@ -492,7 +546,7 @@ impl ProductRepository for SqliteProductRepository {
             .collect();
 
         // Assemble the full ProductVariant
-        let mut variant = variant_model.to_domain(product_model.to_domain());
+        let mut variant = variant_model.to_domain();
         variant.sell_prices = sell_prices;
 
         Ok(Some(variant))
@@ -517,7 +571,7 @@ impl ProductRepository for SqliteProductRepository {
             .filter_map(|(variant_model, product_model)| {
                 product_model.and_then(|p| {
                     if !p.is_deleted {
-                        Some(variant_model.to_domain(p.to_domain()))
+                        Some(variant_model.to_domain())
                     } else {
                         None
                     }

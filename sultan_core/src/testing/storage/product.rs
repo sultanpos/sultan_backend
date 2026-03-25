@@ -119,6 +119,14 @@ where
     product_test_add_product_category_success(&ctx_factory().await, repo).await;
     product_test_add_product_category_empty_array(&ctx_factory().await, repo).await;
     product_test_add_product_category_duplicate(&ctx_factory().await, repo).await;
+
+    // Product get_by_id full data tests
+    product_test_get_by_id_with_categories(&ctx_factory().await, repo).await;
+    product_test_get_by_id_with_variants_and_sell_prices(&ctx_factory().await, repo).await;
+    product_test_get_by_id_with_full_data(&ctx_factory().await, repo).await;
+    product_test_get_by_id_excludes_deleted_categories(&ctx_factory().await, repo).await;
+    product_test_get_by_id_excludes_deleted_variants(&ctx_factory().await, repo).await;
+    product_test_get_by_id_empty_categories_and_variants(&ctx_factory().await, repo).await;
 }
 
 // =============================================================================
@@ -783,7 +791,6 @@ pub async fn product_test_create_variant_success<R: ProductRepository>(
         .expect("Variant not found");
 
     assert_eq!(saved.id, variant_id);
-    assert_eq!(saved.product.id, product_id);
     assert_eq!(saved.barcode, Some("1234567890".to_string()));
     assert_eq!(saved.name, Some("Default Variant".to_string()));
     assert_eq!(saved.metadata, Some(json!({"sku": "SKU001"})));
@@ -1383,11 +1390,6 @@ pub async fn product_test_multiple_variants_for_single_product<R: ProductReposit
         .expect("Failed to get variants");
 
     assert_eq!(variants.len(), 5);
-
-    // Verify each variant belongs to the same product
-    for variant in &variants {
-        assert_eq!(variant.product.id, product_id);
-    }
 }
 
 /// Test: Delete variants by product ID preserves other products
@@ -1483,7 +1485,6 @@ pub async fn product_test_get_variant_by_barcode_success<R: ProductRepository>(
 
     assert_eq!(saved.id, variant_id);
     assert_eq!(saved.barcode, Some(unique_barcode));
-    assert_eq!(saved.product.id, product_id);
 }
 
 /// Test: Get variant by barcode not found
@@ -1526,7 +1527,6 @@ pub async fn product_test_get_variant_by_id_success<R: ProductRepository>(
     assert!(result.is_some());
     let saved_variant = result.unwrap();
     assert_eq!(saved_variant.id, variant_id);
-    assert_eq!(saved_variant.product.id, product_id);
     assert_eq!(saved_variant.barcode, Some("1234567890".to_string()));
 }
 
@@ -1575,9 +1575,6 @@ pub async fn product_test_get_variant_by_product_id_success<R: ProductRepository
         .expect("Failed to get variants");
 
     assert_eq!(variants.len(), 3);
-    for variant in &variants {
-        assert_eq!(variant.product.id, product_id);
-    }
 }
 
 /// Test: Get variant by product ID returns empty list
@@ -2043,10 +2040,6 @@ pub async fn product_test_get_variant_by_id_with_nested_data<R>(
         Some("Variant with Prices".to_string())
     );
 
-    // Verify product data
-    assert_eq!(fetched_variant.product.id, product_id);
-    assert_eq!(fetched_variant.product.name, "Test Product with Relations");
-
     // Verify sell prices are fetched
     assert_eq!(
         fetched_variant.sell_prices.len(),
@@ -2197,10 +2190,6 @@ pub async fn product_test_get_variant_by_barcode_with_nested_data<R>(
     assert_eq!(fetched_variant.id, variant_id);
     assert_eq!(fetched_variant.barcode, Some("BARCODE-XYZ-789".to_string()));
     assert_eq!(fetched_variant.name, Some("Barcode Variant".to_string()));
-
-    // Verify product data
-    assert_eq!(fetched_variant.product.id, product_id);
-    assert_eq!(fetched_variant.product.name, "Barcode Test Product");
 
     // Verify sell prices are fetched
     assert_eq!(
@@ -2360,4 +2349,501 @@ pub async fn product_test_get_variant_excludes_soft_deleted_relations<R>(
         0,
         "Price 2 should have no active discounts"
     );
+}
+
+// =============================================================================
+// Product get_by_id Full Data Tests
+// =============================================================================
+
+/// Test: get_by_id returns product with populated categories
+pub async fn product_test_get_by_id_with_categories<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    use crate::storage::sqlite::SqliteCategoryRepository;
+    let category_repo = SqliteCategoryRepository::new();
+
+    // Create categories
+    let cat_id_1 = super::generate_test_id().await;
+    let cat_id_2 = super::generate_test_id().await;
+    category_repo
+        .create(
+            ctx,
+            cat_id_1,
+            &CategoryCreate {
+                parent_id: None,
+                name: "Electronics".to_string(),
+                description: Some("Electronic devices".to_string()),
+            },
+        )
+        .await
+        .expect("Failed to create category 1");
+    category_repo
+        .create(
+            ctx,
+            cat_id_2,
+            &CategoryCreate {
+                parent_id: None,
+                name: "Accessories".to_string(),
+                description: None,
+            },
+        )
+        .await
+        .expect("Failed to create category 2");
+
+    // Create product and link categories
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+    repo.add_product_category(ctx, product_id, &[cat_id_1, cat_id_2])
+        .await
+        .expect("Failed to add categories");
+
+    // Fetch product
+    let saved = repo
+        .get_by_id(ctx, product_id)
+        .await
+        .expect("Failed to get product")
+        .expect("Product not found");
+
+    assert_eq!(saved.categories.len(), 2, "Should have 2 categories");
+
+    let cat_1 = saved
+        .categories
+        .iter()
+        .find(|c| c.id == cat_id_1)
+        .expect("Category 1 should be present");
+    assert_eq!(cat_1.name, "Electronics");
+    assert_eq!(cat_1.description, Some("Electronic devices".to_string()));
+
+    let cat_2 = saved
+        .categories
+        .iter()
+        .find(|c| c.id == cat_id_2)
+        .expect("Category 2 should be present");
+    assert_eq!(cat_2.name, "Accessories");
+    assert_eq!(cat_2.description, None);
+}
+
+/// Test: get_by_id returns product with populated variants including sell prices and discounts
+pub async fn product_test_get_by_id_with_variants_and_sell_prices<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    // Create product
+    let product_id = super::generate_test_id().await;
+    let product = ProductCreate {
+        name: "Product with Variants".to_string(),
+        description: None,
+        product_type: "product".to_string(),
+        main_image: None,
+        sellable: true,
+        buyable: true,
+        editable_price: false,
+        has_variant: true,
+        metadata: None,
+        category_ids: vec![],
+    };
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+
+    // Create variant 1
+    let variant_id_1 = super::generate_test_id().await;
+    let variant_1 = ProductVariantCreate {
+        product_id,
+        barcode: Some("VAR-001".to_string()),
+        name: Some("Small".to_string()),
+        metadata: None,
+    };
+    repo.create_variant(ctx, variant_id_1, &variant_1)
+        .await
+        .expect("Failed to create variant 1");
+
+    // Create variant 2
+    let variant_id_2 = super::generate_test_id().await;
+    let variant_2 = ProductVariantCreate {
+        product_id,
+        barcode: Some("VAR-002".to_string()),
+        name: Some("Large".to_string()),
+        metadata: None,
+    };
+    repo.create_variant(ctx, variant_id_2, &variant_2)
+        .await
+        .expect("Failed to create variant 2");
+
+    // Create sell price for variant 1
+    let price_id_1 = super::generate_test_id().await;
+    let price_1 = SellPriceCreate {
+        branch_id: None,
+        product_variant_id: variant_id_1,
+        uom_id: 1,
+        quantity: 1,
+        price: 5000,
+        metadata: None,
+    };
+    repo.create_sell_price(ctx, price_id_1, &price_1)
+        .await
+        .expect("Failed to create sell price 1");
+
+    // Create discount for sell price 1
+    let discount_id = super::generate_test_id().await;
+    let discount = SellDiscountCreate {
+        price_id: price_id_1,
+        quantity: 10,
+        discount_formula: "price * 0.9".to_string(),
+        customer_level: Some(1),
+        metadata: None,
+    };
+    repo.create_sell_discount(ctx, discount_id, &discount)
+        .await
+        .expect("Failed to create discount");
+
+    // Create sell price for variant 2
+    let price_id_2 = super::generate_test_id().await;
+    let price_2 = SellPriceCreate {
+        branch_id: None,
+        product_variant_id: variant_id_2,
+        uom_id: 1,
+        quantity: 1,
+        price: 8000,
+        metadata: None,
+    };
+    repo.create_sell_price(ctx, price_id_2, &price_2)
+        .await
+        .expect("Failed to create sell price 2");
+
+    // Fetch product by ID
+    let saved = repo
+        .get_by_id(ctx, product_id)
+        .await
+        .expect("Failed to get product")
+        .expect("Product not found");
+
+    assert_eq!(saved.variants.len(), 2, "Should have 2 variants");
+
+    // Verify variant 1
+    let v1 = saved
+        .variants
+        .iter()
+        .find(|v| v.id == variant_id_1)
+        .expect("Variant 1 should be present");
+    assert_eq!(v1.barcode, Some("VAR-001".to_string()));
+    assert_eq!(v1.name, Some("Small".to_string()));
+    assert_eq!(
+        v1.sell_prices.len(),
+        1,
+        "Variant 1 should have 1 sell price"
+    );
+    assert_eq!(v1.sell_prices[0].id, price_id_1);
+    assert_eq!(v1.sell_prices[0].price, 5000);
+    assert_eq!(
+        v1.sell_prices[0].discounts.len(),
+        1,
+        "Sell price 1 should have 1 discount"
+    );
+    assert_eq!(v1.sell_prices[0].discounts[0].id, discount_id);
+    assert_eq!(v1.sell_prices[0].discounts[0].quantity, 10);
+
+    // Verify variant 2
+    let v2 = saved
+        .variants
+        .iter()
+        .find(|v| v.id == variant_id_2)
+        .expect("Variant 2 should be present");
+    assert_eq!(v2.barcode, Some("VAR-002".to_string()));
+    assert_eq!(v2.name, Some("Large".to_string()));
+    assert_eq!(
+        v2.sell_prices.len(),
+        1,
+        "Variant 2 should have 1 sell price"
+    );
+    assert_eq!(v2.sell_prices[0].id, price_id_2);
+    assert_eq!(v2.sell_prices[0].price, 8000);
+    assert!(
+        v2.sell_prices[0].discounts.is_empty(),
+        "Sell price 2 should have no discounts"
+    );
+}
+
+/// Test: get_by_id returns product with both categories and variants fully populated
+pub async fn product_test_get_by_id_with_full_data<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    use crate::storage::sqlite::SqliteCategoryRepository;
+    let category_repo = SqliteCategoryRepository::new();
+
+    // Create category
+    let cat_id = super::generate_test_id().await;
+    category_repo
+        .create(
+            ctx,
+            cat_id,
+            &CategoryCreate {
+                parent_id: None,
+                name: "Full Data Category".to_string(),
+                description: None,
+            },
+        )
+        .await
+        .expect("Failed to create category");
+
+    // Create product
+    let product_id = super::generate_test_id().await;
+    let product = ProductCreate {
+        name: "Full Data Product".to_string(),
+        description: Some("Product with everything".to_string()),
+        product_type: "product".to_string(),
+        main_image: None,
+        sellable: true,
+        buyable: true,
+        editable_price: false,
+        has_variant: true,
+        metadata: None,
+        category_ids: vec![],
+    };
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+
+    // Link category
+    repo.add_product_category(ctx, product_id, &[cat_id])
+        .await
+        .expect("Failed to add category");
+
+    // Create variant
+    let variant_id = super::generate_test_id().await;
+    let variant = ProductVariantCreate {
+        product_id,
+        barcode: Some("FULL-001".to_string()),
+        name: Some("Full Variant".to_string()),
+        metadata: None,
+    };
+    repo.create_variant(ctx, variant_id, &variant)
+        .await
+        .expect("Failed to create variant");
+
+    // Create sell price with discount
+    let price_id = super::generate_test_id().await;
+    let price = SellPriceCreate {
+        branch_id: Some(1),
+        product_variant_id: variant_id,
+        uom_id: 1,
+        quantity: 1,
+        price: 15000,
+        metadata: None,
+    };
+    repo.create_sell_price(ctx, price_id, &price)
+        .await
+        .expect("Failed to create sell price");
+
+    let discount_id = super::generate_test_id().await;
+    let discount = SellDiscountCreate {
+        price_id,
+        quantity: 5,
+        discount_formula: "price * 0.85".to_string(),
+        customer_level: None,
+        metadata: None,
+    };
+    repo.create_sell_discount(ctx, discount_id, &discount)
+        .await
+        .expect("Failed to create discount");
+
+    // Fetch product by ID
+    let saved = repo
+        .get_by_id(ctx, product_id)
+        .await
+        .expect("Failed to get product")
+        .expect("Product not found");
+
+    // Verify product fields
+    assert_eq!(saved.id, product_id);
+    assert_eq!(saved.name, "Full Data Product");
+
+    // Verify categories
+    assert_eq!(saved.categories.len(), 1);
+    assert_eq!(saved.categories[0].id, cat_id);
+    assert_eq!(saved.categories[0].name, "Full Data Category");
+
+    // Verify variants
+    assert_eq!(saved.variants.len(), 1);
+    assert_eq!(saved.variants[0].id, variant_id);
+    assert_eq!(saved.variants[0].barcode, Some("FULL-001".to_string()));
+
+    // Verify sell prices
+    assert_eq!(saved.variants[0].sell_prices.len(), 1);
+    assert_eq!(saved.variants[0].sell_prices[0].price, 15000);
+    assert_eq!(saved.variants[0].sell_prices[0].branch_id, Some(1));
+
+    // Verify discounts
+    assert_eq!(saved.variants[0].sell_prices[0].discounts.len(), 1);
+    assert_eq!(
+        saved.variants[0].sell_prices[0].discounts[0].id,
+        discount_id
+    );
+    assert_eq!(saved.variants[0].sell_prices[0].discounts[0].quantity, 5);
+}
+
+/// Test: get_by_id excludes soft-deleted categories
+pub async fn product_test_get_by_id_excludes_deleted_categories<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    use crate::storage::CategoryRepository;
+    use crate::storage::sqlite::SqliteCategoryRepository;
+    let category_repo = SqliteCategoryRepository::new();
+
+    // Create 2 categories
+    let cat_id_1 = super::generate_test_id().await;
+    let cat_id_2 = super::generate_test_id().await;
+    category_repo
+        .create(
+            ctx,
+            cat_id_1,
+            &CategoryCreate {
+                parent_id: None,
+                name: "Active Category".to_string(),
+                description: None,
+            },
+        )
+        .await
+        .expect("Failed to create category 1");
+    category_repo
+        .create(
+            ctx,
+            cat_id_2,
+            &CategoryCreate {
+                parent_id: None,
+                name: "Deleted Category".to_string(),
+                description: None,
+            },
+        )
+        .await
+        .expect("Failed to create category 2");
+
+    // Create product and link both categories
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+    repo.add_product_category(ctx, product_id, &[cat_id_1, cat_id_2])
+        .await
+        .expect("Failed to add categories");
+
+    // Soft-delete category 2
+    category_repo
+        .delete(ctx, cat_id_2)
+        .await
+        .expect("Failed to delete category 2");
+
+    // Fetch product
+    let saved = repo
+        .get_by_id(ctx, product_id)
+        .await
+        .expect("Failed to get product")
+        .expect("Product not found");
+
+    // Only active category should be returned
+    assert_eq!(
+        saved.categories.len(),
+        1,
+        "Should only have 1 active category"
+    );
+    assert_eq!(saved.categories[0].id, cat_id_1);
+    assert_eq!(saved.categories[0].name, "Active Category");
+}
+
+/// Test: get_by_id excludes soft-deleted variants
+pub async fn product_test_get_by_id_excludes_deleted_variants<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    // Create product
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+
+    // Create 2 variants
+    let variant_id_1 = super::generate_test_id().await;
+    let variant_id_2 = super::generate_test_id().await;
+    repo.create_variant(
+        ctx,
+        variant_id_1,
+        &ProductVariantCreate {
+            product_id,
+            barcode: Some("ACTIVE-VAR".to_string()),
+            name: Some("Active Variant".to_string()),
+            metadata: None,
+        },
+    )
+    .await
+    .expect("Failed to create variant 1");
+    repo.create_variant(
+        ctx,
+        variant_id_2,
+        &ProductVariantCreate {
+            product_id,
+            barcode: Some("DELETED-VAR".to_string()),
+            name: Some("Deleted Variant".to_string()),
+            metadata: None,
+        },
+    )
+    .await
+    .expect("Failed to create variant 2");
+
+    // Verify both variants are returned initially
+    let saved = repo
+        .get_by_id(ctx, product_id)
+        .await
+        .expect("Failed to get product")
+        .expect("Product not found");
+    assert_eq!(
+        saved.variants.len(),
+        2,
+        "Should have 2 variants before delete"
+    );
+
+    // Soft-delete variant 2
+    repo.delete_variant(ctx, variant_id_2)
+        .await
+        .expect("Failed to delete variant 2");
+
+    // Fetch product again
+    let saved = repo
+        .get_by_id(ctx, product_id)
+        .await
+        .expect("Failed to get product")
+        .expect("Product not found");
+
+    // Only active variant should be returned
+    assert_eq!(saved.variants.len(), 1, "Should only have 1 active variant");
+    assert_eq!(saved.variants[0].id, variant_id_1);
+    assert_eq!(saved.variants[0].name, Some("Active Variant".to_string()));
+}
+
+/// Test: get_by_id returns empty categories and variants when none are linked
+pub async fn product_test_get_by_id_empty_categories_and_variants<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+
+    let saved = repo
+        .get_by_id(ctx, product_id)
+        .await
+        .expect("Failed to get product")
+        .expect("Product not found");
+
+    assert!(saved.categories.is_empty(), "Categories should be empty");
+    assert!(saved.variants.is_empty(), "Variants should be empty");
 }
