@@ -3,4 +3,5 @@ resolver = "3"
 members = [
     "sultan_core",
     "sultan",
+    "sultan_android",
 ]
