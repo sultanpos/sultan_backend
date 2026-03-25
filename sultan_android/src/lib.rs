@@ -3,6 +3,8 @@ use jni::objects::{JClass, JString};
 use jni::sys::{JNI_FALSE, JNI_TRUE, jboolean, jint};
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use sultan::config::AppConfig;
 
 /// Global tokio runtime for the server.
 static RUNTIME: Lazy<Mutex<Option<tokio::runtime::Runtime>>> = Lazy::new(|| Mutex::new(None));
@@ -10,6 +12,11 @@ static RUNTIME: Lazy<Mutex<Option<tokio::runtime::Runtime>>> = Lazy::new(|| Mute
 /// Global shutdown sender to signal the server to stop.
 static SHUTDOWN_TX: Lazy<Mutex<Option<tokio::sync::oneshot::Sender<()>>>> =
     Lazy::new(|| Mutex::new(None));
+
+/// Guard flag set to `true` while start() is in progress.
+/// Prevents two concurrent start() calls from both passing the "already running"
+/// check before RUNTIME is populated.
+static STARTING: AtomicBool = AtomicBool::new(false);
 
 /// JNI: com.lekapin.sultan.SultanServer.start(dbPath, jwtSecret, port)
 ///
@@ -37,10 +44,24 @@ pub extern "C" fn Java_com_lekapin_sultan_SultanServer_start(
             .with_tag("sultan"),
     );
 
-    // If already running, return false
+    // Atomically claim the "starting" slot. If another thread is already inside
+    // start() (STARTING == true) or has just set RUNTIME, we bail out immediately.
+    // This ensures no two callers can both pass the RUNTIME check before it is set.
+    if STARTING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
     {
-        let rt_lock = RUNTIME.lock().unwrap();
+        log::warn!("Sultan server is already starting or running");
+        return JNI_FALSE;
+    }
+
+    // Secondary check: RUNTIME may already be Some if a previous start completed
+    // just before we claimed STARTING (stop() clears RUNTIME but also lets
+    // STARTING fall back to false, so this path covers rapid stop+start races).
+    {
+        let rt_lock = RUNTIME.lock().unwrap_or_else(|e| e.into_inner());
         if rt_lock.is_some() {
+            STARTING.store(false, Ordering::SeqCst);
             log::warn!("Sultan server is already running");
             return JNI_FALSE;
         }
@@ -65,21 +86,22 @@ pub extern "C" fn Java_com_lekapin_sultan_SultanServer_start(
 
     let port = port as u16;
 
-    // Set environment variables for the server configuration.
-    // Safety: no other threads are reading env vars at this point; called once before
-    // the tokio runtime (which may spawn threads) is started.
-    unsafe {
-        std::env::set_var("DATABASE_URL", format!("sqlite://{}", db_path));
-        std::env::set_var("JWT_SECRET", &jwt_secret);
-        std::env::set_var("WRITE_LOG_TO_FILE", "0");
-    }
+    // Build config directly — no env var mutation needed.
+    let config = AppConfig {
+        database_url: format!("sqlite://{}", db_path),
+        jwt_secret,
+        write_log_to_file: false,
+        access_token_ttl: time::Duration::seconds(900),
+        refresh_token_ttl: time::Duration::days(365),
+        database_max_connections: 5,
+    };
 
     // Create shutdown channel
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
     // Store shutdown sender
     {
-        let mut tx_lock = SHUTDOWN_TX.lock().unwrap();
+        let mut tx_lock = SHUTDOWN_TX.lock().unwrap_or_else(|e| e.into_inner());
         *tx_lock = Some(shutdown_tx);
     }
 
@@ -96,22 +118,33 @@ pub extern "C" fn Java_com_lekapin_sultan_SultanServer_start(
     };
 
     let started = rt.block_on(async move {
-        match sultan::server::create_app().await {
+        match sultan::server::create_app_with_config(config).await {
             Ok(app) => {
                 let addr = format!("0.0.0.0:{}", port);
                 match tokio::net::TcpListener::bind(&addr).await {
                     Ok(listener) => {
-                        let actual_addr = listener.local_addr().unwrap();
-                        log::info!("Sultan server listening on {}", actual_addr);
+                        match listener.local_addr() {
+                            Ok(actual_addr) => {
+                                log::info!("Sultan server listening on {}", actual_addr)
+                            }
+                            Err(e) => log::warn!(
+                                "Sultan server started but could not get local addr: {:?}",
+                                e
+                            ),
+                        };
                         // Spawn server in background task
                         tokio::spawn(async move {
-                            axum::serve(listener, app)
+                            if let Err(e) = axum::serve(listener, app)
                                 .with_graceful_shutdown(async {
                                     shutdown_rx.await.ok();
                                     log::info!("Sultan server shutting down");
                                 })
                                 .await
-                                .ok();
+                            {
+                                log::error!("Sultan server stopped with error: {:?}", e);
+                            } else {
+                                log::info!("Sultan server stopped cleanly");
+                            }
                         });
                         true
                     }
@@ -129,11 +162,17 @@ pub extern "C" fn Java_com_lekapin_sultan_SultanServer_start(
     });
 
     if started {
-        let mut rt_lock = RUNTIME.lock().unwrap();
+        let mut rt_lock = RUNTIME.lock().unwrap_or_else(|e| e.into_inner());
         *rt_lock = Some(rt);
+        // Release the starting guard only after RUNTIME is populated so that any
+        // concurrent start() caller that lost the compare_exchange sees a consistent
+        // state when it retries (it will find RUNTIME is Some).
+        STARTING.store(false, Ordering::SeqCst);
         log::info!("Sultan server started on port {}", port);
         JNI_TRUE
     } else {
+        // Also release the guard on failure so a future start() attempt is possible.
+        STARTING.store(false, Ordering::SeqCst);
         JNI_FALSE
     }
 }
@@ -145,14 +184,14 @@ pub extern "C" fn Java_com_lekapin_sultan_SultanServer_start(
 pub extern "C" fn Java_com_lekapin_sultan_SultanServer_stop(_env: JNIEnv, _class: JClass) {
     // Send shutdown signal
     {
-        let mut tx_lock = SHUTDOWN_TX.lock().unwrap();
+        let mut tx_lock = SHUTDOWN_TX.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(tx) = tx_lock.take() {
             let _ = tx.send(());
         }
     }
 
     // Shut down the runtime
-    let mut rt_lock = RUNTIME.lock().unwrap();
+    let mut rt_lock = RUNTIME.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(rt) = rt_lock.take() {
         rt.shutdown_background();
         log::info!("Sultan server stopped");
@@ -167,7 +206,7 @@ pub extern "C" fn Java_com_lekapin_sultan_SultanServer_isRunning(
     _env: JNIEnv,
     _class: JClass,
 ) -> jboolean {
-    let rt_lock = RUNTIME.lock().unwrap();
+    let rt_lock = RUNTIME.lock().unwrap_or_else(|e| e.into_inner());
     if rt_lock.is_some() {
         JNI_TRUE
     } else {

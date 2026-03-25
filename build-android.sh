@@ -139,7 +139,7 @@ build_target() {
     )
 
     if [[ "${RELEASE}" == "1" ]]; then
-        build_args+=(--release)
+        build_args+=(--profile android-release)
     fi
 
     # Build
@@ -152,7 +152,7 @@ build_target() {
     # Locate the produced .so
     local profile="debug"
     if [[ "${RELEASE}" == "1" ]]; then
-        profile="release"
+        profile="android-release"
     fi
     local so_src="target/${triple}/${profile}/libsultan_android.so"
 

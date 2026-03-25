@@ -6,7 +6,8 @@ members = [
     "sultan_android",
 ]
 
-[profile.release]
+[profile.android-release]
+inherits = "release"
 opt-level = "z"       # optimize for size
 lto = "thin"          # link-time optimization (removes dead code)
 codegen-units = 1     # single codegen unit for better inlining
