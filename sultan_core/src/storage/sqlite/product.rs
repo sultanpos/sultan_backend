@@ -81,6 +81,7 @@ impl ProductRepository for SqliteProductRepository {
             buyable: Set(product.buyable),
             editable_price: Set(product.editable_price),
             metadata: Set(metadata_json),
+            variant_count: Set(product.variant_count),
             ..Default::default()
         };
 

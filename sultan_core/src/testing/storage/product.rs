@@ -127,6 +127,7 @@ where
     product_test_get_by_id_excludes_deleted_categories(&ctx_factory().await, repo).await;
     product_test_get_by_id_excludes_deleted_variants(&ctx_factory().await, repo).await;
     product_test_get_by_id_empty_categories_and_variants(&ctx_factory().await, repo).await;
+    product_test_variant_count_stored(&ctx_factory().await, repo).await;
 }
 
 // =============================================================================
@@ -166,6 +167,7 @@ pub async fn product_test_create_success<R: ProductRepository>(
     assert!(saved.buyable);
     assert!(!saved.editable_price);
     assert!(!saved.is_deleted);
+    assert_eq!(saved.variant_count, 0);
 }
 
 /// Test: Create a product without optional fields
@@ -2831,4 +2833,31 @@ pub async fn product_test_get_by_id_empty_categories_and_variants<R: ProductRepo
 
     assert!(saved.categories.is_empty(), "Categories should be empty");
     assert!(saved.variants.is_empty(), "Variants should be empty");
+}
+
+/// Test: variant_count is correctly stored and retrieved
+pub async fn product_test_variant_count_stored<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let product_id = super::generate_test_id().await;
+    let product = ProductCreate {
+        variant_count: 3,
+        ..create_test_product()
+    };
+
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+
+    let saved = repo
+        .get_by_id(ctx, product_id)
+        .await
+        .expect("Failed to get product")
+        .expect("Product not found");
+
+    assert_eq!(
+        saved.variant_count, 3,
+        "variant_count should be stored as 3"
+    );
 }
