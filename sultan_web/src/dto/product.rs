@@ -56,10 +56,6 @@ pub struct ProductCreateRequest {
     #[schema(example = false)]
     pub editable_price: bool,
 
-    /// Whether the product has variants
-    #[schema(example = true)]
-    pub has_variant: bool,
-
     /// Additional metadata (optional)
     #[schema(example = json!({"color": "black", "warranty": "2 years"}))]
     pub metadata: Option<Value>,
@@ -81,6 +77,7 @@ impl ProductCreateRequest {
             buyable: self.buyable,
             editable_price: self.editable_price,
             metadata: self.metadata.clone(),
+            variant_count: 0, // Start with 0 variants, can be updated later
             category_ids: self.category_ids.clone(),
         }
     }
