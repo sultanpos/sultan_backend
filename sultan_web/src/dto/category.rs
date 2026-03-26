@@ -22,7 +22,7 @@ pub struct CategoryCreateRequest {
     pub description: Option<String>,
 
     /// Parent category ID (optional, for subcategories)
-    #[schema(example = 1)]
+    #[schema(example = "1234567890", value_type = Option<String>)]
     #[serde(default, deserialize_with = "option_string_to_i64")]
     pub parent_id: Option<i64>,
 }

@@ -3,4 +3,13 @@ resolver = "3"
 members = [
     "sultan_core",
     "sultan",
+    "sultan_android",
 ]
+
+[profile.android-release]
+inherits = "release"
+opt-level = "z"       # optimize for size
+lto = "thin"          # link-time optimization (removes dead code)
+codegen-units = 1     # single codegen unit for better inlining
+strip = true          # strip debug symbols
+panic = "abort"       # no unwinding machinery (safe for cdylib/JNI)

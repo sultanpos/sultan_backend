@@ -250,8 +250,7 @@ fn init_tracing(write_log_to_file: bool) {
     }
 }
 
-pub async fn create_app() -> anyhow::Result<Router> {
-    let config = AppConfig::from_env();
+pub async fn create_app_with_config(config: AppConfig) -> anyhow::Result<Router> {
     init_tracing(config.write_log_to_file);
 
     let app_state = init_app_state(&config).await?;
@@ -327,4 +326,9 @@ pub async fn create_app() -> anyhow::Result<Router> {
         );
 
     Ok(router)
+}
+
+pub async fn create_app() -> anyhow::Result<Router> {
+    let config = AppConfig::from_env();
+    create_app_with_config(config).await
 }
