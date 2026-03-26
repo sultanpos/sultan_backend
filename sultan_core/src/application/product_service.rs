@@ -260,9 +260,12 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
             db: self.db.begin().await?,
         };
 
+        let mut product_only_create = product_create.product.clone();
+        product_only_create.variant_count = product_create.variants.len() as i32;
+
         let id = self.id_generator.generate()?;
         self.repository
-            .create_product(&repo_ctx, id, &product_create.product)
+            .create_product(&repo_ctx, id, &product_only_create)
             .await?;
 
         if !product_create.categories.is_empty() {
@@ -1046,6 +1049,7 @@ mod tests {
             sellable: true,
             buyable: true,
             editable_price: false,
+            variant_count: 0,
             metadata: None,
             categories: vec![],
             variants: vec![],
@@ -1179,6 +1183,7 @@ mod tests {
             *create_product_flag.lock().unwrap() = true;
             assert_eq!(id, 1);
             assert_eq!(product.name, "Test Product");
+            assert_eq!(product.variant_count, 1);
             Ok(())
         });
 
@@ -1250,6 +1255,7 @@ mod tests {
                 buyable: true,
                 editable_price: false,
                 metadata: None,
+                variant_count: 0,
                 category_ids: vec![],
             },
             categories: vec![10, 20],
@@ -1339,6 +1345,7 @@ mod tests {
                 buyable: true,
                 editable_price: false,
                 metadata: None,
+                variant_count: 0,
                 category_ids: vec![],
             },
             variants: vec![],
