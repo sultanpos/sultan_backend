@@ -3,7 +3,7 @@ use axum::extract::Path;
 use axum::routing::get;
 use axum::{
     Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::delete,
-    routing::post,
+    routing::patch, routing::post,
 };
 use std::sync::Arc;
 use sultan_core::application::ProductServiceTrait;
@@ -16,7 +16,7 @@ use validator::Validate;
 use crate::AppState;
 use crate::dto::category::CategoryChildResponse;
 use crate::dto::product::{
-    ProductFullCreateRequest, ProductResponse, ProductVariantCreateRequest,
+    ProductFullCreateRequest, ProductResponse, ProductUpdateRequest, ProductVariantCreateRequest,
     ProductVariantCreateResponse, ProductVariantResponse, SellDiscountResponse, SellPriceResponse,
 };
 use crate::dto::{ErrorResponse, ProductCreateResponse};
@@ -29,11 +29,13 @@ use crate::dto::{ErrorResponse, ProductCreateResponse};
 #[openapi(
     paths(
         create,
+        update_product,
         delete_product,
         get_by_id
     ),
     components(schemas(
         ProductFullCreateRequest,
+        ProductUpdateRequest,
         ProductCreateResponse,
         ProductResponse,
         ProductVariantCreateRequest,
@@ -89,6 +91,47 @@ async fn create(
         .await?;
 
     Ok((StatusCode::CREATED, Json(ProductCreateResponse { id })))
+}
+
+/// Update a product
+///
+/// Partially updates a product by ID. Fields absent from the JSON are left unchanged.
+/// Nullable fields (`description`, `main_image`, `metadata`) can be cleared by sending `null`.
+/// Providing `category_ids` replaces all existing category associations. Requires authentication.
+#[utoipa::path(
+    patch,
+    path = "/api/product/{id}",
+    tag = "product",
+    params(
+        ("id" = i64, Path, description = "Product ID")
+    ),
+    request_body = ProductUpdateRequest,
+    responses(
+        (status = 204, description = "Product updated successfully"),
+        (status = 400, description = "Bad request - validation error", body = ErrorResponse),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse),
+        (status = 404, description = "Product not found", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+#[instrument(skip(product_service, payload, ctx))]
+async fn update_product(
+    State(product_service): State<Arc<dyn ProductServiceTrait>>,
+    Extension(ctx): Extension<Context>,
+    Path(id): Path<i64>,
+    Json(payload): Json<ProductUpdateRequest>,
+) -> DomainResult<impl IntoResponse> {
+    payload
+        .validate()
+        .map_err(|e| Error::ValidationError(format!("{}", e)))?;
+
+    product_service
+        .update_product(&ctx, id, &payload.to_domain())
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Delete a product
@@ -160,6 +203,7 @@ async fn get_by_id(
 pub fn product_router() -> Router<AppState> {
     Router::new()
         .route("/", post(create))
+        .route("/{id}", patch(update_product))
         .route("/{id}", delete(delete_product))
         .route("/{id}", get(get_by_id))
 }

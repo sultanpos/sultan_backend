@@ -1,11 +1,12 @@
 use super::category::CategoryChildResponse;
 use super::{
     default_page, default_page_size, i64_to_string, option_i64_to_string, option_string_to_i64,
-    string_to_i64, vec_string_to_i64,
+    option_vec_string_to_i64, string_to_i64, vec_string_to_i64,
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sultan_core::domain::model::Update;
 use sultan_core::domain::model::product::Product;
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
@@ -79,7 +80,74 @@ impl ProductCreateRequest {
             sellable: self.sellable,
             buyable: self.buyable,
             editable_price: self.editable_price,
-            has_variant: self.has_variant,
+            metadata: self.metadata.clone(),
+            category_ids: self.category_ids.clone(),
+        }
+    }
+}
+
+/// Request to update an existing product (all fields optional)
+///
+/// Fields absent from the JSON are left unchanged.
+/// Nullable fields (`description`, `main_image`, `metadata`) can be cleared by sending `null`.
+#[derive(Debug, Default, Deserialize, Validate, ToSchema)]
+#[serde(default)]
+pub struct ProductUpdateRequest {
+    /// Product name
+    #[validate(length(
+        min = 1,
+        max = 256,
+        message = "Name must be between 1 and 256 characters"
+    ))]
+    #[schema(example = "Laptop ASUS ROG")]
+    pub name: Option<String>,
+
+    /// Omit to leave unchanged, `null` to clear
+    #[schema(value_type = Option<String>, example = "High-performance gaming laptop")]
+    pub description: Update<String>,
+
+    /// Product type (e.g., "goods", "service")
+    #[validate(length(
+        min = 1,
+        max = 50,
+        message = "Product type must be between 1 and 50 characters"
+    ))]
+    #[schema(example = "goods")]
+    pub product_type: Option<String>,
+
+    /// Omit to leave unchanged, `null` to clear
+    #[schema(value_type = Option<String>, example = "https://example.com/images/laptop.jpg")]
+    pub main_image: Update<String>,
+
+    #[schema(example = true)]
+    pub sellable: Option<bool>,
+
+    #[schema(example = true)]
+    pub buyable: Option<bool>,
+
+    #[schema(example = false)]
+    pub editable_price: Option<bool>,
+
+    /// Omit to leave unchanged, `null` to clear
+    #[schema(value_type = Option<Value>, example = json!({"color": "black"}))]
+    pub metadata: Update<Value>,
+
+    /// If provided, replaces all existing category associations
+    #[schema(example = json!(["1234567890", "9876543210"]))]
+    #[serde(default, deserialize_with = "option_vec_string_to_i64")]
+    pub category_ids: Option<Vec<i64>>,
+}
+
+impl ProductUpdateRequest {
+    pub fn to_domain(&self) -> sultan_core::domain::model::product::ProductUpdate {
+        sultan_core::domain::model::product::ProductUpdate {
+            name: self.name.clone(),
+            description: self.description.clone(),
+            product_type: self.product_type.clone(),
+            main_image: self.main_image.clone(),
+            sellable: self.sellable,
+            buyable: self.buyable,
+            editable_price: self.editable_price,
             metadata: self.metadata.clone(),
             category_ids: self.category_ids.clone(),
         }
@@ -137,10 +205,6 @@ pub struct ProductResponse {
     #[schema(example = false)]
     pub editable_price: bool,
 
-    /// Whether the product has variants
-    #[schema(example = true)]
-    pub has_variant: bool,
-
     /// Additional metadata
     pub metadata: Option<Value>,
 
@@ -164,7 +228,6 @@ impl From<Product> for ProductResponse {
             sellable: product.sellable,
             buyable: product.buyable,
             editable_price: product.editable_price,
-            has_variant: product.has_variant,
             metadata: product.metadata,
             categories: product
                 .categories

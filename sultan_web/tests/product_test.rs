@@ -269,7 +269,6 @@ async fn test_get_product_by_id_success() {
     assert!(response["sellable"].as_bool().unwrap());
     assert!(response["buyable"].as_bool().unwrap());
     assert!(!response["editable_price"].as_bool().unwrap());
-    assert!(!response["has_variant"].as_bool().unwrap());
     assert!(response["categories"].as_array().unwrap().is_empty());
     assert!(response["variants"].as_array().unwrap().is_empty());
 }
@@ -361,6 +360,131 @@ async fn test_delete_product_service_error() {
     let app = build_test_router(app_state);
 
     let (status, response) = make_request(app, "DELETE", "/api/product/1", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    let error_msg = response["error"].as_str().unwrap();
+    assert!(
+        error_msg.contains("Internal error"),
+        "Expected internal error, got: {}",
+        error_msg
+    );
+}
+
+// ============================================================================
+// PATCH /api/product/{id} - Update Product Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_update_product_success() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let body = json!({
+        "name": "Updated Laptop",
+        "sellable": false,
+        "category_ids": ["1234567890"]
+    });
+
+    let (status, response) = make_request(app, "PATCH", "/api/product/1", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(response.is_null() || response.as_object().is_none_or(|o| o.is_empty()));
+}
+
+#[tokio::test]
+async fn test_update_product_clear_nullable_field() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    // Explicitly clear description by sending null
+    let body = json!({ "description": null });
+
+    let (status, _) = make_request(app, "PATCH", "/api/product/1", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn test_update_product_empty_body() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    // Empty body is valid — all fields Unchanged
+    let body = json!({});
+
+    let (status, _) = make_request(app, "PATCH", "/api/product/1", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn test_update_product_not_found() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let body = json!({ "name": "Updated Name" });
+
+    let (status, response) = make_request(app, "PATCH", "/api/product/999", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let error_msg = response["error"].as_str().unwrap();
+    assert!(
+        error_msg.contains("Product with id 999 not found"),
+        "Expected not found error, got: {}",
+        error_msg
+    );
+}
+
+#[tokio::test]
+async fn test_update_product_validation_error_empty_name() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let body = json!({ "name": "" });
+
+    let (status, response) = make_request(app, "PATCH", "/api/product/1", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let error_msg = response["error"].as_str().unwrap();
+    assert!(
+        error_msg.contains("Name must be between 1 and 256 characters"),
+        "Expected name validation error, got: {}",
+        error_msg
+    );
+}
+
+#[tokio::test]
+async fn test_update_product_service_error() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_failure()));
+
+    let app = build_test_router(app_state);
+
+    let body = json!({ "name": "Updated Name" });
+
+    let (status, response) = make_request(app, "PATCH", "/api/product/1", Some(body))
         .await
         .expect("Request failed");
 
