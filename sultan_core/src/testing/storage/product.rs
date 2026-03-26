@@ -128,6 +128,12 @@ where
     product_test_get_by_id_excludes_deleted_variants(&ctx_factory().await, repo).await;
     product_test_get_by_id_empty_categories_and_variants(&ctx_factory().await, repo).await;
     product_test_variant_count_stored(&ctx_factory().await, repo).await;
+
+    // variant_count auto-update tests
+    product_test_create_variant_increments_variant_count(&ctx_factory().await, repo).await;
+    product_test_delete_variant_decrements_variant_count(&ctx_factory().await, repo).await;
+    product_test_delete_variants_by_product_id_resets_variant_count(&ctx_factory().await, repo)
+        .await;
 }
 
 // =============================================================================
@@ -2859,5 +2865,153 @@ pub async fn product_test_variant_count_stored<R: ProductRepository>(
     assert_eq!(
         saved.variant_count, 3,
         "variant_count should be stored as 3"
+    );
+}
+
+/// Test: create_variant increments variant_count and updates updated_at on the parent product
+pub async fn product_test_create_variant_increments_variant_count<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+
+    let before = repo.get_by_id(ctx, product_id).await.unwrap().unwrap();
+    assert_eq!(before.variant_count, 0);
+    let updated_at_before = before.updated_at;
+
+    // Create first variant
+    let variant_id1 = super::generate_test_id().await;
+    let variant1 = create_test_variant(product_id);
+    repo.create_variant(ctx, variant_id1, &variant1)
+        .await
+        .expect("Failed to create variant 1");
+
+    let after1 = repo.get_by_id(ctx, product_id).await.unwrap().unwrap();
+    assert_eq!(
+        after1.variant_count, 1,
+        "variant_count should be 1 after first create_variant"
+    );
+    assert!(
+        after1.updated_at >= updated_at_before,
+        "updated_at should be updated"
+    );
+
+    // Create second variant
+    let variant_id2 = super::generate_test_id().await;
+    let variant2 = ProductVariantCreate {
+        product_id,
+        barcode: Some("SECOND".to_string()),
+        name: None,
+        metadata: None,
+    };
+    repo.create_variant(ctx, variant_id2, &variant2)
+        .await
+        .expect("Failed to create variant 2");
+
+    let after2 = repo.get_by_id(ctx, product_id).await.unwrap().unwrap();
+    assert_eq!(
+        after2.variant_count, 2,
+        "variant_count should be 2 after second create_variant"
+    );
+}
+
+/// Test: delete_variant decrements variant_count and updates updated_at on the parent product
+pub async fn product_test_delete_variant_decrements_variant_count<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+
+    // Create two variants
+    let variant_id1 = super::generate_test_id().await;
+    let variant1 = create_test_variant(product_id);
+    repo.create_variant(ctx, variant_id1, &variant1)
+        .await
+        .expect("Failed to create variant 1");
+
+    let variant_id2 = super::generate_test_id().await;
+    let variant2 = ProductVariantCreate {
+        product_id,
+        barcode: Some("SECOND".to_string()),
+        name: None,
+        metadata: None,
+    };
+    repo.create_variant(ctx, variant_id2, &variant2)
+        .await
+        .expect("Failed to create variant 2");
+
+    let before_delete = repo.get_by_id(ctx, product_id).await.unwrap().unwrap();
+    assert_eq!(before_delete.variant_count, 2);
+
+    // Delete one variant
+    repo.delete_variant(ctx, variant_id1)
+        .await
+        .expect("Failed to delete variant");
+
+    let after_delete = repo.get_by_id(ctx, product_id).await.unwrap().unwrap();
+    assert_eq!(
+        after_delete.variant_count, 1,
+        "variant_count should be 1 after deleting one variant"
+    );
+    assert!(
+        after_delete.updated_at >= before_delete.updated_at,
+        "updated_at should be updated after delete_variant"
+    );
+}
+
+/// Test: delete_variants_by_product_id resets variant_count to 0 and updates updated_at
+pub async fn product_test_delete_variants_by_product_id_resets_variant_count<
+    R: ProductRepository,
+>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let product_id = super::generate_test_id().await;
+    let product = create_test_product();
+
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+
+    // Create three variants
+    for i in 0..3 {
+        let variant_id = super::generate_test_id().await;
+        let variant = ProductVariantCreate {
+            product_id,
+            barcode: Some(format!("BC{}", i)),
+            name: None,
+            metadata: None,
+        };
+        repo.create_variant(ctx, variant_id, &variant)
+            .await
+            .expect("Failed to create variant");
+    }
+
+    let before = repo.get_by_id(ctx, product_id).await.unwrap().unwrap();
+    assert_eq!(before.variant_count, 3);
+
+    // Delete all variants by product_id
+    repo.delete_variants_by_product_id(ctx, product_id)
+        .await
+        .expect("Failed to delete variants by product_id");
+
+    let after = repo.get_by_id(ctx, product_id).await.unwrap().unwrap();
+    assert_eq!(
+        after.variant_count, 0,
+        "variant_count should be 0 after delete_variants_by_product_id"
+    );
+    assert!(
+        after.updated_at >= before.updated_at,
+        "updated_at should be updated after delete_variants_by_product_id"
     );
 }

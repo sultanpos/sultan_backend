@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ModelTrait, QueryFilter,
-    QuerySelect, Set, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, ModelTrait,
+    QueryFilter, QuerySelect, Set, sea_query::Expr,
 };
 
 use crate::{
@@ -328,6 +328,22 @@ impl ProductRepository for SqliteProductRepository {
         };
 
         variant_model.insert(&ctx.db).await?;
+
+        // Increment variant_count and update updated_at on the parent product
+        let now = chrono::Utc::now()
+            .format("%Y-%m-%dT%H:%M:%S%.fZ")
+            .to_string();
+        ProductEntity::update_many()
+            .filter(ProductColumn::Id.eq(variant.product_id))
+            .filter(ProductColumn::IsDeleted.eq(false))
+            .col_expr(
+                ProductColumn::VariantCount,
+                Expr::col(ProductColumn::VariantCount).add(1),
+            )
+            .col_expr(ProductColumn::UpdatedAt, Expr::value(now))
+            .exec(&ctx.db)
+            .await?;
+
         Ok(())
     }
 
@@ -401,12 +417,21 @@ impl ProductRepository for SqliteProductRepository {
         ctx: &RepoCtx<impl ConnectionTrait>,
         id: i64,
     ) -> DomainResult<()> {
+        // Look up the product_id before deleting
+        let variant = ProductVariantEntity::find_by_id(id)
+            .filter(ProductVariantColumn::IsDeleted.eq(false))
+            .one(&ctx.db)
+            .await?;
+
+        let variant = variant
+            .ok_or_else(|| Error::NotFound(format!("ProductVariant with id {} not found", id)))?;
+
         let now = chrono::Utc::now()
             .format("%Y-%m-%dT%H:%M:%S%.fZ")
             .to_string();
 
         // Soft delete: mark as deleted with a single UPDATE query
-        let result = ProductVariantEntity::update_many()
+        ProductVariantEntity::update_many()
             .filter(ProductVariantColumn::Id.eq(id))
             .filter(ProductVariantColumn::IsDeleted.eq(false))
             .col_expr(ProductVariantColumn::IsDeleted, Expr::value(true))
@@ -414,17 +439,21 @@ impl ProductRepository for SqliteProductRepository {
                 ProductVariantColumn::DeletedAt,
                 Expr::value(Some(now.clone())),
             )
-            .col_expr(ProductVariantColumn::UpdatedAt, Expr::value(now))
+            .col_expr(ProductVariantColumn::UpdatedAt, Expr::value(now.clone()))
             .exec(&ctx.db)
             .await?;
 
-        // Check if any rows were affected
-        if result.rows_affected == 0 {
-            return Err(Error::NotFound(format!(
-                "ProductVariant with id {} not found",
-                id
-            )));
-        }
+        // Decrement variant_count and update updated_at on the parent product
+        ProductEntity::update_many()
+            .filter(ProductColumn::Id.eq(variant.product_id))
+            .filter(ProductColumn::IsDeleted.eq(false))
+            .col_expr(
+                ProductColumn::VariantCount,
+                Expr::col(ProductColumn::VariantCount).sub(1),
+            )
+            .col_expr(ProductColumn::UpdatedAt, Expr::value(now))
+            .exec(&ctx.db)
+            .await?;
 
         Ok(())
     }
@@ -447,7 +476,16 @@ impl ProductRepository for SqliteProductRepository {
                 ProductVariantColumn::DeletedAt,
                 Expr::value(Some(now.clone())),
             )
-            .col_expr(ProductVariantColumn::UpdatedAt, Expr::value(now))
+            .col_expr(ProductVariantColumn::UpdatedAt, Expr::value(now.clone()))
+            .exec(&ctx.db)
+            .await?;
+
+        // Reset variant_count to 0 and update updated_at on the parent product
+        ProductEntity::update_many()
+            .filter(ProductColumn::Id.eq(product_id))
+            .filter(ProductColumn::IsDeleted.eq(false))
+            .col_expr(ProductColumn::VariantCount, Expr::value(0i32))
+            .col_expr(ProductColumn::UpdatedAt, Expr::value(now))
             .exec(&ctx.db)
             .await?;
 

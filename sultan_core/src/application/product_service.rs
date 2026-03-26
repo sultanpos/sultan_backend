@@ -260,12 +260,9 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
             db: self.db.begin().await?,
         };
 
-        let mut product_only_create = product_create.product.clone();
-        product_only_create.variant_count = product_create.variants.len() as i32;
-
         let id = self.id_generator.generate()?;
         self.repository
-            .create_product(&repo_ctx, id, &product_only_create)
+            .create_product(&repo_ctx, id, &product_create.product)
             .await?;
 
         if !product_create.categories.is_empty() {
@@ -1183,7 +1180,7 @@ mod tests {
             *create_product_flag.lock().unwrap() = true;
             assert_eq!(id, 1);
             assert_eq!(product.name, "Test Product");
-            assert_eq!(product.variant_count, 1);
+            assert_eq!(product.variant_count, 0);
             Ok(())
         });
 
