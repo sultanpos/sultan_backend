@@ -79,7 +79,6 @@ impl ProductCreateRequest {
             sellable: self.sellable,
             buyable: self.buyable,
             editable_price: self.editable_price,
-            has_variant: self.has_variant,
             metadata: self.metadata.clone(),
             category_ids: self.category_ids.clone(),
         }
@@ -137,10 +136,6 @@ pub struct ProductResponse {
     #[schema(example = false)]
     pub editable_price: bool,
 
-    /// Whether the product has variants
-    #[schema(example = true)]
-    pub has_variant: bool,
-
     /// Additional metadata
     pub metadata: Option<Value>,
 
@@ -164,7 +159,6 @@ impl From<Product> for ProductResponse {
             sellable: product.sellable,
             buyable: product.buyable,
             editable_price: product.editable_price,
-            has_variant: product.has_variant,
             metadata: product.metadata,
             categories: product
                 .categories

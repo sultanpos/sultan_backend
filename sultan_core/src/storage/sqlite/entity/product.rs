@@ -25,7 +25,6 @@ pub struct Model {
     pub sellable: bool,
     pub buyable: bool,
     pub editable_price: bool,
-    pub has_variant: bool,
     pub metadata: Option<String>,
 }
 
@@ -77,7 +76,6 @@ impl Model {
             sellable: self.sellable,
             buyable: self.buyable,
             editable_price: self.editable_price,
-            has_variant: self.has_variant,
             metadata: self
                 .metadata
                 .as_ref()

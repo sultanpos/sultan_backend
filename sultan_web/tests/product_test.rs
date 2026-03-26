@@ -269,7 +269,6 @@ async fn test_get_product_by_id_success() {
     assert!(response["sellable"].as_bool().unwrap());
     assert!(response["buyable"].as_bool().unwrap());
     assert!(!response["editable_price"].as_bool().unwrap());
-    assert!(!response["has_variant"].as_bool().unwrap());
     assert!(response["categories"].as_array().unwrap().is_empty());
     assert!(response["variants"].as_array().unwrap().is_empty());
 }

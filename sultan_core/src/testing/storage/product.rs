@@ -24,7 +24,6 @@ fn create_test_product() -> ProductCreate {
         sellable: true,
         buyable: true,
         editable_price: false,
-        has_variant: false,
         metadata: Some(json!({"key": "value"})),
         category_ids: vec![],
     }
@@ -165,7 +164,6 @@ pub async fn product_test_create_success<R: ProductRepository>(
     assert!(saved.sellable);
     assert!(saved.buyable);
     assert!(!saved.editable_price);
-    assert!(!saved.has_variant);
     assert!(!saved.is_deleted);
 }
 
@@ -183,7 +181,6 @@ pub async fn product_test_create_without_optional_fields<R: ProductRepository>(
         sellable: false,
         buyable: false,
         editable_price: true,
-        has_variant: true,
         metadata: None,
         category_ids: vec![],
     };
@@ -205,7 +202,6 @@ pub async fn product_test_create_without_optional_fields<R: ProductRepository>(
     assert!(!saved.sellable);
     assert!(!saved.buyable);
     assert!(saved.editable_price);
-    assert!(saved.has_variant);
     assert_eq!(saved.metadata, None);
 }
 
@@ -239,7 +235,6 @@ pub async fn product_test_update_name<R: ProductRepository>(
         sellable: None,
         buyable: None,
         editable_price: None,
-        has_variant: None,
         metadata: Update::Unchanged,
         category_ids: None,
     };
@@ -282,7 +277,6 @@ pub async fn product_test_update_clear_description<R: ProductRepository>(
         sellable: None,
         buyable: None,
         editable_price: None,
-        has_variant: None,
         metadata: Update::Unchanged,
         category_ids: None,
     };
@@ -320,7 +314,6 @@ pub async fn product_test_update_all_fields<R: ProductRepository>(
         sellable: Some(false),
         buyable: Some(false),
         editable_price: Some(true),
-        has_variant: Some(true),
         metadata: Update::Set(json!({"new_key": "new_value"})),
         category_ids: None,
     };
@@ -345,7 +338,6 @@ pub async fn product_test_update_all_fields<R: ProductRepository>(
     assert!(!saved.sellable);
     assert!(!saved.buyable);
     assert!(saved.editable_price);
-    assert!(saved.has_variant);
     assert_eq!(saved.metadata, Some(json!({"new_key": "new_value"})));
 }
 
@@ -362,7 +354,6 @@ pub async fn product_test_update_not_found<R: ProductRepository>(
         sellable: None,
         buyable: None,
         editable_price: None,
-        has_variant: None,
         metadata: Update::Unchanged,
         category_ids: None,
     };
@@ -430,7 +421,6 @@ pub async fn product_test_update_deleted_fails<R: ProductRepository>(
         sellable: None,
         buyable: None,
         editable_price: None,
-        has_variant: None,
         metadata: Update::Unchanged,
         category_ids: None,
     };
@@ -508,7 +498,6 @@ pub async fn product_test_with_metadata_json<R: ProductRepository>(
         sellable: true,
         buyable: true,
         editable_price: false,
-        has_variant: false,
         metadata: Some(complex_metadata.clone()),
         category_ids: vec![],
     };
@@ -546,7 +535,6 @@ pub async fn product_test_update_only_metadata<R: ProductRepository>(
         sellable: None,
         buyable: None,
         editable_price: None,
-        has_variant: None,
         metadata: Update::Set(json!({"updated": true, "version": 2})),
         category_ids: None,
     };
@@ -585,7 +573,6 @@ pub async fn product_test_update_clear_metadata<R: ProductRepository>(
         sellable: None,
         buyable: None,
         editable_price: None,
-        has_variant: None,
         metadata: Update::Clear,
         category_ids: None,
     };
@@ -623,7 +610,6 @@ pub async fn product_test_update_boolean_flags<R: ProductRepository>(
         sellable: Some(false),
         buyable: Some(false),
         editable_price: Some(true),
-        has_variant: Some(true),
         metadata: Update::Unchanged,
         category_ids: None,
     };
@@ -641,7 +627,6 @@ pub async fn product_test_update_boolean_flags<R: ProductRepository>(
     assert!(!saved.sellable);
     assert!(!saved.buyable);
     assert!(saved.editable_price);
-    assert!(saved.has_variant);
 }
 
 /// Test: Update main_image
@@ -664,7 +649,6 @@ pub async fn product_test_update_main_image<R: ProductRepository>(
         sellable: None,
         buyable: None,
         editable_price: None,
-        has_variant: None,
         metadata: Update::Unchanged,
         category_ids: None,
     };
@@ -705,7 +689,6 @@ pub async fn product_test_update_clear_main_image<R: ProductRepository>(
         sellable: None,
         buyable: None,
         editable_price: None,
-        has_variant: None,
         metadata: Update::Unchanged,
         category_ids: None,
     };
@@ -743,7 +726,6 @@ pub async fn product_test_update_product_type<R: ProductRepository>(
         sellable: None,
         buyable: None,
         editable_price: None,
-        has_variant: None,
         metadata: Update::Unchanged,
         category_ids: None,
     };
@@ -1934,7 +1916,6 @@ pub async fn product_test_get_variant_by_id_with_nested_data<R>(
         sellable: true,
         buyable: true,
         editable_price: false,
-        has_variant: true,
         metadata: None,
         category_ids: vec![],
     };
@@ -2130,7 +2111,6 @@ pub async fn product_test_get_variant_by_barcode_with_nested_data<R>(
         sellable: true,
         buyable: true,
         editable_price: false,
-        has_variant: true,
         metadata: None,
         category_ids: vec![],
     };
@@ -2234,7 +2214,6 @@ pub async fn product_test_get_variant_excludes_soft_deleted_relations<R>(
         sellable: true,
         buyable: true,
         editable_price: false,
-        has_variant: true,
         metadata: None,
         category_ids: vec![],
     };
@@ -2442,7 +2421,6 @@ pub async fn product_test_get_by_id_with_variants_and_sell_prices<R: ProductRepo
         sellable: true,
         buyable: true,
         editable_price: false,
-        has_variant: true,
         metadata: None,
         category_ids: vec![],
     };
@@ -2601,7 +2579,6 @@ pub async fn product_test_get_by_id_with_full_data<R: ProductRepository>(
         sellable: true,
         buyable: true,
         editable_price: false,
-        has_variant: true,
         metadata: None,
         category_ids: vec![],
     };

@@ -80,7 +80,6 @@ impl ProductRepository for SqliteProductRepository {
             sellable: Set(product.sellable),
             buyable: Set(product.buyable),
             editable_price: Set(product.editable_price),
-            has_variant: Set(product.has_variant),
             metadata: Set(metadata_json),
             ..Default::default()
         };
@@ -149,11 +148,6 @@ impl ProductRepository for SqliteProductRepository {
         if let Some(editable_price) = product.editable_price {
             update_query =
                 update_query.col_expr(ProductColumn::EditablePrice, Expr::value(editable_price));
-        }
-
-        if let Some(has_variant) = product.has_variant {
-            update_query =
-                update_query.col_expr(ProductColumn::HasVariant, Expr::value(has_variant));
         }
 
         if product.metadata.should_update() {
