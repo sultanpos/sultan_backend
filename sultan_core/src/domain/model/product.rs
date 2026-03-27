@@ -46,6 +46,7 @@ pub struct Product {
     pub sellable: bool,
     pub buyable: bool,
     pub editable_price: bool,
+    pub variant_count: i32,
     pub metadata: Option<Value>,
     pub categories: Vec<Category>,
     pub variants: Vec<ProductVariant>,

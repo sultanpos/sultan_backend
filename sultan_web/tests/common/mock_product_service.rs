@@ -45,6 +45,7 @@ impl MockProductService {
             buyable: true,
             editable_price: false,
             metadata: None,
+            variant_count: 0,
             categories: vec![],
             variants: vec![],
         }

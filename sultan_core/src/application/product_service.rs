@@ -1046,6 +1046,7 @@ mod tests {
             sellable: true,
             buyable: true,
             editable_price: false,
+            variant_count: 0,
             metadata: None,
             categories: vec![],
             variants: vec![],

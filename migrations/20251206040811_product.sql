@@ -35,6 +35,7 @@ CREATE TABLE products (
     sellable INTEGER NOT NULL DEFAULT 1,
     buyable INTEGER NOT NULL DEFAULT 1,
     editable_price INTEGER NOT NULL DEFAULT 0,
+    variant_count INTEGER NOT NULL DEFAULT 0,
     metadata TEXT
 );
 

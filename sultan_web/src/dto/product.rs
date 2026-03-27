@@ -56,10 +56,6 @@ pub struct ProductCreateRequest {
     #[schema(example = false)]
     pub editable_price: bool,
 
-    /// Whether the product has variants
-    #[schema(example = true)]
-    pub has_variant: bool,
-
     /// Additional metadata (optional)
     #[schema(example = json!({"color": "black", "warranty": "2 years"}))]
     pub metadata: Option<Value>,
@@ -201,6 +197,9 @@ pub struct ProductResponse {
     #[schema(example = true)]
     pub buyable: bool,
 
+    #[schema(example = 1)]
+    pub variant_count: i32,
+
     /// Whether the price can be edited during sale
     #[schema(example = false)]
     pub editable_price: bool,
@@ -228,6 +227,7 @@ impl From<Product> for ProductResponse {
             sellable: product.sellable,
             buyable: product.buyable,
             editable_price: product.editable_price,
+            variant_count: product.variant_count,
             metadata: product.metadata,
             categories: product
                 .categories
