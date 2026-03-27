@@ -81,7 +81,6 @@ impl ProductRepository for SqliteProductRepository {
             buyable: Set(product.buyable),
             editable_price: Set(product.editable_price),
             metadata: Set(metadata_json),
-            variant_count: Set(product.variant_count),
             ..Default::default()
         };
 
@@ -327,13 +326,26 @@ impl ProductRepository for SqliteProductRepository {
             ..Default::default()
         };
 
+        // Verify the parent product exists and is not deleted before inserting the variant
+        let parent_exists = ProductEntity::find_by_id(variant.product_id)
+            .filter(ProductColumn::IsDeleted.eq(false))
+            .one(&ctx.db)
+            .await?;
+
+        if parent_exists.is_none() {
+            return Err(Error::NotFound(format!(
+                "Product with id {} not found",
+                variant.product_id
+            )));
+        }
+
         variant_model.insert(&ctx.db).await?;
 
         // Increment variant_count and update updated_at on the parent product
         let now = chrono::Utc::now()
             .format("%Y-%m-%dT%H:%M:%S%.fZ")
             .to_string();
-        ProductEntity::update_many()
+        let result = ProductEntity::update_many()
             .filter(ProductColumn::Id.eq(variant.product_id))
             .filter(ProductColumn::IsDeleted.eq(false))
             .col_expr(
@@ -343,6 +355,13 @@ impl ProductRepository for SqliteProductRepository {
             .col_expr(ProductColumn::UpdatedAt, Expr::value(now))
             .exec(&ctx.db)
             .await?;
+
+        if result.rows_affected == 0 {
+            return Err(Error::NotFound(format!(
+                "Product with id {} not found",
+                variant.product_id
+            )));
+        }
 
         Ok(())
     }
@@ -444,7 +463,7 @@ impl ProductRepository for SqliteProductRepository {
             .await?;
 
         // Decrement variant_count and update updated_at on the parent product
-        ProductEntity::update_many()
+        let result = ProductEntity::update_many()
             .filter(ProductColumn::Id.eq(variant.product_id))
             .filter(ProductColumn::IsDeleted.eq(false))
             .col_expr(
@@ -454,6 +473,13 @@ impl ProductRepository for SqliteProductRepository {
             .col_expr(ProductColumn::UpdatedAt, Expr::value(now))
             .exec(&ctx.db)
             .await?;
+
+        if result.rows_affected == 0 {
+            return Err(Error::NotFound(format!(
+                "Product with id {} not found",
+                variant.product_id
+            )));
+        }
 
         Ok(())
     }
@@ -481,13 +507,20 @@ impl ProductRepository for SqliteProductRepository {
             .await?;
 
         // Reset variant_count to 0 and update updated_at on the parent product
-        ProductEntity::update_many()
+        let result = ProductEntity::update_many()
             .filter(ProductColumn::Id.eq(product_id))
             .filter(ProductColumn::IsDeleted.eq(false))
             .col_expr(ProductColumn::VariantCount, Expr::value(0i32))
             .col_expr(ProductColumn::UpdatedAt, Expr::value(now))
             .exec(&ctx.db)
             .await?;
+
+        if result.rows_affected == 0 {
+            return Err(Error::NotFound(format!(
+                "Product with id {} not found",
+                product_id
+            )));
+        }
 
         Ok(())
     }

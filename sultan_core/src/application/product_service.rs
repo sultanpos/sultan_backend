@@ -1180,7 +1180,6 @@ mod tests {
             *create_product_flag.lock().unwrap() = true;
             assert_eq!(id, 1);
             assert_eq!(product.name, "Test Product");
-            assert_eq!(product.variant_count, 0);
             Ok(())
         });
 
@@ -1252,7 +1251,6 @@ mod tests {
                 buyable: true,
                 editable_price: false,
                 metadata: None,
-                variant_count: 0,
                 category_ids: vec![],
             },
             categories: vec![10, 20],
@@ -1342,7 +1340,6 @@ mod tests {
                 buyable: true,
                 editable_price: false,
                 metadata: None,
-                variant_count: 0,
                 category_ids: vec![],
             },
             variants: vec![],

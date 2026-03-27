@@ -25,7 +25,6 @@ fn create_test_product() -> ProductCreate {
         buyable: true,
         editable_price: false,
         metadata: Some(json!({"key": "value"})),
-        variant_count: 0,
         category_ids: vec![],
     }
 }
@@ -191,7 +190,6 @@ pub async fn product_test_create_without_optional_fields<R: ProductRepository>(
         buyable: false,
         editable_price: true,
         metadata: None,
-        variant_count: 0,
         category_ids: vec![],
     };
 
@@ -508,7 +506,6 @@ pub async fn product_test_with_metadata_json<R: ProductRepository>(
         sellable: true,
         buyable: true,
         editable_price: false,
-        variant_count: 0,
         metadata: Some(complex_metadata.clone()),
         category_ids: vec![],
     };
@@ -1928,7 +1925,6 @@ pub async fn product_test_get_variant_by_id_with_nested_data<R>(
         buyable: true,
         editable_price: false,
         metadata: None,
-        variant_count: 0,
         category_ids: vec![],
     };
     repo.create_product(ctx, product_id, &product)
@@ -2124,7 +2120,6 @@ pub async fn product_test_get_variant_by_barcode_with_nested_data<R>(
         buyable: true,
         editable_price: false,
         metadata: None,
-        variant_count: 0,
         category_ids: vec![],
     };
     repo.create_product(ctx, product_id, &product)
@@ -2228,7 +2223,6 @@ pub async fn product_test_get_variant_excludes_soft_deleted_relations<R>(
         buyable: true,
         editable_price: false,
         metadata: None,
-        variant_count: 0,
         category_ids: vec![],
     };
     repo.create_product(ctx, product_id, &product)
@@ -2436,7 +2430,6 @@ pub async fn product_test_get_by_id_with_variants_and_sell_prices<R: ProductRepo
         buyable: true,
         editable_price: false,
         metadata: None,
-        variant_count: 0,
         category_ids: vec![],
     };
     repo.create_product(ctx, product_id, &product)
@@ -2595,7 +2588,6 @@ pub async fn product_test_get_by_id_with_full_data<R: ProductRepository>(
         buyable: true,
         editable_price: false,
         metadata: None,
-        variant_count: 0,
         category_ids: vec![],
     };
     repo.create_product(ctx, product_id, &product)
@@ -2848,7 +2840,6 @@ pub async fn product_test_variant_count_stored<R: ProductRepository>(
 ) {
     let product_id = super::generate_test_id().await;
     let product = ProductCreate {
-        variant_count: 3,
         ..create_test_product()
     };
 
@@ -2863,8 +2854,8 @@ pub async fn product_test_variant_count_stored<R: ProductRepository>(
         .expect("Product not found");
 
     assert_eq!(
-        saved.variant_count, 3,
-        "variant_count should be stored as 3"
+        saved.variant_count, 0,
+        "variant_count should be stored as 0"
     );
 }
 

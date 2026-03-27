@@ -77,7 +77,6 @@ impl ProductCreateRequest {
             buyable: self.buyable,
             editable_price: self.editable_price,
             metadata: self.metadata.clone(),
-            variant_count: 0, // Start with 0 variants, can be updated later
             category_ids: self.category_ids.clone(),
         }
     }
@@ -198,6 +197,9 @@ pub struct ProductResponse {
     #[schema(example = true)]
     pub buyable: bool,
 
+    #[schema(example = 1)]
+    pub variant_count: i32,
+
     /// Whether the price can be edited during sale
     #[schema(example = false)]
     pub editable_price: bool,
@@ -225,6 +227,7 @@ impl From<Product> for ProductResponse {
             sellable: product.sellable,
             buyable: product.buyable,
             editable_price: product.editable_price,
+            variant_count: product.variant_count,
             metadata: product.metadata,
             categories: product
                 .categories
