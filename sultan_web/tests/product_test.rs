@@ -496,3 +496,105 @@ async fn test_update_product_service_error() {
         error_msg
     );
 }
+
+// ============================================================================
+// GET /api/product - List Products Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_all_products_success() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/product", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(response.get("items").is_some());
+    assert!(response["items"].is_array());
+    assert!(response.get("next_cursor").is_some());
+}
+
+#[tokio::test]
+async fn test_get_all_products_with_query_params() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(
+        app,
+        "GET",
+        "/api/product?name=Laptop&sort_field=name&sort_direction=asc&limit=10",
+        None,
+    )
+    .await
+    .expect("Request failed");
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(response["items"].is_array());
+}
+
+#[tokio::test]
+async fn test_get_all_products_invalid_sort_field() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/product?sort_field=invalid", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let error_msg = response["error"].as_str().unwrap();
+    assert!(
+        error_msg.contains("Invalid sort_field"),
+        "Expected sort_field validation error, got: {}",
+        error_msg
+    );
+}
+
+#[tokio::test]
+async fn test_get_all_products_invalid_cursor() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let (status, response) =
+        make_request(app, "GET", "/api/product?cursor=not-valid-base64!!!", None)
+            .await
+            .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let error_msg = response["error"].as_str().unwrap();
+    assert!(
+        error_msg.contains("cursor"),
+        "Expected cursor validation error, got: {}",
+        error_msg
+    );
+}
+
+#[tokio::test]
+async fn test_get_all_products_service_error() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_failure()));
+
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/product", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    let error_msg = response["error"].as_str().unwrap();
+    assert!(
+        error_msg.contains("Internal error"),
+        "Expected internal error, got: {}",
+        error_msg
+    );
+}

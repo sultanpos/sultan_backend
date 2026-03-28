@@ -40,6 +40,9 @@ CREATE TABLE products (
 );
 
 CREATE INDEX idx_products_is_deleted ON products (is_deleted);
+CREATE INDEX idx_products_created_at ON products (created_at, id);
+CREATE INDEX idx_products_updated_at ON products (updated_at, id);
+CREATE INDEX idx_products_name ON products (name, id);
 
 CREATE TABLE product_variants (
     id INTEGER PRIMARY KEY,

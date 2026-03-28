@@ -4,8 +4,8 @@ use sea_orm::ConnectionTrait;
 use crate::domain::{
     DomainResult,
     model::product::{
-        Product, ProductCreate, ProductUpdate, ProductVariant, ProductVariantCreate,
-        ProductVariantUpdate,
+        CursorPage, Product, ProductCreate, ProductQuery, ProductUpdate, ProductVariant,
+        ProductVariantCreate, ProductVariantUpdate,
     },
     model::sell_price::{
         SellDiscount, SellDiscountCreate, SellDiscountUpdate, SellPrice, SellPriceCreate,
@@ -152,6 +152,27 @@ pub trait ProductRepository: Send + Sync {
         ctx: &super::RepoCtx<impl ConnectionTrait>,
         id: i64,
     ) -> DomainResult<Option<Product>>;
+
+    /// Lists products using cursor-based (keyset) pagination.
+    ///
+    /// Results are ordered by `(sort_field, id)` to guarantee stable ordering.
+    /// When a cursor is provided the query uses a `WHERE (field > val) OR (field = val AND id > cursor_id)`
+    /// condition (reversed for descending) to efficiently skip to the next page.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx`   - Repository context with database connection
+    /// * `query` - Query options including filter, sort, cursor, and limit
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(CursorPage<Product>)` - Page of products with an optional next cursor
+    /// * `Err(Error)` - Database error
+    async fn get_all(
+        &self,
+        ctx: &super::RepoCtx<impl ConnectionTrait>,
+        query: &ProductQuery,
+    ) -> DomainResult<CursorPage<Product>>;
 
     /// Creates a new product variant.
     ///

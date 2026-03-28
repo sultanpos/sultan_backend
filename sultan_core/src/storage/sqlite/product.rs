@@ -8,8 +8,8 @@ use crate::{
     domain::{
         DomainResult, Error,
         model::product::{
-            Product, ProductCreate, ProductUpdate, ProductVariant, ProductVariantCreate,
-            ProductVariantUpdate,
+            CursorPage, Product, ProductCreate, ProductUpdate, ProductVariant,
+            ProductVariantCreate, ProductVariantUpdate,
         },
         model::sell_price::{
             SellDiscount, SellDiscountCreate, SellDiscountUpdate, SellPrice, SellPriceCreate,
@@ -19,11 +19,11 @@ use crate::{
     storage::{
         ProductRepository, RepoCtx,
         sqlite::entity::{
-            CategoryColumn, ProductActiveModel, ProductCategoryActiveModel, ProductCategoryColumn,
-            ProductCategoryEntity, ProductColumn, ProductEntity, ProductVariantActiveModel,
-            ProductVariantColumn, ProductVariantEntity, SellDiscountActiveModel,
-            SellDiscountColumn, SellDiscountEntity, SellPriceActiveModel, SellPriceColumn,
-            SellPriceEntity,
+            CategoryColumn, CategoryEntity, ProductActiveModel, ProductCategoryActiveModel,
+            ProductCategoryColumn, ProductCategoryEntity, ProductColumn, ProductEntity,
+            ProductVariantActiveModel, ProductVariantColumn, ProductVariantEntity,
+            SellDiscountActiveModel, SellDiscountColumn, SellDiscountEntity, SellPriceActiveModel,
+            SellPriceColumn, SellPriceEntity,
         },
     },
 };
@@ -303,6 +303,123 @@ impl ProductRepository for SqliteProductRepository {
         product.variants = variants;
 
         Ok(Some(product))
+    }
+
+    async fn get_all(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        query: &crate::domain::model::product::ProductQuery,
+    ) -> DomainResult<CursorPage<Product>> {
+        use crate::domain::model::product::{ProductCursor, ProductSortField, SortDirection};
+        use sea_orm::{Condition, Order, QueryOrder};
+
+        let mut select = ProductEntity::find().filter(ProductColumn::IsDeleted.eq(false));
+
+        // ── Filters ─────────────────────────────────────────────────────
+        if let Some(name) = &query.filter.name {
+            select = select.filter(ProductColumn::Name.contains(name));
+        }
+        if let Some(product_type) = &query.filter.product_type {
+            select = select.filter(ProductColumn::ProductType.eq(product_type.clone()));
+        }
+        if let Some(category_id) = query.filter.category_id {
+            select = select.filter(
+                ProductColumn::Id.in_subquery(
+                    sea_orm::sea_query::Query::select()
+                        .column((ProductCategoryEntity, ProductCategoryColumn::ProductId))
+                        .from(ProductCategoryEntity)
+                        .inner_join(
+                            CategoryEntity,
+                            sea_orm::sea_query::Expr::col((CategoryEntity, CategoryColumn::Id))
+                                .equals((ProductCategoryEntity, ProductCategoryColumn::CategoryId)),
+                        )
+                        .and_where(
+                            sea_orm::sea_query::Expr::col((
+                                ProductCategoryEntity,
+                                ProductCategoryColumn::CategoryId,
+                            ))
+                            .eq(category_id),
+                        )
+                        .and_where(
+                            sea_orm::sea_query::Expr::col((
+                                CategoryEntity,
+                                CategoryColumn::IsDeleted,
+                            ))
+                            .eq(false),
+                        )
+                        .to_owned(),
+                ),
+            );
+        }
+
+        // ── Map sort field to column ────────────────────────────────────
+        let sort_col = match query.sort_field {
+            ProductSortField::Name => ProductColumn::Name,
+            ProductSortField::CreatedAt => ProductColumn::CreatedAt,
+            ProductSortField::UpdatedAt => ProductColumn::UpdatedAt,
+        };
+
+        let order = match query.sort_direction {
+            SortDirection::Asc => Order::Asc,
+            SortDirection::Desc => Order::Desc,
+        };
+
+        // ── Cursor condition ────────────────────────────────────────────
+        // WHERE (field > val) OR (field = val AND id > cursor_id)
+        // (reversed comparisons for Desc)
+        if let Some(cursor) = &query.cursor {
+            let cond = match query.sort_direction {
+                SortDirection::Asc => Condition::any()
+                    .add(Expr::col(sort_col).gt(cursor.field_value.clone()))
+                    .add(
+                        Condition::all()
+                            .add(Expr::col(sort_col).eq(cursor.field_value.clone()))
+                            .add(Expr::col(ProductColumn::Id).gt(cursor.id)),
+                    ),
+                SortDirection::Desc => Condition::any()
+                    .add(Expr::col(sort_col).lt(cursor.field_value.clone()))
+                    .add(
+                        Condition::all()
+                            .add(Expr::col(sort_col).eq(cursor.field_value.clone()))
+                            .add(Expr::col(ProductColumn::Id).lt(cursor.id)),
+                    ),
+            };
+            select = select.filter(cond);
+        }
+
+        // ── Ordering: (sort_field, id) ──────────────────────────────────
+        select = select
+            .order_by(sort_col, order.clone())
+            .order_by(ProductColumn::Id, order);
+
+        // Fetch limit + 1 to detect whether there is a next page
+        let fetch_limit = query.limit + 1;
+        let rows = select.limit(fetch_limit).all(&ctx.db).await?;
+
+        let has_next = rows.len() as u64 > query.limit;
+        let product_models: Vec<_> = rows.into_iter().take(query.limit as usize).collect();
+
+        // ── Build next_cursor from the last item ────────────────────────
+        let next_cursor = if has_next {
+            product_models.last().map(|last| {
+                let field_value = match query.sort_field {
+                    ProductSortField::Name => last.name.clone(),
+                    ProductSortField::CreatedAt => last.created_at.clone(),
+                    ProductSortField::UpdatedAt => last.updated_at.clone(),
+                };
+                ProductCursor {
+                    field_value,
+                    id: last.id,
+                }
+            })
+        } else {
+            None
+        };
+
+        // ── Convert to domain models (lightweight — no relations) ───────
+        let items = product_models.into_iter().map(|m| m.to_domain()).collect();
+
+        Ok(CursorPage { items, next_cursor })
     }
 
     async fn create_variant(

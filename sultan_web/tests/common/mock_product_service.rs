@@ -4,8 +4,8 @@ use sultan_core::domain::{
     DomainResult, Error,
     context::Context,
     model::product::{
-        Product, ProductFullCreate, ProductUpdate, ProductVariant, ProductVariantCreate,
-        ProductVariantUpdate,
+        CursorPage, Product, ProductFullCreate, ProductQuery, ProductUpdate, ProductVariant,
+        ProductVariantCreate, ProductVariantUpdate,
     },
 };
 
@@ -113,6 +113,20 @@ impl ProductServiceTrait for MockProductService {
         } else {
             Ok(None)
         }
+    }
+
+    async fn get_all_products(
+        &self,
+        _ctx: &Context,
+        _query: &ProductQuery,
+    ) -> DomainResult<CursorPage<Product>> {
+        if !self.should_succeed {
+            return Err(Error::Internal("Failed to get products".to_string()));
+        }
+        Ok(CursorPage {
+            items: vec![self.create_mock_product()],
+            next_cursor: None,
+        })
     }
 
     async fn create_variant(
