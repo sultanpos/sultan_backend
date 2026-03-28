@@ -723,6 +723,48 @@ impl SellPriceFullCreateRequest {
     }
 }
 
+/// Response after creating a sell price
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SellPriceCreateResponse {
+    /// Sell price ID
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "i64_to_string")]
+    pub id: i64,
+}
+
+/// Request to update a sell price
+#[derive(Debug, Default, Deserialize, Validate, ToSchema)]
+#[serde(default)]
+pub struct SellPriceUpdateRequest {
+    /// Unit of measure ID (omit to leave unchanged)
+    #[schema(value_type = Option<String>, example = "1234567890")]
+    #[serde(deserialize_with = "option_string_to_i64")]
+    pub uom_id: Option<i64>,
+
+    /// Quantity for this price point (omit to leave unchanged)
+    #[schema(example = 1)]
+    pub quantity: Option<i64>,
+
+    /// Price in cents/smallest currency unit (omit to leave unchanged)
+    #[schema(example = 150000)]
+    pub price: Option<i64>,
+
+    /// Omit to leave unchanged, `null` to clear
+    #[schema(value_type = Option<Value>)]
+    pub metadata: Update<Value>,
+}
+
+impl SellPriceUpdateRequest {
+    pub fn to_domain(&self) -> sultan_core::domain::model::sell_price::SellPriceUpdate {
+        sultan_core::domain::model::sell_price::SellPriceUpdate {
+            uom_id: self.uom_id,
+            quantity: self.quantity,
+            price: self.price,
+            metadata: self.metadata.clone(),
+        }
+    }
+}
+
 /// Request to create stock for a product variant
 #[derive(Debug, Clone, Deserialize, Validate, ToSchema)]
 pub struct StockCreateRequest {
