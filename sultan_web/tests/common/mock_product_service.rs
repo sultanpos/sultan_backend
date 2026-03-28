@@ -5,8 +5,9 @@ use sultan_core::domain::{
     context::Context,
     model::product::{
         CursorPage, Product, ProductFullCreate, ProductQuery, ProductUpdate, ProductVariant,
-        ProductVariantFullCreate, ProductVariantUpdate,
+        ProductVariantFullCreate, ProductVariantUpdate, SellPriceFullCreate,
     },
+    model::sell_price::SellPriceUpdate,
 };
 
 pub struct MockProductService {
@@ -231,5 +232,34 @@ impl ProductServiceTrait for MockProductService {
         } else {
             Ok(vec![])
         }
+    }
+
+    async fn create_sell_price(
+        &self,
+        _ctx: &Context,
+        _sell_price: &SellPriceFullCreate,
+    ) -> DomainResult<i64> {
+        if !self.should_succeed {
+            return Err(Error::Internal("Failed to create sell price".to_string()));
+        }
+        Ok(self.id)
+    }
+
+    async fn update_sell_price(
+        &self,
+        _ctx: &Context,
+        id: i64,
+        _sell_price: &SellPriceUpdate,
+    ) -> DomainResult<()> {
+        if !self.should_succeed {
+            return Err(Error::Internal("Failed to update sell price".to_string()));
+        }
+        if id != self.id {
+            return Err(Error::NotFound(format!(
+                "Sell price with id {} not found",
+                id
+            )));
+        }
+        Ok(())
     }
 }
