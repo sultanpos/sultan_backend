@@ -263,6 +263,19 @@ pub trait ProductServiceTrait: Send + Sync {
         id: i64,
         sell_price: &SellPriceUpdate,
     ) -> DomainResult<()>;
+
+    /// Soft deletes a sell price and all its associated discounts.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - The request context containing user info and permissions
+    /// * `id` - The ID of the sell price to delete
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the user lacks `product:delete` permission
+    /// - `NotFound` if the sell price doesn't exist
+    async fn delete_sell_price(&self, ctx: &Context, id: i64) -> DomainResult<()>;
 }
 
 /// Concrete implementation of the product service.
@@ -677,6 +690,25 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
             .update_sell_price(&repo_ctx, id, sell_price)
             .await
     }
+
+    async fn delete_sell_price(&self, ctx: &Context, id: i64) -> DomainResult<()> {
+        ctx.require_access(None, resource::PRODUCT, action::DELETE)?;
+
+        let repo_ctx = RepoCtx {
+            ctx: ctx.clone(),
+            db: self.db.begin().await?,
+        };
+
+        self.repository
+            .delete_sell_discounts_by_sell_price_id(&repo_ctx, id)
+            .await?;
+
+        self.repository.delete_sell_price(&repo_ctx, id).await?;
+
+        repo_ctx.db.commit().await?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -732,6 +764,9 @@ mod tests {
             Arc<Mutex<Option<Box<dyn Fn(i64, SellPriceCreate) -> DomainResult<()> + Send>>>>,
         update_sell_price_fn:
             Arc<Mutex<Option<Box<dyn Fn(i64, SellPriceUpdate) -> DomainResult<()> + Send>>>>,
+        delete_sell_price_fn: Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<()> + Send>>>>,
+        delete_sell_discounts_by_sell_price_id_fn:
+            Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<()> + Send>>>>,
         create_sell_discount_fn:
             Arc<Mutex<Option<Box<dyn Fn(i64, SellDiscountCreate) -> DomainResult<()> + Send>>>>,
         delete_sell_prices_by_product_variant_ids_fn:
@@ -757,6 +792,8 @@ mod tests {
                 add_product_category_fn: Arc::new(Mutex::new(None)),
                 create_sell_price_fn: Arc::new(Mutex::new(None)),
                 update_sell_price_fn: Arc::new(Mutex::new(None)),
+                delete_sell_price_fn: Arc::new(Mutex::new(None)),
+                delete_sell_discounts_by_sell_price_id_fn: Arc::new(Mutex::new(None)),
                 create_sell_discount_fn: Arc::new(Mutex::new(None)),
                 delete_sell_prices_by_product_variant_ids_fn: Arc::new(Mutex::new(None)),
             }
@@ -878,6 +915,23 @@ mod tests {
             F: Fn(i64, SellPriceUpdate) -> DomainResult<()> + Send + 'static,
         {
             *self.update_sell_price_fn.lock().unwrap() = Some(Box::new(f));
+        }
+
+        fn expect_delete_sell_price<F>(&mut self, f: F)
+        where
+            F: Fn(i64) -> DomainResult<()> + Send + 'static,
+        {
+            *self.delete_sell_price_fn.lock().unwrap() = Some(Box::new(f));
+        }
+
+        fn expect_delete_sell_discounts_by_sell_price_id<F>(&mut self, f: F)
+        where
+            F: Fn(i64) -> DomainResult<()> + Send + 'static,
+        {
+            *self
+                .delete_sell_discounts_by_sell_price_id_fn
+                .lock()
+                .unwrap() = Some(Box::new(f));
         }
 
         #[allow(dead_code)]
@@ -1125,9 +1179,14 @@ mod tests {
         async fn delete_sell_price(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
-            _id: i64,
+            id: i64,
         ) -> DomainResult<()> {
-            panic!("delete_sell_price not mocked")
+            let lock = self.delete_sell_price_fn.lock().unwrap();
+            if let Some(f) = lock.as_ref() {
+                f(id)
+            } else {
+                panic!("delete_sell_price not mocked")
+            }
         }
         async fn delete_sell_prices_by_product_variant_ids(
             &self,
@@ -1189,9 +1248,17 @@ mod tests {
         async fn delete_sell_discounts_by_sell_price_id(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
-            _sell_price_id: i64,
+            sell_price_id: i64,
         ) -> DomainResult<()> {
-            panic!("delete_sell_discounts_by_sell_price_id not mocked")
+            let lock = self
+                .delete_sell_discounts_by_sell_price_id_fn
+                .lock()
+                .unwrap();
+            if let Some(f) = lock.as_ref() {
+                f(sell_price_id)
+            } else {
+                panic!("delete_sell_discounts_by_sell_price_id not mocked")
+            }
         }
         async fn get_all_sell_discount_by_price_id(
             &self,
@@ -2155,6 +2222,62 @@ mod tests {
         };
 
         let result = service.update_sell_price(&ctx, 1, &update).await;
+        assert!(matches!(result, Err(Error::Forbidden(_))));
+    }
+
+    #[tokio::test]
+    async fn test_delete_sell_price_success() {
+        let mut mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+        let id_gen = create_mock_id_gen(1);
+        let db = create_test_db().await;
+
+        mock_repo.expect_delete_sell_discounts_by_sell_price_id(|id| {
+            assert_eq!(id, 42);
+            Ok(())
+        });
+        mock_repo.expect_delete_sell_price(|id| {
+            assert_eq!(id, 42);
+            Ok(())
+        });
+
+        let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
+        let ctx = create_test_ctx();
+
+        let result = service.delete_sell_price(&ctx, 42).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_delete_sell_price_not_found() {
+        let mut mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+        let id_gen = create_mock_id_gen(1);
+        let db = create_test_db().await;
+
+        mock_repo.expect_delete_sell_discounts_by_sell_price_id(|_| Ok(()));
+        mock_repo.expect_delete_sell_price(|_| {
+            Err(Error::NotFound("SellPrice with id 999 not found".into()))
+        });
+
+        let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
+        let ctx = create_test_ctx();
+
+        let result = service.delete_sell_price(&ctx, 999).await;
+        assert!(matches!(result, Err(Error::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_delete_sell_price_forbidden() {
+        let mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+        let id_gen = create_mock_id_gen(1);
+        let db = create_test_db().await;
+
+        let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
+        let ctx = Context::new(); // No permissions
+
+        let result = service.delete_sell_price(&ctx, 1).await;
         assert!(matches!(result, Err(Error::Forbidden(_))));
     }
 }

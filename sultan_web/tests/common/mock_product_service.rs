@@ -262,4 +262,17 @@ impl ProductServiceTrait for MockProductService {
         }
         Ok(())
     }
+
+    async fn delete_sell_price(&self, _ctx: &Context, id: i64) -> DomainResult<()> {
+        if !self.should_succeed {
+            return Err(Error::Internal("Failed to delete sell price".to_string()));
+        }
+        if id != self.id {
+            return Err(Error::NotFound(format!(
+                "Sell price with id {} not found",
+                id
+            )));
+        }
+        Ok(())
+    }
 }
