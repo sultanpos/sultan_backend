@@ -18,7 +18,7 @@ use crate::dto::category::CategoryChildResponse;
 use crate::dto::product::{
     ProductFullCreateRequest, ProductListResponse, ProductQueryParams, ProductResponse,
     ProductUpdateRequest, ProductVariantCreateResponse, ProductVariantFullCreateRequest,
-    ProductVariantResponse, SellDiscountResponse, SellPriceResponse,
+    ProductVariantResponse, ProductVariantUpdateRequest, SellDiscountResponse, SellPriceResponse,
 };
 use crate::dto::{ErrorResponse, ProductCreateResponse};
 
@@ -34,7 +34,9 @@ use crate::dto::{ErrorResponse, ProductCreateResponse};
         delete_product,
         get_by_id,
         get_all,
-        create_variant
+        create_variant,
+        update_variant,
+        delete_variant
     ),
     components(schemas(
         ProductFullCreateRequest,
@@ -44,6 +46,7 @@ use crate::dto::{ErrorResponse, ProductCreateResponse};
         ProductListResponse,
         ProductQueryParams,
         ProductVariantFullCreateRequest,
+        ProductVariantUpdateRequest,
         ProductVariantCreateResponse,
         ProductVariantResponse,
         SellPriceResponse,
@@ -281,6 +284,71 @@ async fn create_variant(
     ))
 }
 
+/// Update a product variant
+///
+/// Partially updates a variant by ID. Fields absent from the JSON are left unchanged.
+/// Nullable fields (`barcode`, `name`, `metadata`) can be cleared by sending `null`.
+/// Requires authentication.
+#[utoipa::path(
+    patch,
+    path = "/api/product/variant/{id}",
+    tag = "product",
+    params(
+        ("id" = i64, Path, description = "Variant ID")
+    ),
+    request_body = ProductVariantUpdateRequest,
+    responses(
+        (status = 204, description = "Variant updated successfully"),
+        (status = 400, description = "Bad request - validation error", body = ErrorResponse),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse),
+        (status = 404, description = "Variant not found", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+#[instrument(skip(product_service, payload, ctx))]
+async fn update_variant(
+    State(product_service): State<Arc<dyn ProductServiceTrait>>,
+    Extension(ctx): Extension<Context>,
+    Path(id): Path<i64>,
+    Json(payload): Json<ProductVariantUpdateRequest>,
+) -> DomainResult<impl IntoResponse> {
+    product_service
+        .update_variant(&ctx, id, &payload.to_domain())
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Delete a product variant
+///
+/// Soft deletes a variant (and its sell prices and stocks) by ID. Requires authentication.
+#[utoipa::path(
+    delete,
+    path = "/api/product/variant/{id}",
+    tag = "product",
+    params(
+        ("id" = i64, Path, description = "Variant ID")
+    ),
+    responses(
+        (status = 204, description = "Variant deleted successfully"),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse),
+        (status = 404, description = "Variant not found", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+#[instrument(skip(product_service, ctx))]
+async fn delete_variant(
+    State(product_service): State<Arc<dyn ProductServiceTrait>>,
+    Extension(ctx): Extension<Context>,
+    Path(id): Path<i64>,
+) -> DomainResult<impl IntoResponse> {
+    product_service.delete_variant(&ctx, id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub fn product_router() -> Router<AppState> {
     Router::new()
         .route("/", post(create))
@@ -289,4 +357,6 @@ pub fn product_router() -> Router<AppState> {
         .route("/{id}", delete(delete_product))
         .route("/{id}", get(get_by_id))
         .route("/{id}/variant", post(create_variant))
+        .route("/variant/{id}", patch(update_variant))
+        .route("/variant/{id}", delete(delete_variant))
 }
