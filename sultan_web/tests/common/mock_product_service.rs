@@ -8,6 +8,7 @@ use sultan_core::domain::{
         ProductVariantFullCreate, ProductVariantUpdate, SellPriceFullCreate,
     },
     model::sell_price::SellPriceUpdate,
+    model::sell_price::{SellDiscountCreate, SellDiscountUpdate},
 };
 
 pub struct MockProductService {
@@ -270,6 +271,54 @@ impl ProductServiceTrait for MockProductService {
         if id != self.id {
             return Err(Error::NotFound(format!(
                 "Sell price with id {} not found",
+                id
+            )));
+        }
+        Ok(())
+    }
+
+    async fn create_sell_discount(
+        &self,
+        _ctx: &Context,
+        _discount: &SellDiscountCreate,
+    ) -> DomainResult<i64> {
+        if !self.should_succeed {
+            return Err(Error::Internal(
+                "Failed to create sell discount".to_string(),
+            ));
+        }
+        Ok(self.id)
+    }
+
+    async fn update_sell_discount(
+        &self,
+        _ctx: &Context,
+        id: i64,
+        _discount: &SellDiscountUpdate,
+    ) -> DomainResult<()> {
+        if !self.should_succeed {
+            return Err(Error::Internal(
+                "Failed to update sell discount".to_string(),
+            ));
+        }
+        if id != self.id {
+            return Err(Error::NotFound(format!(
+                "Sell discount with id {} not found",
+                id
+            )));
+        }
+        Ok(())
+    }
+
+    async fn delete_sell_discount(&self, _ctx: &Context, id: i64) -> DomainResult<()> {
+        if !self.should_succeed {
+            return Err(Error::Internal(
+                "Failed to delete sell discount".to_string(),
+            ));
+        }
+        if id != self.id {
+            return Err(Error::NotFound(format!(
+                "Sell discount with id {} not found",
                 id
             )));
         }
