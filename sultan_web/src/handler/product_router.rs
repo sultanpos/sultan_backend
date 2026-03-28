@@ -489,6 +489,10 @@ pub fn product_router() -> Router<AppState> {
         .route("/{id}/variant/{variant_id}/price", post(create_sell_price))
         .route(
             "/{id}/variant/{variant_id}/price/{price_id}",
-            patch(update_sell_price).delete(delete_sell_price),
+            patch(update_sell_price),
+        )
+        .route(
+            "/{id}/variant/{variant_id}/price/{price_id}",
+            delete(delete_sell_price),
         )
 }
