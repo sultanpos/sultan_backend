@@ -40,6 +40,7 @@ use crate::dto::{ErrorResponse, ProductCreateResponse};
         delete_variant,
         create_sell_price,
         update_sell_price,
+        delete_sell_price,
     ),
     components(schemas(
         ProductFullCreateRequest,
@@ -436,6 +437,37 @@ async fn update_sell_price(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Delete a sell price
+///
+/// Soft deletes a sell price and all its associated discounts by ID. Requires authentication.
+#[utoipa::path(
+    delete,
+    path = "/api/product/{id}/variant/{variant_id}/price/{price_id}",
+    tag = "product",
+    params(
+        ("id" = i64, Path, description = "Product ID"),
+        ("variant_id" = i64, Path, description = "Variant ID"),
+        ("price_id" = i64, Path, description = "Sell price ID")
+    ),
+    responses(
+        (status = 204, description = "Sell price deleted successfully"),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse),
+        (status = 404, description = "Sell price not found", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+#[instrument(skip(product_service, ctx))]
+async fn delete_sell_price(
+    State(product_service): State<Arc<dyn ProductServiceTrait>>,
+    Extension(ctx): Extension<Context>,
+    Path((_id, _variant_id, price_id)): Path<(i64, i64, i64)>,
+) -> DomainResult<impl IntoResponse> {
+    product_service.delete_sell_price(&ctx, price_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub fn product_router() -> Router<AppState> {
     Router::new()
         .route("/", post(create))
@@ -449,6 +481,6 @@ pub fn product_router() -> Router<AppState> {
         .route("/{id}/variant/{variant_id}/price", post(create_sell_price))
         .route(
             "/{id}/variant/{variant_id}/price/{price_id}",
-            patch(update_sell_price),
+            patch(update_sell_price).delete(delete_sell_price),
         )
 }

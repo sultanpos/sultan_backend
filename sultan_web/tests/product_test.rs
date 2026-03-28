@@ -933,3 +933,53 @@ async fn test_update_sell_price_clear_metadata() {
 
     assert_eq!(status, StatusCode::NO_CONTENT);
 }
+
+// ============================================================================
+// DELETE /api/product/{id}/variant/{variant_id}/price/{price_id} - Delete Sell Price Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_delete_sell_price_success() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "DELETE", "/api/product/1/variant/1/price/1", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(response.is_null() || response.as_object().is_none_or(|o| o.is_empty()));
+}
+
+#[tokio::test]
+async fn test_delete_sell_price_not_found() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let (status, response) =
+        make_request(app, "DELETE", "/api/product/1/variant/1/price/9999", None)
+            .await
+            .expect("Request failed");
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(response["error"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn test_delete_sell_price_service_error() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_failure()));
+
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "DELETE", "/api/product/1/variant/1/price/1", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(response["error"].as_str().is_some());
+}
