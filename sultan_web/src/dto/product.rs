@@ -749,10 +749,12 @@ pub struct SellPriceUpdateRequest {
 
     /// Quantity for this price point (omit to leave unchanged)
     #[schema(example = 1)]
+    #[validate(range(min = 1, message = "Quantity must be greater than 0"))]
     pub quantity: Option<i64>,
 
     /// Price in cents/smallest currency unit (omit to leave unchanged)
     #[schema(example = 150000)]
+    #[validate(range(min = 1, message = "Price must be greater than 0"))]
     pub price: Option<i64>,
 
     /// Omit to leave unchanged, `null` to clear

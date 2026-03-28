@@ -435,6 +435,10 @@ async fn update_sell_price(
     Path((_id, _variant_id, price_id)): Path<(i64, i64, i64)>,
     Json(payload): Json<SellPriceUpdateRequest>,
 ) -> DomainResult<impl IntoResponse> {
+    payload
+        .validate()
+        .map_err(|e| Error::ValidationError(format!("{}", e)))?;
+
     product_service
         .update_sell_price(&ctx, price_id, &payload.to_domain())
         .await?;

@@ -1040,6 +1040,42 @@ async fn test_update_sell_price_clear_metadata() {
     assert_eq!(status, StatusCode::NO_CONTENT);
 }
 
+#[tokio::test]
+async fn test_update_sell_price_invalid_quantity_zero() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let body = json!({ "quantity": 0 });
+
+    let (status, response) =
+        make_request(app, "PATCH", "/api/product/1/variant/1/price/1", Some(body))
+            .await
+            .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(response["error"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn test_update_sell_price_invalid_price_zero() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let body = json!({ "price": 0 });
+
+    let (status, response) =
+        make_request(app, "PATCH", "/api/product/1/variant/1/price/1", Some(body))
+            .await
+            .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(response["error"].as_str().is_some());
+}
+
 // ============================================================================
 // DELETE /api/product/{id}/variant/{variant_id}/price/{price_id} - Delete Sell Price Tests
 // ============================================================================
