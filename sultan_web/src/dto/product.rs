@@ -436,6 +436,32 @@ pub struct ProductVariantCreateResponse {
     pub id: i64,
 }
 
+/// Request to update a product variant
+#[derive(Debug, Deserialize, Validate, ToSchema)]
+pub struct ProductVariantUpdateRequest {
+    /// Omit to leave unchanged, `null` to clear
+    #[schema(value_type = Option<String>, example = "8901234567890")]
+    pub barcode: Update<String>,
+
+    /// Omit to leave unchanged, `null` to clear
+    #[schema(value_type = Option<String>, example = "Red - Large")]
+    pub name: Update<String>,
+
+    /// Omit to leave unchanged, `null` to clear
+    #[schema(value_type = Option<Value>, example = json!({"color": "red"}))]
+    pub metadata: Update<Value>,
+}
+
+impl ProductVariantUpdateRequest {
+    pub fn to_domain(&self) -> sultan_core::domain::model::product::ProductVariantUpdate {
+        sultan_core::domain::model::product::ProductVariantUpdate {
+            barcode: self.barcode.clone(),
+            name: self.name.clone(),
+            metadata: self.metadata.clone(),
+        }
+    }
+}
+
 /// Product variant response
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ProductVariantResponse {

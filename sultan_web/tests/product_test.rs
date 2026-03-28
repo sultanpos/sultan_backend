@@ -677,3 +677,122 @@ async fn test_create_variant_service_error() {
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert!(response["error"].as_str().is_some());
 }
+
+// ============================================================================
+// PATCH /api/product/{id}/variant/{variant_id} - Update Variant Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_update_variant_success() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let body = json!({ "name": "Blue - XL" });
+
+    let (status, _) = make_request(app, "PATCH", "/api/product/1/variant/1", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn test_update_variant_clear_nullable_field() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    // Send null to clear barcode
+    let body = json!({ "barcode": null });
+
+    let (status, _) = make_request(app, "PATCH", "/api/product/1/variant/1", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn test_update_variant_not_found() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let body = json!({ "name": "Red" });
+
+    let (status, response) = make_request(app, "PATCH", "/api/product/1/variant/9999", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(response["error"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn test_update_variant_service_error() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_failure()));
+
+    let app = build_test_router(app_state);
+
+    let body = json!({ "name": "Red" });
+
+    let (status, response) = make_request(app, "PATCH", "/api/product/1/variant/1", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(response["error"].as_str().is_some());
+}
+
+// ============================================================================
+// DELETE /api/product/{id}/variant/{variant_id} - Delete Variant Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_delete_variant_success() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let (status, _) = make_request(app, "DELETE", "/api/product/1/variant/1", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn test_delete_variant_not_found() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "DELETE", "/api/product/1/variant/9999", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(response["error"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn test_delete_variant_service_error() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_failure()));
+
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "DELETE", "/api/product/1/variant/1", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(response["error"].as_str().is_some());
+}
