@@ -18,7 +18,8 @@ use crate::dto::category::CategoryChildResponse;
 use crate::dto::product::{
     ProductFullCreateRequest, ProductListResponse, ProductQueryParams, ProductResponse,
     ProductUpdateRequest, ProductVariantCreateResponse, ProductVariantFullCreateRequest,
-    ProductVariantResponse, ProductVariantUpdateRequest, SellDiscountResponse, SellPriceResponse,
+    ProductVariantResponse, ProductVariantUpdateRequest, SellDiscountResponse,
+    SellPriceCreateResponse, SellPriceFullCreateRequest, SellPriceResponse, SellPriceUpdateRequest,
 };
 use crate::dto::{ErrorResponse, ProductCreateResponse};
 
@@ -36,7 +37,10 @@ use crate::dto::{ErrorResponse, ProductCreateResponse};
         get_all,
         create_variant,
         update_variant,
-        delete_variant
+        delete_variant,
+        create_sell_price,
+        update_sell_price,
+        delete_sell_price,
     ),
     components(schemas(
         ProductFullCreateRequest,
@@ -49,6 +53,9 @@ use crate::dto::{ErrorResponse, ProductCreateResponse};
         ProductVariantUpdateRequest,
         ProductVariantCreateResponse,
         ProductVariantResponse,
+        SellPriceFullCreateRequest,
+        SellPriceCreateResponse,
+        SellPriceUpdateRequest,
         SellPriceResponse,
         SellDiscountResponse,
         CategoryChildResponse,
@@ -351,6 +358,124 @@ async fn delete_variant(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Create a sell price for a variant
+///
+/// Creates a new sell price (with optional discounts) for the specified variant.
+/// The `product_variant_id` in the request body is ignored; the path `variant_id` is used instead.
+/// Requires authentication.
+#[utoipa::path(
+    post,
+    path = "/api/product/{id}/variant/{variant_id}/price",
+    tag = "product",
+    params(
+        ("id" = i64, Path, description = "Product ID"),
+        ("variant_id" = i64, Path, description = "Variant ID")
+    ),
+    request_body = SellPriceFullCreateRequest,
+    responses(
+        (status = 201, description = "Sell price created successfully", body = SellPriceCreateResponse),
+        (status = 400, description = "Bad request - validation error", body = ErrorResponse),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse),
+        (status = 404, description = "Variant not found", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+#[instrument(skip(product_service, payload, ctx))]
+async fn create_sell_price(
+    State(product_service): State<Arc<dyn ProductServiceTrait>>,
+    Extension(ctx): Extension<Context>,
+    Path((_id, variant_id)): Path<(i64, i64)>,
+    Json(payload): Json<SellPriceFullCreateRequest>,
+) -> DomainResult<impl IntoResponse> {
+    payload
+        .validate()
+        .map_err(|e| Error::ValidationError(format!("{}", e)))?;
+
+    let mut domain = payload.to_domain();
+    domain.sell_price.product_variant_id = variant_id;
+
+    let price_id = product_service.create_sell_price(&ctx, &domain).await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(SellPriceCreateResponse { id: price_id }),
+    ))
+}
+
+/// Update a sell price
+///
+/// Partially updates a sell price by ID. Fields absent from the JSON are left unchanged.
+/// The nullable `metadata` field can be cleared by sending `null`. Requires authentication.
+#[utoipa::path(
+    patch,
+    path = "/api/product/{id}/variant/{variant_id}/price/{price_id}",
+    tag = "product",
+    params(
+        ("id" = i64, Path, description = "Product ID"),
+        ("variant_id" = i64, Path, description = "Variant ID"),
+        ("price_id" = i64, Path, description = "Sell price ID")
+    ),
+    request_body = SellPriceUpdateRequest,
+    responses(
+        (status = 204, description = "Sell price updated successfully"),
+        (status = 400, description = "Bad request - validation error", body = ErrorResponse),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse),
+        (status = 404, description = "Sell price not found", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+#[instrument(skip(product_service, payload, ctx))]
+async fn update_sell_price(
+    State(product_service): State<Arc<dyn ProductServiceTrait>>,
+    Extension(ctx): Extension<Context>,
+    Path((_id, _variant_id, price_id)): Path<(i64, i64, i64)>,
+    Json(payload): Json<SellPriceUpdateRequest>,
+) -> DomainResult<impl IntoResponse> {
+    payload
+        .validate()
+        .map_err(|e| Error::ValidationError(format!("{}", e)))?;
+
+    product_service
+        .update_sell_price(&ctx, price_id, &payload.to_domain())
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Delete a sell price
+///
+/// Soft deletes a sell price and all its associated discounts by ID. Requires authentication.
+#[utoipa::path(
+    delete,
+    path = "/api/product/{id}/variant/{variant_id}/price/{price_id}",
+    tag = "product",
+    params(
+        ("id" = i64, Path, description = "Product ID"),
+        ("variant_id" = i64, Path, description = "Variant ID"),
+        ("price_id" = i64, Path, description = "Sell price ID")
+    ),
+    responses(
+        (status = 204, description = "Sell price deleted successfully"),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse),
+        (status = 404, description = "Sell price not found", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+#[instrument(skip(product_service, ctx))]
+async fn delete_sell_price(
+    State(product_service): State<Arc<dyn ProductServiceTrait>>,
+    Extension(ctx): Extension<Context>,
+    Path((_id, _variant_id, price_id)): Path<(i64, i64, i64)>,
+) -> DomainResult<impl IntoResponse> {
+    product_service.delete_sell_price(&ctx, price_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub fn product_router() -> Router<AppState> {
     Router::new()
         .route("/", post(create))
@@ -361,4 +486,13 @@ pub fn product_router() -> Router<AppState> {
         .route("/{id}/variant", post(create_variant))
         .route("/{id}/variant/{variant_id}", patch(update_variant))
         .route("/{id}/variant/{variant_id}", delete(delete_variant))
+        .route("/{id}/variant/{variant_id}/price", post(create_sell_price))
+        .route(
+            "/{id}/variant/{variant_id}/price/{price_id}",
+            patch(update_sell_price),
+        )
+        .route(
+            "/{id}/variant/{variant_id}/price/{price_id}",
+            delete(delete_sell_price),
+        )
 }
