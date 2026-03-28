@@ -679,7 +679,7 @@ async fn test_create_variant_service_error() {
 }
 
 // ============================================================================
-// PATCH /api/product/variant/{id} - Update Variant Tests
+// PATCH /api/product/{id}/variant/{variant_id} - Update Variant Tests
 // ============================================================================
 
 #[tokio::test]
@@ -691,7 +691,7 @@ async fn test_update_variant_success() {
 
     let body = json!({ "name": "Blue - XL" });
 
-    let (status, _) = make_request(app, "PATCH", "/api/product/variant/1", Some(body))
+    let (status, _) = make_request(app, "PATCH", "/api/product/1/variant/1", Some(body))
         .await
         .expect("Request failed");
 
@@ -708,7 +708,7 @@ async fn test_update_variant_clear_nullable_field() {
     // Send null to clear barcode
     let body = json!({ "barcode": null });
 
-    let (status, _) = make_request(app, "PATCH", "/api/product/variant/1", Some(body))
+    let (status, _) = make_request(app, "PATCH", "/api/product/1/variant/1", Some(body))
         .await
         .expect("Request failed");
 
@@ -724,7 +724,7 @@ async fn test_update_variant_not_found() {
 
     let body = json!({ "name": "Red" });
 
-    let (status, response) = make_request(app, "PATCH", "/api/product/variant/9999", Some(body))
+    let (status, response) = make_request(app, "PATCH", "/api/product/1/variant/9999", Some(body))
         .await
         .expect("Request failed");
 
@@ -741,7 +741,7 @@ async fn test_update_variant_service_error() {
 
     let body = json!({ "name": "Red" });
 
-    let (status, response) = make_request(app, "PATCH", "/api/product/variant/1", Some(body))
+    let (status, response) = make_request(app, "PATCH", "/api/product/1/variant/1", Some(body))
         .await
         .expect("Request failed");
 
@@ -750,7 +750,7 @@ async fn test_update_variant_service_error() {
 }
 
 // ============================================================================
-// DELETE /api/product/variant/{id} - Delete Variant Tests
+// DELETE /api/product/{id}/variant/{variant_id} - Delete Variant Tests
 // ============================================================================
 
 #[tokio::test]
@@ -760,7 +760,7 @@ async fn test_delete_variant_success() {
 
     let app = build_test_router(app_state);
 
-    let (status, _) = make_request(app, "DELETE", "/api/product/variant/1", None)
+    let (status, _) = make_request(app, "DELETE", "/api/product/1/variant/1", None)
         .await
         .expect("Request failed");
 
@@ -774,7 +774,7 @@ async fn test_delete_variant_not_found() {
 
     let app = build_test_router(app_state);
 
-    let (status, response) = make_request(app, "DELETE", "/api/product/variant/9999", None)
+    let (status, response) = make_request(app, "DELETE", "/api/product/1/variant/9999", None)
         .await
         .expect("Request failed");
 
@@ -789,7 +789,7 @@ async fn test_delete_variant_service_error() {
 
     let app = build_test_router(app_state);
 
-    let (status, response) = make_request(app, "DELETE", "/api/product/variant/1", None)
+    let (status, response) = make_request(app, "DELETE", "/api/product/1/variant/1", None)
         .await
         .expect("Request failed");
 

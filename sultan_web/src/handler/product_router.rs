@@ -291,10 +291,11 @@ async fn create_variant(
 /// Requires authentication.
 #[utoipa::path(
     patch,
-    path = "/api/product/variant/{id}",
+    path = "/api/product/{id}/variant/{variant_id}",
     tag = "product",
     params(
-        ("id" = i64, Path, description = "Variant ID")
+        ("id" = i64, Path, description = "Product ID"),
+        ("variant_id" = i64, Path, description = "Variant ID")
     ),
     request_body = ProductVariantUpdateRequest,
     responses(
@@ -311,11 +312,11 @@ async fn create_variant(
 async fn update_variant(
     State(product_service): State<Arc<dyn ProductServiceTrait>>,
     Extension(ctx): Extension<Context>,
-    Path(id): Path<i64>,
+    Path((_id, variant_id)): Path<(i64, i64)>,
     Json(payload): Json<ProductVariantUpdateRequest>,
 ) -> DomainResult<impl IntoResponse> {
     product_service
-        .update_variant(&ctx, id, &payload.to_domain())
+        .update_variant(&ctx, variant_id, &payload.to_domain())
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -325,10 +326,11 @@ async fn update_variant(
 /// Soft deletes a variant (and its sell prices and stocks) by ID. Requires authentication.
 #[utoipa::path(
     delete,
-    path = "/api/product/variant/{id}",
+    path = "/api/product/{id}/variant/{variant_id}",
     tag = "product",
     params(
-        ("id" = i64, Path, description = "Variant ID")
+        ("id" = i64, Path, description = "Product ID"),
+        ("variant_id" = i64, Path, description = "Variant ID")
     ),
     responses(
         (status = 204, description = "Variant deleted successfully"),
@@ -343,9 +345,9 @@ async fn update_variant(
 async fn delete_variant(
     State(product_service): State<Arc<dyn ProductServiceTrait>>,
     Extension(ctx): Extension<Context>,
-    Path(id): Path<i64>,
+    Path((_id, variant_id)): Path<(i64, i64)>,
 ) -> DomainResult<impl IntoResponse> {
-    product_service.delete_variant(&ctx, id).await?;
+    product_service.delete_variant(&ctx, variant_id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -357,6 +359,6 @@ pub fn product_router() -> Router<AppState> {
         .route("/{id}", delete(delete_product))
         .route("/{id}", get(get_by_id))
         .route("/{id}/variant", post(create_variant))
-        .route("/variant/{id}", patch(update_variant))
-        .route("/variant/{id}", delete(delete_variant))
+        .route("/{id}/variant/{variant_id}", patch(update_variant))
+        .route("/{id}/variant/{variant_id}", delete(delete_variant))
 }
