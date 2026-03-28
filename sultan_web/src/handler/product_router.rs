@@ -389,6 +389,10 @@ async fn create_sell_price(
     Path((_id, variant_id)): Path<(i64, i64)>,
     Json(payload): Json<SellPriceFullCreateRequest>,
 ) -> DomainResult<impl IntoResponse> {
+    payload
+        .validate()
+        .map_err(|e| Error::ValidationError(format!("{}", e)))?;
+
     let mut domain = payload.to_domain();
     domain.sell_price.product_variant_id = variant_id;
 

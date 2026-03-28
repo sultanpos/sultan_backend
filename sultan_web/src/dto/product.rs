@@ -632,10 +632,12 @@ pub struct SellDiscountCreateRequest {
 
     /// Minimum quantity for this discount
     #[schema(example = 10)]
+    #[validate(range(min = 1, message = "Quantity must be greater than 0"))]
     pub quantity: i64,
 
     /// Discount formula (e.g., "price * 0.9" for 10% off)
     #[schema(example = "price * 0.9")]
+    #[validate(length(min = 1, message = "Discount formula cannot be empty"))]
     pub discount_formula: String,
 
     /// Customer level this discount applies to (optional)
@@ -680,10 +682,12 @@ pub struct SellPriceCreateRequest {
 
     /// Quantity for this price point
     #[schema(example = 1)]
+    #[validate(range(min = 1, message = "Quantity must be greater than 0"))]
     pub quantity: i64,
 
     /// Price in cents/smallest currency unit
     #[schema(example = 150000)]
+    #[validate(range(min = 1, message = "Price must be greater than 0"))]
     pub price: i64,
 
     /// Additional metadata
@@ -707,10 +711,12 @@ impl From<SellPriceCreateRequest> for sultan_core::domain::model::sell_price::Se
 #[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct SellPriceFullCreateRequest {
     /// Sell price details
+    #[validate(nested)]
     pub sell_price: SellPriceCreateRequest,
 
     /// List of discounts for this price
     #[serde(default)]
+    #[validate(nested)]
     pub discounts: Vec<SellDiscountCreateRequest>,
 }
 
