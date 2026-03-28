@@ -7,7 +7,10 @@ use crate::{
         model::{
             Update,
             category::CategoryCreate,
-            product::{ProductCreate, ProductUpdate, ProductVariantCreate, ProductVariantUpdate},
+            product::{
+                ProductCreate, ProductFilter, ProductQuery, ProductSortField, ProductUpdate,
+                ProductVariantCreate, ProductVariantUpdate, SortDirection,
+            },
             sell_price::{SellDiscountCreate, SellPriceCreate},
         },
     },
@@ -133,6 +136,18 @@ where
     product_test_delete_variant_decrements_variant_count(&ctx_factory().await, repo).await;
     product_test_delete_variants_by_product_id_resets_variant_count(&ctx_factory().await, repo)
         .await;
+
+    // get_all (cursor-based pagination) tests
+    product_test_get_all_default(&ctx_factory().await, repo).await;
+    product_test_get_all_sort_by_name_asc(&ctx_factory().await, repo).await;
+    product_test_get_all_sort_by_name_desc(&ctx_factory().await, repo).await;
+    product_test_get_all_sort_by_created_at(&ctx_factory().await, repo).await;
+    product_test_get_all_sort_by_updated_at(&ctx_factory().await, repo).await;
+    product_test_get_all_cursor_pagination(&ctx_factory().await, repo).await;
+    product_test_get_all_excludes_deleted(&ctx_factory().await, repo).await;
+    product_test_get_all_filter_by_name(&ctx_factory().await, repo).await;
+    product_test_get_all_filter_by_product_type(&ctx_factory().await, repo).await;
+    product_test_get_all_empty(&ctx_factory().await, repo).await;
 }
 
 // =============================================================================
@@ -3005,4 +3020,257 @@ pub async fn product_test_delete_variants_by_product_id_resets_variant_count<
         after.updated_at >= before.updated_at,
         "updated_at should be updated after delete_variants_by_product_id"
     );
+}
+
+// =============================================================================
+// get_all (cursor-based pagination) Tests
+// =============================================================================
+
+fn default_query() -> ProductQuery {
+    ProductQuery {
+        filter: ProductFilter {
+            name: None,
+            product_type: None,
+            category_id: None,
+        },
+        sort_field: ProductSortField::CreatedAt,
+        sort_direction: SortDirection::Asc,
+        cursor: None,
+        limit: 10,
+    }
+}
+
+/// Helper: create N products with distinct names, sleeping briefly so created_at differs.
+async fn create_products<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+    names: &[&str],
+) -> Vec<i64> {
+    let mut ids = Vec::new();
+    for name in names {
+        let id = super::generate_test_id().await;
+        let mut product = create_test_product();
+        product.name = name.to_string();
+        repo.create_product(ctx, id, &product)
+            .await
+            .expect("Failed to create product");
+        ids.push(id);
+    }
+    ids
+}
+
+/// Test: get_all returns products with default query
+pub async fn product_test_get_all_default<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let _ids = create_products(ctx, repo, &["Alpha", "Beta", "Gamma"]).await;
+
+    let page = repo
+        .get_all(ctx, &default_query())
+        .await
+        .expect("get_all failed");
+
+    assert_eq!(page.items.len(), 3);
+    assert!(page.next_cursor.is_none(), "Should not have next page");
+}
+
+/// Test: get_all sorts by name ascending
+pub async fn product_test_get_all_sort_by_name_asc<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    create_products(ctx, repo, &["Cherry", "Apple", "Banana"]).await;
+
+    let mut query = default_query();
+    query.sort_field = ProductSortField::Name;
+    query.sort_direction = SortDirection::Asc;
+
+    let page = repo.get_all(ctx, &query).await.expect("get_all failed");
+
+    let names: Vec<&str> = page.items.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(names, vec!["Apple", "Banana", "Cherry"]);
+}
+
+/// Test: get_all sorts by name descending
+pub async fn product_test_get_all_sort_by_name_desc<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    create_products(ctx, repo, &["Cherry", "Apple", "Banana"]).await;
+
+    let mut query = default_query();
+    query.sort_field = ProductSortField::Name;
+    query.sort_direction = SortDirection::Desc;
+
+    let page = repo.get_all(ctx, &query).await.expect("get_all failed");
+
+    let names: Vec<&str> = page.items.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(names, vec!["Cherry", "Banana", "Apple"]);
+}
+
+/// Test: get_all sorts by created_at ascending (insertion order since IDs are monotonic)
+pub async fn product_test_get_all_sort_by_created_at<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let ids = create_products(ctx, repo, &["First", "Second", "Third"]).await;
+
+    let mut query = default_query();
+    query.sort_field = ProductSortField::CreatedAt;
+    query.sort_direction = SortDirection::Asc;
+
+    let page = repo.get_all(ctx, &query).await.expect("get_all failed");
+
+    let result_ids: Vec<i64> = page.items.iter().map(|p| p.id).collect();
+    assert_eq!(result_ids, ids, "Should be in creation order");
+}
+
+/// Test: get_all sorts by updated_at descending
+pub async fn product_test_get_all_sort_by_updated_at<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let ids = create_products(ctx, repo, &["One", "Two", "Three"]).await;
+
+    // Sleep briefly to guarantee updated_at differs after the update
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+    // Update the first product so its updated_at becomes the latest
+    let update = ProductUpdate {
+        name: Some("One Updated".to_string()),
+        ..Default::default()
+    };
+    repo.update_product(ctx, ids[0], &update)
+        .await
+        .expect("Failed to update product");
+
+    let mut query = default_query();
+    query.sort_field = ProductSortField::UpdatedAt;
+    query.sort_direction = SortDirection::Desc;
+
+    let page = repo.get_all(ctx, &query).await.expect("get_all failed");
+
+    // The updated product should come first (most recent updated_at)
+    assert_eq!(page.items[0].id, ids[0]);
+    assert_eq!(page.items[0].name, "One Updated");
+}
+
+/// Test: cursor-based pagination walks through pages correctly
+pub async fn product_test_get_all_cursor_pagination<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    create_products(ctx, repo, &["P1", "P2", "P3", "P4", "P5"]).await;
+
+    let mut query = default_query();
+    query.sort_field = ProductSortField::Name;
+    query.sort_direction = SortDirection::Asc;
+    query.limit = 2;
+
+    // Page 1
+    let page1 = repo.get_all(ctx, &query).await.expect("get_all page 1");
+    assert_eq!(page1.items.len(), 2);
+    let names1: Vec<&str> = page1.items.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(names1, vec!["P1", "P2"]);
+    assert!(page1.next_cursor.is_some(), "Should have next page");
+
+    // Page 2
+    query.cursor = page1.next_cursor;
+    let page2 = repo.get_all(ctx, &query).await.expect("get_all page 2");
+    assert_eq!(page2.items.len(), 2);
+    let names2: Vec<&str> = page2.items.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(names2, vec!["P3", "P4"]);
+    assert!(page2.next_cursor.is_some(), "Should have next page");
+
+    // Page 3 (last page)
+    query.cursor = page2.next_cursor;
+    let page3 = repo.get_all(ctx, &query).await.expect("get_all page 3");
+    assert_eq!(page3.items.len(), 1);
+    assert_eq!(page3.items[0].name, "P5");
+    assert!(page3.next_cursor.is_none(), "Should not have next page");
+}
+
+/// Test: get_all excludes soft-deleted products
+pub async fn product_test_get_all_excludes_deleted<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let ids = create_products(ctx, repo, &["Alive", "Deleted", "AlsoAlive"]).await;
+
+    repo.delete_product(ctx, ids[1])
+        .await
+        .expect("Failed to delete product");
+
+    let page = repo
+        .get_all(ctx, &default_query())
+        .await
+        .expect("get_all failed");
+
+    assert_eq!(page.items.len(), 2);
+    let names: Vec<&str> = page.items.iter().map(|p| p.name.as_str()).collect();
+    assert!(!names.contains(&"Deleted"));
+}
+
+/// Test: get_all filters by name (contains)
+pub async fn product_test_get_all_filter_by_name<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    create_products(ctx, repo, &["Red Widget", "Blue Widget", "Green Gadget"]).await;
+
+    let mut query = default_query();
+    query.filter.name = Some("Widget".to_string());
+
+    let page = repo.get_all(ctx, &query).await.expect("get_all failed");
+
+    assert_eq!(page.items.len(), 2);
+    for item in &page.items {
+        assert!(item.name.contains("Widget"));
+    }
+}
+
+/// Test: get_all filters by product_type
+pub async fn product_test_get_all_filter_by_product_type<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let id1 = super::generate_test_id().await;
+    let id2 = super::generate_test_id().await;
+
+    let mut p1 = create_test_product();
+    p1.name = "Service A".to_string();
+    p1.product_type = "service".to_string();
+    repo.create_product(ctx, id1, &p1)
+        .await
+        .expect("Failed to create product");
+
+    let mut p2 = create_test_product();
+    p2.name = "Product B".to_string();
+    p2.product_type = "product".to_string();
+    repo.create_product(ctx, id2, &p2)
+        .await
+        .expect("Failed to create product");
+
+    let mut query = default_query();
+    query.filter.product_type = Some("service".to_string());
+
+    let page = repo.get_all(ctx, &query).await.expect("get_all failed");
+
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].product_type, "service");
+}
+
+/// Test: get_all on empty table returns empty page
+pub async fn product_test_get_all_empty<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let page = repo
+        .get_all(ctx, &default_query())
+        .await
+        .expect("get_all failed");
+
+    assert!(page.items.is_empty());
+    assert!(page.next_cursor.is_none());
 }

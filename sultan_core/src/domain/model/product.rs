@@ -1,4 +1,5 @@
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::domain::model::{
@@ -8,6 +9,52 @@ use crate::domain::model::{
 };
 
 use super::Update;
+
+/// Sort fields available for product listing.
+///
+/// The cursor-based pagination always appends `id` as a tiebreaker,
+/// so the effective ordering is `(field, id)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ProductSortField {
+    Name,
+    CreatedAt,
+    UpdatedAt,
+}
+
+/// Direction for ordering results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SortDirection {
+    Asc,
+    Desc,
+}
+
+/// Cursor for keyset (cursor-based) pagination over products.
+///
+/// Contains the last-seen values of the sort field and the tiebreaker `id`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProductCursor {
+    /// Value of the primary sort field from the last item of the previous page.
+    pub field_value: String,
+    /// ID of the last item of the previous page (tiebreaker).
+    pub id: i64,
+}
+
+/// Options for querying a list of products with cursor-based pagination.
+#[derive(Debug, Clone)]
+pub struct ProductQuery {
+    pub filter: ProductFilter,
+    pub sort_field: ProductSortField,
+    pub sort_direction: SortDirection,
+    pub cursor: Option<ProductCursor>,
+    pub limit: u64,
+}
+
+/// A page of results with an optional cursor pointing to the next page.
+#[derive(Debug, Clone)]
+pub struct CursorPage<T> {
+    pub items: Vec<T>,
+    pub next_cursor: Option<ProductCursor>,
+}
 
 #[derive(Debug, Clone)]
 pub struct UnitOfMeasure {
@@ -86,7 +133,7 @@ pub struct ProductCreate {
     pub category_ids: Vec<i64>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ProductUpdate {
     pub name: Option<String>,
     pub description: Update<String>,

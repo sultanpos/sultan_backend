@@ -30,7 +30,8 @@ use crate::domain::DomainResult;
 use crate::domain::model::permission::{action, resource};
 use crate::domain::model::product::ProductFullCreate;
 use crate::domain::model::product::{
-    Product, ProductUpdate, ProductVariant, ProductVariantCreate, ProductVariantUpdate,
+    CursorPage, Product, ProductQuery, ProductUpdate, ProductVariant, ProductVariantCreate,
+    ProductVariantUpdate,
 };
 use crate::snowflake::IdGenerator;
 use crate::storage::StockRepository;
@@ -156,6 +157,22 @@ pub trait ProductServiceTrait: Send + Sync {
         ctx: &Context,
         product_id: i64,
     ) -> DomainResult<()>;
+
+    /// Lists products using cursor-based (keyset) pagination.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - The request context containing user info and permissions
+    /// * `query` - Query options including filter, sort, cursor, and limit
+    ///
+    /// # Returns
+    ///
+    /// A page of products with an optional next cursor.
+    async fn get_all_products(
+        &self,
+        ctx: &Context,
+        query: &ProductQuery,
+    ) -> DomainResult<CursorPage<Product>>;
 
     /// Retrieves a product variant by its barcode.
     ///
@@ -374,6 +391,21 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
         };
 
         self.repository.get_by_id(&repo_ctx, id).await
+    }
+
+    async fn get_all_products(
+        &self,
+        ctx: &Context,
+        query: &ProductQuery,
+    ) -> DomainResult<CursorPage<Product>> {
+        ctx.require_access(None, resource::PRODUCT, action::READ)?;
+
+        let repo_ctx = RepoCtx {
+            ctx: ctx.clone(),
+            db: self.db.clone(),
+        };
+
+        self.repository.get_all(&repo_ctx, query).await
     }
 
     async fn create_variant(
@@ -781,6 +813,14 @@ mod tests {
             } else {
                 panic!("get_by_id not mocked");
             }
+        }
+
+        async fn get_all(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            _query: &crate::domain::model::product::ProductQuery,
+        ) -> DomainResult<crate::domain::model::product::CursorPage<Product>> {
+            panic!("get_all not mocked");
         }
 
         async fn create_variant(
