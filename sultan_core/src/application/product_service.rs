@@ -29,10 +29,12 @@ use crate::domain::Context;
 use crate::domain::DomainResult;
 use crate::domain::model::permission::{action, resource};
 use crate::domain::model::product::ProductFullCreate;
+use crate::domain::model::product::SellPriceFullCreate;
 use crate::domain::model::product::{
     CursorPage, Product, ProductQuery, ProductUpdate, ProductVariant, ProductVariantFullCreate,
     ProductVariantUpdate,
 };
+use crate::domain::model::sell_price::SellPriceUpdate;
 use crate::snowflake::IdGenerator;
 use crate::storage::StockRepository;
 use crate::storage::{ProductRepository, RepoCtx};
@@ -221,6 +223,46 @@ pub trait ProductServiceTrait: Send + Sync {
         ctx: &Context,
         product_id: i64,
     ) -> DomainResult<Vec<ProductVariant>>;
+
+    /// Creates a new sell price for a product variant, along with optional discounts.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - The request context containing user info and permissions
+    /// * `sell_price` - The sell price data including the price and its discounts
+    ///
+    /// # Returns
+    ///
+    /// The ID of the newly created sell price.
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the user lacks `product:create` permission
+    /// - `DatabaseError` if the database operation fails
+    async fn create_sell_price(
+        &self,
+        ctx: &Context,
+        sell_price: &SellPriceFullCreate,
+    ) -> DomainResult<i64>;
+
+    /// Updates an existing sell price.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - The request context containing user info and permissions
+    /// * `id` - The ID of the sell price to update
+    /// * `sell_price` - The update data
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the user lacks `product:update` permission
+    /// - `NotFound` if the sell price doesn't exist
+    async fn update_sell_price(
+        &self,
+        ctx: &Context,
+        id: i64,
+        sell_price: &SellPriceUpdate,
+    ) -> DomainResult<()>;
 }
 
 /// Concrete implementation of the product service.
@@ -583,6 +625,58 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
             .get_variant_by_product_id(&repo_ctx, product_id)
             .await
     }
+
+    async fn create_sell_price(
+        &self,
+        ctx: &Context,
+        sell_price: &SellPriceFullCreate,
+    ) -> DomainResult<i64> {
+        ctx.require_access(None, resource::PRODUCT, action::CREATE)?;
+
+        let repo_ctx = RepoCtx {
+            ctx: ctx.clone(),
+            db: self.db.begin().await?,
+        };
+
+        let price_id = self.id_generator.generate()?;
+        self.repository
+            .create_sell_price(&repo_ctx, price_id, &sell_price.sell_price)
+            .await?;
+
+        for discount in &sell_price.discounts {
+            let mut discount_with_price_id = discount.clone();
+            discount_with_price_id.price_id = price_id;
+            self.repository
+                .create_sell_discount(
+                    &repo_ctx,
+                    self.id_generator.generate()?,
+                    &discount_with_price_id,
+                )
+                .await?;
+        }
+
+        repo_ctx.db.commit().await?;
+
+        Ok(price_id)
+    }
+
+    async fn update_sell_price(
+        &self,
+        ctx: &Context,
+        id: i64,
+        sell_price: &SellPriceUpdate,
+    ) -> DomainResult<()> {
+        ctx.require_access(None, resource::PRODUCT, action::UPDATE)?;
+
+        let repo_ctx = RepoCtx {
+            ctx: ctx.clone(),
+            db: self.db.clone(),
+        };
+
+        self.repository
+            .update_sell_price(&repo_ctx, id, sell_price)
+            .await
+    }
 }
 
 #[cfg(test)]
@@ -636,6 +730,8 @@ mod tests {
         // SellPrice fields
         create_sell_price_fn:
             Arc<Mutex<Option<Box<dyn Fn(i64, SellPriceCreate) -> DomainResult<()> + Send>>>>,
+        update_sell_price_fn:
+            Arc<Mutex<Option<Box<dyn Fn(i64, SellPriceUpdate) -> DomainResult<()> + Send>>>>,
         create_sell_discount_fn:
             Arc<Mutex<Option<Box<dyn Fn(i64, SellDiscountCreate) -> DomainResult<()> + Send>>>>,
         delete_sell_prices_by_product_variant_ids_fn:
@@ -660,6 +756,7 @@ mod tests {
                 get_variant_ids_by_product_id_fn: Arc::new(Mutex::new(None)),
                 add_product_category_fn: Arc::new(Mutex::new(None)),
                 create_sell_price_fn: Arc::new(Mutex::new(None)),
+                update_sell_price_fn: Arc::new(Mutex::new(None)),
                 create_sell_discount_fn: Arc::new(Mutex::new(None)),
                 delete_sell_prices_by_product_variant_ids_fn: Arc::new(Mutex::new(None)),
             }
@@ -773,6 +870,14 @@ mod tests {
             F: Fn(i64, SellPriceCreate) -> DomainResult<()> + Send + 'static,
         {
             *self.create_sell_price_fn.lock().unwrap() = Some(Box::new(f));
+        }
+
+        #[allow(dead_code)]
+        fn expect_update_sell_price<F>(&mut self, f: F)
+        where
+            F: Fn(i64, SellPriceUpdate) -> DomainResult<()> + Send + 'static,
+        {
+            *self.update_sell_price_fn.lock().unwrap() = Some(Box::new(f));
         }
 
         #[allow(dead_code)]
@@ -1007,10 +1112,15 @@ mod tests {
         async fn update_sell_price(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
-            _id: i64,
-            _price: &SellPriceUpdate,
+            id: i64,
+            price: &SellPriceUpdate,
         ) -> DomainResult<()> {
-            panic!("update_sell_price not mocked")
+            let lock = self.update_sell_price_fn.lock().unwrap();
+            if let Some(f) = lock.as_ref() {
+                f(id, price.clone())
+            } else {
+                panic!("update_sell_price not mocked")
+            }
         }
         async fn delete_sell_price(
             &self,
@@ -1845,5 +1955,206 @@ mod tests {
         let result = service.get_variant_by_id(&ctx, 1).await;
         assert!(result.is_ok());
         assert!(result.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_create_sell_price_success() {
+        use crate::domain::model::product::SellPriceFullCreate;
+
+        let mut mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+
+        let create_price_called = Arc::new(Mutex::new(false));
+        let create_discount_called = Arc::new(Mutex::new(false));
+
+        let price_flag = create_price_called.clone();
+        mock_repo.expect_create_sell_price(move |id, price| {
+            *price_flag.lock().unwrap() = true;
+            assert_eq!(id, 1);
+            assert_eq!(price.product_variant_id, 10);
+            assert_eq!(price.price, 5000);
+            Ok(())
+        });
+
+        let discount_flag = create_discount_called.clone();
+        mock_repo.expect_create_sell_discount(move |id, discount| {
+            *discount_flag.lock().unwrap() = true;
+            assert_eq!(id, 2);
+            assert_eq!(discount.price_id, 1);
+            assert_eq!(discount.quantity, 5);
+            Ok(())
+        });
+
+        let mut mock_id_gen = MockIdGen::new();
+        let id_counter = Arc::new(Mutex::new(1i64));
+        mock_id_gen.expect_generate().returning(move || {
+            let mut counter = id_counter.lock().unwrap();
+            let id = *counter;
+            *counter += 1;
+            Ok(id)
+        });
+
+        let db = create_test_db().await;
+        let service = ProductService::new(mock_repo, mock_stock_repo, mock_id_gen, db);
+        let ctx = create_test_ctx();
+
+        let sell_price = SellPriceFullCreate {
+            sell_price: SellPriceCreate {
+                branch_id: None,
+                product_variant_id: 10,
+                uom_id: 1,
+                quantity: 1,
+                price: 5000,
+                metadata: None,
+            },
+            discounts: vec![SellDiscountCreate {
+                price_id: 0, // will be set by service
+                quantity: 5,
+                discount_formula: "price * 0.8".to_string(),
+                customer_level: None,
+                metadata: None,
+            }],
+        };
+
+        let result = service.create_sell_price(&ctx, &sell_price).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 1);
+        assert!(
+            *create_price_called.lock().unwrap(),
+            "create_sell_price was not called"
+        );
+        assert!(
+            *create_discount_called.lock().unwrap(),
+            "create_sell_discount was not called"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_create_sell_price_no_discounts() {
+        use crate::domain::model::product::SellPriceFullCreate;
+
+        let mut mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+
+        mock_repo.expect_create_sell_price(|_, _| Ok(()));
+
+        let id_gen = create_mock_id_gen(1);
+        let db = create_test_db().await;
+        let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
+        let ctx = create_test_ctx();
+
+        let sell_price = SellPriceFullCreate {
+            sell_price: SellPriceCreate {
+                branch_id: None,
+                product_variant_id: 10,
+                uom_id: 1,
+                quantity: 1,
+                price: 5000,
+                metadata: None,
+            },
+            discounts: vec![],
+        };
+
+        let result = service.create_sell_price(&ctx, &sell_price).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_create_sell_price_forbidden() {
+        use crate::domain::model::product::SellPriceFullCreate;
+
+        let mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+        let id_gen = create_mock_id_gen(1);
+        let db = create_test_db().await;
+        let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
+        let ctx = Context::new(); // No permissions
+
+        let sell_price = SellPriceFullCreate {
+            sell_price: SellPriceCreate {
+                branch_id: None,
+                product_variant_id: 10,
+                uom_id: 1,
+                quantity: 1,
+                price: 5000,
+                metadata: None,
+            },
+            discounts: vec![],
+        };
+
+        let result = service.create_sell_price(&ctx, &sell_price).await;
+        assert!(matches!(result, Err(Error::Forbidden(_))));
+    }
+
+    #[tokio::test]
+    async fn test_update_sell_price_success() {
+        let mut mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+
+        mock_repo.expect_update_sell_price(|id, price| {
+            assert_eq!(id, 42);
+            assert_eq!(price.price, Some(9999));
+            Ok(())
+        });
+
+        let id_gen = create_mock_id_gen(1);
+        let db = create_test_db().await;
+        let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
+        let ctx = create_test_ctx();
+
+        let update = SellPriceUpdate {
+            uom_id: None,
+            quantity: None,
+            price: Some(9999),
+            metadata: crate::domain::model::Update::Unchanged,
+        };
+
+        let result = service.update_sell_price(&ctx, 42, &update).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_update_sell_price_not_found() {
+        let mut mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+
+        mock_repo
+            .expect_update_sell_price(|_, _| Err(Error::NotFound("Sell price not found".into())));
+
+        let id_gen = create_mock_id_gen(1);
+        let db = create_test_db().await;
+        let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
+        let ctx = create_test_ctx();
+
+        let update = SellPriceUpdate {
+            uom_id: None,
+            quantity: None,
+            price: Some(9999),
+            metadata: crate::domain::model::Update::Unchanged,
+        };
+
+        let result = service.update_sell_price(&ctx, 999, &update).await;
+        assert!(matches!(result, Err(Error::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_update_sell_price_forbidden() {
+        let mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+        let id_gen = create_mock_id_gen(1);
+        let db = create_test_db().await;
+        let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
+        let ctx = Context::new(); // No permissions
+
+        let update = SellPriceUpdate {
+            uom_id: None,
+            quantity: None,
+            price: Some(9999),
+            metadata: crate::domain::model::Update::Unchanged,
+        };
+
+        let result = service.update_sell_price(&ctx, 1, &update).await;
+        assert!(matches!(result, Err(Error::Forbidden(_))));
     }
 }
