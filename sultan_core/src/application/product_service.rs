@@ -30,7 +30,7 @@ use crate::domain::DomainResult;
 use crate::domain::model::permission::{action, resource};
 use crate::domain::model::product::ProductFullCreate;
 use crate::domain::model::product::{
-    CursorPage, Product, ProductQuery, ProductUpdate, ProductVariant, ProductVariantCreate,
+    CursorPage, Product, ProductQuery, ProductUpdate, ProductVariant, ProductVariantFullCreate,
     ProductVariantUpdate,
 };
 use crate::snowflake::IdGenerator;
@@ -121,7 +121,7 @@ pub trait ProductServiceTrait: Send + Sync {
     async fn create_variant(
         &self,
         ctx: &Context,
-        variant: &ProductVariantCreate,
+        variant: &ProductVariantFullCreate,
     ) -> DomainResult<i64>;
 
     /// Updates an existing product variant.
@@ -411,19 +411,54 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     async fn create_variant(
         &self,
         ctx: &Context,
-        variant: &ProductVariantCreate,
+        variant: &ProductVariantFullCreate,
     ) -> DomainResult<i64> {
         ctx.require_access(None, resource::PRODUCT, action::CREATE)?;
 
         let repo_ctx = RepoCtx {
             ctx: ctx.clone(),
-            db: self.db.clone(),
+            db: self.db.begin().await?,
         };
 
         let variant_id = self.id_generator.generate()?;
         self.repository
-            .create_variant(&repo_ctx, variant_id, variant)
+            .create_variant(&repo_ctx, variant_id, &variant.variant)
             .await?;
+
+        for stock in &variant.stocks {
+            let mut stock_with_variant = stock.clone();
+            stock_with_variant.product_variant_id = variant_id;
+            self.stock_repository
+                .create(
+                    &repo_ctx,
+                    self.id_generator.generate()?,
+                    &stock_with_variant,
+                )
+                .await?;
+        }
+
+        for sell_price in &variant.sell_prices {
+            let price_id = self.id_generator.generate()?;
+            let mut sell_price_with_variant = sell_price.sell_price.clone();
+            sell_price_with_variant.product_variant_id = variant_id;
+            self.repository
+                .create_sell_price(&repo_ctx, price_id, &sell_price_with_variant)
+                .await?;
+            for discount in &sell_price.discounts {
+                let mut discount_with_price_id = discount.clone();
+                discount_with_price_id.price_id = price_id;
+                self.repository
+                    .create_sell_discount(
+                        &repo_ctx,
+                        self.id_generator.generate()?,
+                        &discount_with_price_id,
+                    )
+                    .await?;
+            }
+        }
+
+        repo_ctx.db.commit().await?;
+
         Ok(variant_id)
     }
 
@@ -557,7 +592,7 @@ mod tests {
     use crate::application::{MockIdGen, create_mock_id_gen};
     use crate::domain::Error;
     use crate::domain::model::Update;
-    use crate::domain::model::product::ProductCreate;
+    use crate::domain::model::product::{ProductCreate, ProductVariantCreate};
     use crate::domain::model::sell_price::{
         SellDiscount, SellDiscountCreate, SellDiscountUpdate, SellPrice, SellPriceCreate,
         SellPriceUpdate,
@@ -1519,16 +1554,204 @@ mod tests {
 
         let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
         let ctx = create_test_ctx();
-        let variant = ProductVariantCreate {
-            product_id: 1,
-            barcode: Some("1234567890".to_string()),
-            name: None,
-            metadata: None,
+        let variant = ProductVariantFullCreate {
+            variant: ProductVariantCreate {
+                product_id: 1,
+                barcode: Some("1234567890".to_string()),
+                name: None,
+                metadata: None,
+            },
+            sell_prices: vec![],
+            stocks: vec![],
         };
 
         let result = service.create_variant(&ctx, &variant).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_create_variant_forbidden() {
+        let mock_repo = MockProductRepo::new();
+        let id_gen = create_mock_id_gen(1);
+        let db = create_test_db().await;
+        let mock_stock_repo = MockStockRepo::new();
+
+        let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
+        let ctx = Context::new(); // No permissions
+        let variant = ProductVariantFullCreate {
+            variant: ProductVariantCreate {
+                product_id: 1,
+                barcode: None,
+                name: None,
+                metadata: None,
+            },
+            sell_prices: vec![],
+            stocks: vec![],
+        };
+
+        let result = service.create_variant(&ctx, &variant).await;
+        assert!(matches!(result, Err(Error::Forbidden(_))));
+    }
+
+    #[tokio::test]
+    async fn test_create_variant_with_stocks() {
+        let mut mock_repo = MockProductRepo::new();
+        let mut mock_stock_repo = MockStockRepo::new();
+
+        let create_variant_called = Arc::new(Mutex::new(false));
+        let create_stock_called = Arc::new(Mutex::new(false));
+
+        let variant_flag = create_variant_called.clone();
+        mock_repo.expect_create_variant(move |id, variant| {
+            *variant_flag.lock().unwrap() = true;
+            assert_eq!(id, 1);
+            assert_eq!(variant.barcode, Some("ABC123".to_string()));
+            Ok(())
+        });
+
+        let stock_flag = create_stock_called.clone();
+        mock_stock_repo.expect_create(move |id, stock| {
+            *stock_flag.lock().unwrap() = true;
+            assert_eq!(id, 2);
+            assert_eq!(stock.branch_id, 5);
+            assert_eq!(stock.product_variant_id, 1);
+            Ok(())
+        });
+
+        let mut mock_id_gen = MockIdGen::new();
+        let id_counter = Arc::new(Mutex::new(1i64));
+        mock_id_gen.expect_generate().returning(move || {
+            let mut counter = id_counter.lock().unwrap();
+            let id = *counter;
+            *counter += 1;
+            Ok(id)
+        });
+
+        let db = create_test_db().await;
+        let service = ProductService::new(mock_repo, mock_stock_repo, mock_id_gen, db);
+        let ctx = create_test_ctx();
+
+        let variant = ProductVariantFullCreate {
+            variant: ProductVariantCreate {
+                product_id: 10,
+                barcode: Some("ABC123".to_string()),
+                name: None,
+                metadata: None,
+            },
+            stocks: vec![StockCreate {
+                branch_id: 5,
+                product_variant_id: 0, // set by service
+                quantity: 50,
+                min_stock: None,
+                max_stock: None,
+                last_buy_price: None,
+                metadata: None,
+            }],
+            sell_prices: vec![],
+        };
+
+        let result = service.create_variant(&ctx, &variant).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 1);
+        assert!(
+            *create_variant_called.lock().unwrap(),
+            "create_variant not called"
+        );
+        assert!(
+            *create_stock_called.lock().unwrap(),
+            "stock create not called"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_create_variant_with_sell_prices_and_discounts() {
+        use crate::domain::model::product::SellPriceFullCreate;
+
+        let mut mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+
+        let create_variant_called = Arc::new(Mutex::new(false));
+        let create_price_called = Arc::new(Mutex::new(false));
+        let create_discount_called = Arc::new(Mutex::new(false));
+
+        let variant_flag = create_variant_called.clone();
+        mock_repo.expect_create_variant(move |_, _| {
+            *variant_flag.lock().unwrap() = true;
+            Ok(())
+        });
+
+        let price_flag = create_price_called.clone();
+        mock_repo.expect_create_sell_price(move |id, price| {
+            *price_flag.lock().unwrap() = true;
+            assert_eq!(id, 2);
+            assert_eq!(price.product_variant_id, 1);
+            Ok(())
+        });
+
+        let discount_flag = create_discount_called.clone();
+        mock_repo.expect_create_sell_discount(move |id, discount| {
+            *discount_flag.lock().unwrap() = true;
+            assert_eq!(id, 3);
+            assert_eq!(discount.price_id, 2);
+            Ok(())
+        });
+
+        let mut mock_id_gen = MockIdGen::new();
+        let id_counter = Arc::new(Mutex::new(1i64));
+        mock_id_gen.expect_generate().returning(move || {
+            let mut counter = id_counter.lock().unwrap();
+            let id = *counter;
+            *counter += 1;
+            Ok(id)
+        });
+
+        let db = create_test_db().await;
+        let service = ProductService::new(mock_repo, mock_stock_repo, mock_id_gen, db);
+        let ctx = create_test_ctx();
+
+        let variant = ProductVariantFullCreate {
+            variant: ProductVariantCreate {
+                product_id: 10,
+                barcode: None,
+                name: Some("Variant A".to_string()),
+                metadata: None,
+            },
+            stocks: vec![],
+            sell_prices: vec![SellPriceFullCreate {
+                sell_price: SellPriceCreate {
+                    branch_id: None,
+                    product_variant_id: 0, // set by service
+                    uom_id: 1,
+                    quantity: 1,
+                    price: 5000,
+                    metadata: None,
+                },
+                discounts: vec![SellDiscountCreate {
+                    price_id: 0, // set by service
+                    quantity: 5,
+                    discount_formula: "price * 0.95".to_string(),
+                    customer_level: None,
+                    metadata: None,
+                }],
+            }],
+        };
+
+        let result = service.create_variant(&ctx, &variant).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 1);
+        assert!(
+            *create_variant_called.lock().unwrap(),
+            "create_variant not called"
+        );
+        assert!(
+            *create_price_called.lock().unwrap(),
+            "sell_price create not called"
+        );
+        assert!(
+            *create_discount_called.lock().unwrap(),
+            "create_discount not called"
+        );
     }
 
     #[tokio::test]

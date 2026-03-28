@@ -5,7 +5,7 @@ use sultan_core::domain::{
     context::Context,
     model::product::{
         CursorPage, Product, ProductFullCreate, ProductQuery, ProductUpdate, ProductVariant,
-        ProductVariantCreate, ProductVariantUpdate,
+        ProductVariantFullCreate, ProductVariantUpdate,
     },
 };
 
@@ -132,7 +132,7 @@ impl ProductServiceTrait for MockProductService {
     async fn create_variant(
         &self,
         _ctx: &Context,
-        _variant: &ProductVariantCreate,
+        _variant: &ProductVariantFullCreate,
     ) -> DomainResult<i64> {
         if !self.should_succeed {
             return Err(Error::Internal("Failed to create variant".to_string()));
