@@ -17,7 +17,7 @@ use crate::AppState;
 use crate::dto::category::CategoryChildResponse;
 use crate::dto::product::{
     ProductFullCreateRequest, ProductListResponse, ProductQueryParams, ProductResponse,
-    ProductUpdateRequest, ProductVariantCreateRequest, ProductVariantCreateResponse,
+    ProductUpdateRequest, ProductVariantCreateResponse, ProductVariantFullCreateRequest,
     ProductVariantResponse, SellDiscountResponse, SellPriceResponse,
 };
 use crate::dto::{ErrorResponse, ProductCreateResponse};
@@ -33,7 +33,8 @@ use crate::dto::{ErrorResponse, ProductCreateResponse};
         update_product,
         delete_product,
         get_by_id,
-        get_all
+        get_all,
+        create_variant
     ),
     components(schemas(
         ProductFullCreateRequest,
@@ -42,7 +43,7 @@ use crate::dto::{ErrorResponse, ProductCreateResponse};
         ProductResponse,
         ProductListResponse,
         ProductQueryParams,
-        ProductVariantCreateRequest,
+        ProductVariantFullCreateRequest,
         ProductVariantCreateResponse,
         ProductVariantResponse,
         SellPriceResponse,
@@ -239,6 +240,47 @@ async fn get_all(
 // Router
 // ============================================================================
 
+/// Create a variant for a product
+///
+/// Creates a new variant (with optional sell prices and stocks) for the specified product.
+/// The `product_id` in the request body is ignored; the path `id` is used instead.
+/// Requires authentication.
+#[utoipa::path(
+    post,
+    path = "/api/product/{id}/variant",
+    tag = "product",
+    params(
+        ("id" = i64, Path, description = "Product ID")
+    ),
+    request_body = ProductVariantFullCreateRequest,
+    responses(
+        (status = 201, description = "Variant created successfully", body = ProductVariantCreateResponse),
+        (status = 400, description = "Bad request - validation error", body = ErrorResponse),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse),
+        (status = 404, description = "Product not found", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+#[instrument(skip(product_service, payload, ctx))]
+async fn create_variant(
+    State(product_service): State<Arc<dyn ProductServiceTrait>>,
+    Extension(ctx): Extension<Context>,
+    Path(id): Path<i64>,
+    Json(payload): Json<ProductVariantFullCreateRequest>,
+) -> DomainResult<impl IntoResponse> {
+    let mut domain = payload.to_domain();
+    domain.variant.product_id = id;
+
+    let variant_id = product_service.create_variant(&ctx, &domain).await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(ProductVariantCreateResponse { id: variant_id }),
+    ))
+}
+
 pub fn product_router() -> Router<AppState> {
     Router::new()
         .route("/", post(create))
@@ -246,4 +288,5 @@ pub fn product_router() -> Router<AppState> {
         .route("/{id}", patch(update_product))
         .route("/{id}", delete(delete_product))
         .route("/{id}", get(get_by_id))
+        .route("/{id}/variant", post(create_variant))
 }
