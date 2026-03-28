@@ -147,6 +147,8 @@ where
     product_test_get_all_excludes_deleted(&ctx_factory().await, repo).await;
     product_test_get_all_filter_by_name(&ctx_factory().await, repo).await;
     product_test_get_all_filter_by_product_type(&ctx_factory().await, repo).await;
+    product_test_get_all_filter_by_category_id(&ctx_factory().await, repo).await;
+    product_test_get_all_filter_by_deleted_category_returns_empty(&ctx_factory().await, repo).await;
     product_test_get_all_empty(&ctx_factory().await, repo).await;
 }
 
@@ -3273,4 +3275,105 @@ pub async fn product_test_get_all_empty<R: ProductRepository>(
 
     assert!(page.items.is_empty());
     assert!(page.next_cursor.is_none());
+}
+
+/// Test: get_all filters by category_id and returns matching products
+pub async fn product_test_get_all_filter_by_category_id<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    use crate::domain::model::category::CategoryCreate;
+    use crate::storage::CategoryRepository;
+    use crate::storage::sqlite::category::SqliteCategoryRepository;
+
+    let category_repo = SqliteCategoryRepository::new();
+    let cat_id = super::generate_test_id().await;
+    category_repo
+        .create(
+            ctx,
+            cat_id,
+            &CategoryCreate {
+                name: "Electronics".to_string(),
+                description: None,
+                parent_id: None,
+            },
+        )
+        .await
+        .expect("Failed to create category");
+
+    // Product that belongs to the category
+    let id_in = super::generate_test_id().await;
+    let mut p_in = create_test_product();
+    p_in.name = "In Category".to_string();
+    p_in.category_ids = vec![cat_id];
+    repo.create_product(ctx, id_in, &p_in)
+        .await
+        .expect("Failed to create product");
+
+    // Product that does NOT belong to the category
+    let id_out = super::generate_test_id().await;
+    let mut p_out = create_test_product();
+    p_out.name = "Not In Category".to_string();
+    repo.create_product(ctx, id_out, &p_out)
+        .await
+        .expect("Failed to create product");
+
+    let mut query = default_query();
+    query.filter.category_id = Some(cat_id);
+
+    let page = repo.get_all(ctx, &query).await.expect("get_all failed");
+
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].id, id_in);
+}
+
+/// Test: get_all with category_id filter excludes products linked only via a soft-deleted category
+pub async fn product_test_get_all_filter_by_deleted_category_returns_empty<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    use crate::domain::model::category::CategoryCreate;
+    use crate::storage::CategoryRepository;
+    use crate::storage::sqlite::category::SqliteCategoryRepository;
+
+    let category_repo = SqliteCategoryRepository::new();
+    let cat_id = super::generate_test_id().await;
+    category_repo
+        .create(
+            ctx,
+            cat_id,
+            &CategoryCreate {
+                name: "Deleted Category".to_string(),
+                description: None,
+                parent_id: None,
+            },
+        )
+        .await
+        .expect("Failed to create category");
+
+    // Product linked to the category
+    let product_id = super::generate_test_id().await;
+    let mut product = create_test_product();
+    product.category_ids = vec![cat_id];
+    repo.create_product(ctx, product_id, &product)
+        .await
+        .expect("Failed to create product");
+
+    // Soft-delete the category
+    category_repo
+        .delete(ctx, cat_id)
+        .await
+        .expect("Failed to delete category");
+
+    // Filtering by the now-deleted category should return no products
+    let mut query = default_query();
+    query.filter.category_id = Some(cat_id);
+
+    let page = repo.get_all(ctx, &query).await.expect("get_all failed");
+
+    assert!(
+        page.items.is_empty(),
+        "Expected no products when filtering by a soft-deleted category, got {}",
+        page.items.len()
+    );
 }

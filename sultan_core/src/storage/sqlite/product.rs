@@ -19,11 +19,11 @@ use crate::{
     storage::{
         ProductRepository, RepoCtx,
         sqlite::entity::{
-            CategoryColumn, ProductActiveModel, ProductCategoryActiveModel, ProductCategoryColumn,
-            ProductCategoryEntity, ProductColumn, ProductEntity, ProductVariantActiveModel,
-            ProductVariantColumn, ProductVariantEntity, SellDiscountActiveModel,
-            SellDiscountColumn, SellDiscountEntity, SellPriceActiveModel, SellPriceColumn,
-            SellPriceEntity,
+            CategoryColumn, CategoryEntity, ProductActiveModel, ProductCategoryActiveModel,
+            ProductCategoryColumn, ProductCategoryEntity, ProductColumn, ProductEntity,
+            ProductVariantActiveModel, ProductVariantColumn, ProductVariantEntity,
+            SellDiscountActiveModel, SellDiscountColumn, SellDiscountEntity, SellPriceActiveModel,
+            SellPriceColumn, SellPriceEntity,
         },
     },
 };
@@ -326,11 +326,26 @@ impl ProductRepository for SqliteProductRepository {
             select = select.filter(
                 ProductColumn::Id.in_subquery(
                     sea_orm::sea_query::Query::select()
-                        .column(ProductCategoryColumn::ProductId)
+                        .column((ProductCategoryEntity, ProductCategoryColumn::ProductId))
                         .from(ProductCategoryEntity)
+                        .inner_join(
+                            CategoryEntity,
+                            sea_orm::sea_query::Expr::col((CategoryEntity, CategoryColumn::Id))
+                                .equals((ProductCategoryEntity, ProductCategoryColumn::CategoryId)),
+                        )
                         .and_where(
-                            sea_orm::sea_query::Expr::col(ProductCategoryColumn::CategoryId)
-                                .eq(category_id),
+                            sea_orm::sea_query::Expr::col((
+                                ProductCategoryEntity,
+                                ProductCategoryColumn::CategoryId,
+                            ))
+                            .eq(category_id),
+                        )
+                        .and_where(
+                            sea_orm::sea_query::Expr::col((
+                                CategoryEntity,
+                                CategoryColumn::IsDeleted,
+                            ))
+                            .eq(false),
                         )
                         .to_owned(),
                 ),

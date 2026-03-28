@@ -241,7 +241,8 @@ async fn get_all(
 
 pub fn product_router() -> Router<AppState> {
     Router::new()
-        .route("/", post(create).get(get_all))
+        .route("/", post(create))
+        .route("/", get(get_all))
         .route("/{id}", patch(update_product))
         .route("/{id}", delete(delete_product))
         .route("/{id}", get(get_by_id))

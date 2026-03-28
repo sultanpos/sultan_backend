@@ -329,7 +329,7 @@ impl ProductQueryParams {
 
         let cursor = match &self.cursor {
             Some(encoded) => {
-                let bytes = base64::engine::general_purpose::STANDARD
+                let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
                     .decode(encoded)
                     .map_err(|_| {
                         sultan_core::domain::Error::ValidationError(
@@ -381,7 +381,7 @@ impl ProductListResponse {
 
         let next_cursor = page.next_cursor.map(|c| {
             let json = serde_json::to_vec(&c).expect("cursor is always serializable");
-            base64::engine::general_purpose::STANDARD.encode(json)
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(json)
         });
 
         Self {
