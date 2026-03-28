@@ -598,3 +598,82 @@ async fn test_get_all_products_service_error() {
         error_msg
     );
 }
+
+// ============================================================================
+// POST /api/product/{id}/variant - Create Variant Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_create_variant_success() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let body = json!({
+        "variant": {
+            "product_id": "1",
+            "barcode": "1234567890",
+            "name": "Red - L"
+        },
+        "sell_prices": [],
+        "stocks": []
+    });
+
+    let (status, response) = make_request(app, "POST", "/api/product/1/variant", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::CREATED);
+    assert!(response["id"].as_str().is_some(), "Expected id in response");
+}
+
+#[tokio::test]
+async fn test_create_variant_path_id_overrides_body_product_id() {
+    // Path id (1) should override whatever product_id is in the body
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let body = json!({
+        "variant": {
+            "product_id": "999",
+            "barcode": null,
+            "name": "Variant A"
+        },
+        "sell_prices": [],
+        "stocks": []
+    });
+
+    let (status, _response) = make_request(app, "POST", "/api/product/1/variant", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::CREATED);
+}
+
+#[tokio::test]
+async fn test_create_variant_service_error() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_failure()));
+
+    let app = build_test_router(app_state);
+
+    let body = json!({
+        "variant": {
+            "product_id": "1",
+            "barcode": null,
+            "name": null
+        },
+        "sell_prices": [],
+        "stocks": []
+    });
+
+    let (status, response) = make_request(app, "POST", "/api/product/1/variant", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(response["error"].as_str().is_some());
+}
