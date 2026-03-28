@@ -11,7 +11,9 @@ pub use branch::{BranchCreateRequest, BranchCreateResponse};
 pub use category::{CategoryCreateRequest, CategoryCreateResponse};
 pub use customer::{CustomerCreateRequest, CustomerCreateResponse};
 pub use login::{LoginRequest, LoginResponse, LogoutRequest, RefreshTokenRequest};
-pub use product::{ProductCreateRequest, ProductCreateResponse, ProductResponse};
+pub use product::{
+    ProductCreateRequest, ProductCreateResponse, ProductListResponse, ProductResponse,
+};
 use sultan_core::domain::model::Update;
 pub use supplier::{SupplierCreateRequest, SupplierCreateResponse};
 pub use user::{PermissionCreateRequest, UserCreateRequest, UserResponse, UserUpdateRequest};

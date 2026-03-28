@@ -1,5 +1,5 @@
 use axum::Extension;
-use axum::extract::Path;
+use axum::extract::{Path, Query};
 use axum::routing::get;
 use axum::{
     Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::delete,
@@ -16,8 +16,9 @@ use validator::Validate;
 use crate::AppState;
 use crate::dto::category::CategoryChildResponse;
 use crate::dto::product::{
-    ProductFullCreateRequest, ProductResponse, ProductUpdateRequest, ProductVariantCreateRequest,
-    ProductVariantCreateResponse, ProductVariantResponse, SellDiscountResponse, SellPriceResponse,
+    ProductFullCreateRequest, ProductListResponse, ProductQueryParams, ProductResponse,
+    ProductUpdateRequest, ProductVariantCreateRequest, ProductVariantCreateResponse,
+    ProductVariantResponse, SellDiscountResponse, SellPriceResponse,
 };
 use crate::dto::{ErrorResponse, ProductCreateResponse};
 
@@ -31,13 +32,16 @@ use crate::dto::{ErrorResponse, ProductCreateResponse};
         create,
         update_product,
         delete_product,
-        get_by_id
+        get_by_id,
+        get_all
     ),
     components(schemas(
         ProductFullCreateRequest,
         ProductUpdateRequest,
         ProductCreateResponse,
         ProductResponse,
+        ProductListResponse,
+        ProductQueryParams,
         ProductVariantCreateRequest,
         ProductVariantCreateResponse,
         ProductVariantResponse,
@@ -196,13 +200,48 @@ async fn get_by_id(
     Ok((StatusCode::OK, Json(ProductResponse::from(product))))
 }
 
+/// List products
+///
+/// Returns a paginated list of products using cursor-based pagination.
+/// Results are ordered by `(sort_field, id)` to guarantee stable ordering.
+/// Pass `next_cursor` from the previous response as `cursor` to fetch the next page.
+#[utoipa::path(
+    get,
+    path = "/api/product",
+    tag = "product",
+    params(ProductQueryParams),
+    responses(
+        (status = 200, description = "Products retrieved successfully", body = ProductListResponse),
+        (status = 400, description = "Bad request - invalid query parameters", body = ErrorResponse),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+#[instrument(skip(product_service, ctx, params))]
+async fn get_all(
+    State(product_service): State<Arc<dyn ProductServiceTrait>>,
+    Extension(ctx): Extension<Context>,
+    Query(params): Query<ProductQueryParams>,
+) -> DomainResult<impl IntoResponse> {
+    let query = params.to_query()?;
+
+    let page = product_service.get_all_products(&ctx, &query).await?;
+
+    Ok((
+        StatusCode::OK,
+        Json(ProductListResponse::from_cursor_page(page)),
+    ))
+}
+
 // ============================================================================
 // Router
 // ============================================================================
 
 pub fn product_router() -> Router<AppState> {
     Router::new()
-        .route("/", post(create))
+        .route("/", post(create).get(get_all))
         .route("/{id}", patch(update_product))
         .route("/{id}", delete(delete_product))
         .route("/{id}", get(get_by_id))

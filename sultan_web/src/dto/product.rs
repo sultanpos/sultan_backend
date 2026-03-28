@@ -1,6 +1,6 @@
 use super::category::CategoryChildResponse;
 use super::{
-    default_page, default_page_size, i64_to_string, option_i64_to_string, option_string_to_i64,
+    default_page_size, i64_to_string, option_i64_to_string, option_string_to_i64,
     option_vec_string_to_i64, string_to_i64, vec_string_to_i64,
 };
 use chrono::Utc;
@@ -247,7 +247,10 @@ impl From<Product> for ProductResponse {
     }
 }
 
-/// Query parameters for filtering and paginating products
+/// Query parameters for filtering and paginating products (cursor-based).
+///
+/// Products are always ordered by `(sort_field, id)` to guarantee stable ordering.
+/// To fetch the next page, pass the `cursor` value returned in the previous response.
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct ProductQueryParams {
     /// Product name filter (partial match)
@@ -263,49 +266,128 @@ pub struct ProductQueryParams {
     #[serde(default, deserialize_with = "option_string_to_i64")]
     pub category_id: Option<i64>,
 
-    /// Page number (default: 1)
-    #[serde(default = "default_page")]
-    #[schema(example = 1)]
-    pub page: u32,
+    /// Sort field: "name", "created_at", or "updated_at" (default: "created_at")
+    #[serde(default = "default_sort_field")]
+    #[schema(example = "created_at")]
+    pub sort_field: String,
 
-    /// Page size (default: 20, max: 100)
+    /// Sort direction: "asc" or "desc" (default: "desc")
+    #[serde(default = "default_sort_direction")]
+    #[schema(example = "desc")]
+    pub sort_direction: String,
+
+    /// Opaque cursor from the previous page's `next_cursor` (omit for the first page)
+    #[schema(example = "eyJmaWVsZF92YWx1ZSI6IjIwMjUtMDEtMDEiLCJpZCI6MTIzfQ==")]
+    pub cursor: Option<String>,
+
+    /// Maximum number of items per page (default: 20, max: 100)
     #[serde(default = "default_page_size")]
     #[schema(example = 20)]
-    pub page_size: u32,
+    pub limit: u32,
+}
 
-    /// Order by field
-    #[schema(example = "name")]
-    pub order_by: Option<String>,
+fn default_sort_field() -> String {
+    "created_at".to_string()
+}
 
-    /// Order direction (asc/desc)
-    #[schema(example = "asc")]
-    pub order_direction: Option<String>,
+fn default_sort_direction() -> String {
+    "desc".to_string()
 }
 
 impl ProductQueryParams {
-    /// Convert to ProductFilter
-    pub fn to_filter(&self) -> sultan_core::domain::model::product::ProductFilter {
-        sultan_core::domain::model::product::ProductFilter {
-            name: self.name.clone(),
-            product_type: self.product_type.clone(),
-            category_id: self.category_id,
-        }
-    }
-
-    /// Convert to PaginationOptions
-    pub fn to_pagination(&self) -> sultan_core::domain::model::pagination::PaginationOptions {
-        use sultan_core::domain::model::pagination::{PaginationOptions, PaginationOrder};
-
-        let page_size = self.page_size.min(100); // Cap at 100
-        let order = match (self.order_by.as_ref(), self.order_direction.as_ref()) {
-            (Some(field), direction) => Some(PaginationOrder {
-                field: field.clone(),
-                direction: direction.cloned().unwrap_or_else(|| "asc".to_string()),
-            }),
-            _ => None,
+    /// Convert query params into the domain `ProductQuery`.
+    pub fn to_query(
+        &self,
+    ) -> Result<sultan_core::domain::model::product::ProductQuery, sultan_core::domain::Error> {
+        use base64::Engine;
+        use sultan_core::domain::model::product::{
+            ProductCursor, ProductFilter, ProductQuery, ProductSortField, SortDirection,
         };
 
-        PaginationOptions::new(self.page, page_size, order)
+        let sort_field = match self.sort_field.as_str() {
+            "name" => ProductSortField::Name,
+            "created_at" => ProductSortField::CreatedAt,
+            "updated_at" => ProductSortField::UpdatedAt,
+            other => {
+                return Err(sultan_core::domain::Error::ValidationError(format!(
+                    "Invalid sort_field '{}'. Must be one of: name, created_at, updated_at",
+                    other
+                )));
+            }
+        };
+
+        let sort_direction = match self.sort_direction.as_str() {
+            "asc" => SortDirection::Asc,
+            "desc" => SortDirection::Desc,
+            other => {
+                return Err(sultan_core::domain::Error::ValidationError(format!(
+                    "Invalid sort_direction '{}'. Must be 'asc' or 'desc'",
+                    other
+                )));
+            }
+        };
+
+        let cursor = match &self.cursor {
+            Some(encoded) => {
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(encoded)
+                    .map_err(|_| {
+                        sultan_core::domain::Error::ValidationError(
+                            "Invalid cursor encoding".to_string(),
+                        )
+                    })?;
+                let cursor: ProductCursor = serde_json::from_slice(&bytes).map_err(|_| {
+                    sultan_core::domain::Error::ValidationError("Invalid cursor format".to_string())
+                })?;
+                Some(cursor)
+            }
+            None => None,
+        };
+
+        let limit = self.limit.clamp(1, 100) as u64;
+
+        Ok(ProductQuery {
+            filter: ProductFilter {
+                name: self.name.clone(),
+                product_type: self.product_type.clone(),
+                category_id: self.category_id,
+            },
+            sort_field,
+            sort_direction,
+            cursor,
+            limit,
+        })
+    }
+}
+
+/// Response for a paginated list of products (cursor-based).
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ProductListResponse {
+    /// The items in this page
+    pub items: Vec<ProductResponse>,
+
+    /// Opaque cursor to fetch the next page. `null` when there are no more pages.
+    #[schema(example = "eyJmaWVsZF92YWx1ZSI6IjIwMjUtMDEtMDEiLCJpZCI6MTIzfQ==")]
+    pub next_cursor: Option<String>,
+}
+
+impl ProductListResponse {
+    pub fn from_cursor_page(
+        page: sultan_core::domain::model::product::CursorPage<
+            sultan_core::domain::model::product::Product,
+        >,
+    ) -> Self {
+        use base64::Engine;
+
+        let next_cursor = page.next_cursor.map(|c| {
+            let json = serde_json::to_vec(&c).expect("cursor is always serializable");
+            base64::engine::general_purpose::STANDARD.encode(json)
+        });
+
+        Self {
+            items: page.items.into_iter().map(ProductResponse::from).collect(),
+            next_cursor,
+        }
     }
 }
 
