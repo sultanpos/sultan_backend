@@ -9,7 +9,8 @@ use crate::{
             category::CategoryCreate,
             product::{
                 ProductCreate, ProductFilter, ProductQuery, ProductSortField, ProductUpdate,
-                ProductVariantCreate, ProductVariantUpdate, SortDirection,
+                ProductVariantCreate, ProductVariantUpdate, SortDirection, VariantSearchFilter,
+                VariantSearchQuery,
             },
             sell_price::{SellDiscountCreate, SellPriceCreate},
         },
@@ -150,6 +151,18 @@ where
     product_test_get_all_filter_by_category_id(&ctx_factory().await, repo).await;
     product_test_get_all_filter_by_deleted_category_returns_empty(&ctx_factory().await, repo).await;
     product_test_get_all_empty(&ctx_factory().await, repo).await;
+
+    // search_variants tests
+    product_test_search_variants_basic(&ctx_factory().await, repo).await;
+    product_test_search_variants_filter_by_name(&ctx_factory().await, repo).await;
+    product_test_search_variants_filter_by_product_type(&ctx_factory().await, repo).await;
+    product_test_search_variants_filter_by_barcode(&ctx_factory().await, repo).await;
+    product_test_search_variants_filter_by_category(&ctx_factory().await, repo).await;
+    product_test_search_variants_excludes_deleted_variants(&ctx_factory().await, repo).await;
+    product_test_search_variants_excludes_deleted_products(&ctx_factory().await, repo).await;
+    product_test_search_variants_with_sell_prices_and_discounts(&ctx_factory().await, repo).await;
+    product_test_search_variants_cursor_pagination(&ctx_factory().await, repo).await;
+    product_test_search_variants_empty(&ctx_factory().await, repo).await;
 }
 
 // =============================================================================
@@ -3376,4 +3389,398 @@ pub async fn product_test_get_all_filter_by_deleted_category_returns_empty<R: Pr
         "Expected no products when filtering by a soft-deleted category, got {}",
         page.items.len()
     );
+}
+
+// =============================================================================
+// search_variants Tests
+// =============================================================================
+
+fn default_variant_query() -> VariantSearchQuery {
+    VariantSearchQuery {
+        filter: VariantSearchFilter {
+            name: None,
+            product_type: None,
+            category_id: None,
+            barcode: None,
+        },
+        sort_field: ProductSortField::Name,
+        sort_direction: SortDirection::Asc,
+        cursor: None,
+        limit: 20,
+    }
+}
+
+/// Test: basic search returns variants with product, sell_prices, and categories
+pub async fn product_test_search_variants_basic<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let product_id = super::generate_test_id().await;
+    let variant_id = super::generate_test_id().await;
+
+    repo.create_product(ctx, product_id, &create_test_product())
+        .await
+        .expect("create product");
+    repo.create_variant(ctx, variant_id, &create_test_variant(product_id))
+        .await
+        .expect("create variant");
+
+    let query = default_variant_query();
+    let page = repo.search_variants(ctx, &query).await.expect("search");
+
+    assert_eq!(page.items.len(), 1);
+    let item = &page.items[0];
+    assert_eq!(item.id, variant_id);
+    assert_eq!(item.product.id, product_id);
+    assert_eq!(item.product.name, "Test Product");
+    assert!(page.next_cursor.is_none());
+}
+
+/// Test: filter by product name (partial match)
+pub async fn product_test_search_variants_filter_by_name<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let p1_id = super::generate_test_id().await;
+    let v1_id = super::generate_test_id().await;
+    let p2_id = super::generate_test_id().await;
+    let v2_id = super::generate_test_id().await;
+
+    let mut product_a = create_test_product();
+    product_a.name = "Alpha Widget".to_string();
+    repo.create_product(ctx, p1_id, &product_a)
+        .await
+        .expect("create p1");
+    repo.create_variant(ctx, v1_id, &create_test_variant(p1_id))
+        .await
+        .expect("create v1");
+
+    let mut product_b = create_test_product();
+    product_b.name = "Beta Gadget".to_string();
+    repo.create_product(ctx, p2_id, &product_b)
+        .await
+        .expect("create p2");
+    repo.create_variant(ctx, v2_id, &create_test_variant(p2_id))
+        .await
+        .expect("create v2");
+
+    let mut query = default_variant_query();
+    query.filter.name = Some("Alpha".to_string());
+
+    let page = repo.search_variants(ctx, &query).await.expect("search");
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].product.name, "Alpha Widget");
+}
+
+/// Test: filter by product_type
+pub async fn product_test_search_variants_filter_by_product_type<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let p1_id = super::generate_test_id().await;
+    let v1_id = super::generate_test_id().await;
+    let p2_id = super::generate_test_id().await;
+    let v2_id = super::generate_test_id().await;
+
+    let mut product_a = create_test_product();
+    product_a.product_type = "service".to_string();
+    repo.create_product(ctx, p1_id, &product_a)
+        .await
+        .expect("create p1");
+    repo.create_variant(ctx, v1_id, &create_test_variant(p1_id))
+        .await
+        .expect("create v1");
+
+    let mut product_b = create_test_product();
+    product_b.product_type = "product".to_string();
+    repo.create_product(ctx, p2_id, &product_b)
+        .await
+        .expect("create p2");
+    repo.create_variant(ctx, v2_id, &create_test_variant(p2_id))
+        .await
+        .expect("create v2");
+
+    let mut query = default_variant_query();
+    query.filter.product_type = Some("service".to_string());
+
+    let page = repo.search_variants(ctx, &query).await.expect("search");
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].product.product_type, "service");
+}
+
+/// Test: filter by barcode (partial match)
+pub async fn product_test_search_variants_filter_by_barcode<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let p_id = super::generate_test_id().await;
+    let v1_id = super::generate_test_id().await;
+    let v2_id = super::generate_test_id().await;
+
+    repo.create_product(ctx, p_id, &create_test_product())
+        .await
+        .expect("create product");
+
+    let mut var1 = create_test_variant(p_id);
+    var1.barcode = Some("ABC-001".to_string());
+    repo.create_variant(ctx, v1_id, &var1)
+        .await
+        .expect("create v1");
+
+    let mut var2 = create_test_variant(p_id);
+    var2.barcode = Some("XYZ-999".to_string());
+    repo.create_variant(ctx, v2_id, &var2)
+        .await
+        .expect("create v2");
+
+    let mut query = default_variant_query();
+    query.filter.barcode = Some("ABC-001".to_string());
+
+    let page = repo.search_variants(ctx, &query).await.expect("search");
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].barcode.as_deref(), Some("ABC-001"));
+}
+
+/// Test: filter by category_id
+pub async fn product_test_search_variants_filter_by_category<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let category_repo = crate::storage::sqlite::category::SqliteCategoryRepository::new();
+
+    let cat_id = super::generate_test_id().await;
+    category_repo
+        .create(
+            ctx,
+            cat_id,
+            &CategoryCreate {
+                parent_id: None,
+                name: "Electronics".to_string(),
+                description: None,
+            },
+        )
+        .await
+        .expect("create category");
+
+    let p1_id = super::generate_test_id().await;
+    let v1_id = super::generate_test_id().await;
+    let p2_id = super::generate_test_id().await;
+    let v2_id = super::generate_test_id().await;
+
+    // Product 1 — assigned to category
+    repo.create_product(ctx, p1_id, &create_test_product())
+        .await
+        .expect("create p1");
+    repo.add_product_category(ctx, p1_id, &[cat_id])
+        .await
+        .expect("add category");
+    repo.create_variant(ctx, v1_id, &create_test_variant(p1_id))
+        .await
+        .expect("create v1");
+
+    // Product 2 — no category
+    repo.create_product(ctx, p2_id, &create_test_product())
+        .await
+        .expect("create p2");
+    repo.create_variant(ctx, v2_id, &create_test_variant(p2_id))
+        .await
+        .expect("create v2");
+
+    let mut query = default_variant_query();
+    query.filter.category_id = Some(cat_id);
+
+    let page = repo.search_variants(ctx, &query).await.expect("search");
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].product.id, p1_id);
+    // Categories should be populated
+    assert!(!page.items[0].categories.is_empty());
+    assert_eq!(page.items[0].categories[0].name, "Electronics");
+}
+
+/// Test: deleted variants are excluded from search
+pub async fn product_test_search_variants_excludes_deleted_variants<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let p_id = super::generate_test_id().await;
+    let v1_id = super::generate_test_id().await;
+    let v2_id = super::generate_test_id().await;
+
+    repo.create_product(ctx, p_id, &create_test_product())
+        .await
+        .expect("create product");
+    repo.create_variant(ctx, v1_id, &create_test_variant(p_id))
+        .await
+        .expect("create v1");
+
+    let mut var2 = create_test_variant(p_id);
+    var2.barcode = Some("KEEP-ME".to_string());
+    repo.create_variant(ctx, v2_id, &var2)
+        .await
+        .expect("create v2");
+
+    // Delete variant 1
+    repo.delete_variant(ctx, v1_id)
+        .await
+        .expect("delete variant");
+
+    let page = repo
+        .search_variants(ctx, &default_variant_query())
+        .await
+        .expect("search");
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].id, v2_id);
+}
+
+/// Test: variants of deleted products are excluded
+pub async fn product_test_search_variants_excludes_deleted_products<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let p1_id = super::generate_test_id().await;
+    let v1_id = super::generate_test_id().await;
+    let p2_id = super::generate_test_id().await;
+    let v2_id = super::generate_test_id().await;
+
+    let mut product_a = create_test_product();
+    product_a.name = "Alive Product".to_string();
+    repo.create_product(ctx, p1_id, &product_a)
+        .await
+        .expect("create p1");
+    repo.create_variant(ctx, v1_id, &create_test_variant(p1_id))
+        .await
+        .expect("create v1");
+
+    let mut product_b = create_test_product();
+    product_b.name = "Doomed Product".to_string();
+    repo.create_product(ctx, p2_id, &product_b)
+        .await
+        .expect("create p2");
+    repo.create_variant(ctx, v2_id, &create_test_variant(p2_id))
+        .await
+        .expect("create v2");
+
+    // Delete product 2 (its variants should disappear from search)
+    repo.delete_product(ctx, p2_id)
+        .await
+        .expect("delete product");
+
+    let page = repo
+        .search_variants(ctx, &default_variant_query())
+        .await
+        .expect("search");
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].product.name, "Alive Product");
+}
+
+/// Test: search returns sell prices with nested discounts
+pub async fn product_test_search_variants_with_sell_prices_and_discounts<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let p_id = super::generate_test_id().await;
+    let v_id = super::generate_test_id().await;
+    let sp_id = super::generate_test_id().await;
+    let sd_id = super::generate_test_id().await;
+
+    repo.create_product(ctx, p_id, &create_test_product())
+        .await
+        .expect("create product");
+    repo.create_variant(ctx, v_id, &create_test_variant(p_id))
+        .await
+        .expect("create variant");
+    repo.create_sell_price(
+        ctx,
+        sp_id,
+        &SellPriceCreate {
+            branch_id: None,
+            product_variant_id: v_id,
+            uom_id: 1,
+            quantity: 1,
+            price: 10000,
+            metadata: None,
+        },
+    )
+    .await
+    .expect("create sell price");
+    repo.create_sell_discount(
+        ctx,
+        sd_id,
+        &SellDiscountCreate {
+            price_id: sp_id,
+            quantity: 5,
+            discount_formula: "10%".to_string(),
+            customer_level: None,
+            metadata: None,
+        },
+    )
+    .await
+    .expect("create sell discount");
+
+    let page = repo
+        .search_variants(ctx, &default_variant_query())
+        .await
+        .expect("search");
+    assert_eq!(page.items.len(), 1);
+
+    let item = &page.items[0];
+    assert_eq!(item.sell_prices.len(), 1);
+    assert_eq!(item.sell_prices[0].price, 10000);
+    assert_eq!(item.sell_prices[0].discounts.len(), 1);
+    assert_eq!(item.sell_prices[0].discounts[0].quantity, 5);
+}
+
+/// Test: cursor pagination walks through all results
+pub async fn product_test_search_variants_cursor_pagination<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    // Create 3 products, each with 1 variant
+    let mut names = vec!["AAA Product", "BBB Product", "CCC Product"];
+    names.sort(); // ensure predictable order
+    let mut variant_ids = Vec::new();
+
+    for name in &names {
+        let p_id = super::generate_test_id().await;
+        let v_id = super::generate_test_id().await;
+        variant_ids.push(v_id);
+
+        let mut product = create_test_product();
+        product.name = name.to_string();
+        repo.create_product(ctx, p_id, &product)
+            .await
+            .expect("create product");
+        repo.create_variant(ctx, v_id, &create_test_variant(p_id))
+            .await
+            .expect("create variant");
+    }
+
+    // Page 1: limit=2
+    let mut query = default_variant_query();
+    query.limit = 2;
+    let page1 = repo.search_variants(ctx, &query).await.expect("page 1");
+    assert_eq!(page1.items.len(), 2);
+    assert_eq!(page1.items[0].product.name, "AAA Product");
+    assert_eq!(page1.items[1].product.name, "BBB Product");
+    assert!(page1.next_cursor.is_some());
+
+    // Page 2: use cursor
+    query.cursor = page1.next_cursor;
+    let page2 = repo.search_variants(ctx, &query).await.expect("page 2");
+    assert_eq!(page2.items.len(), 1);
+    assert_eq!(page2.items[0].product.name, "CCC Product");
+    assert!(page2.next_cursor.is_none());
+}
+
+/// Test: search with no data returns empty
+pub async fn product_test_search_variants_empty<R: ProductRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &R,
+) {
+    let page = repo
+        .search_variants(ctx, &default_variant_query())
+        .await
+        .expect("search");
+    assert!(page.items.is_empty());
+    assert!(page.next_cursor.is_none());
 }

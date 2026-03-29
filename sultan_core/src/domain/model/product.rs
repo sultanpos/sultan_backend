@@ -185,3 +185,31 @@ pub struct ProductFullCreate {
     pub variants: Vec<ProductVariantFullCreate>,
     pub categories: Vec<i64>,
 }
+
+#[derive(Debug, Clone)]
+pub struct ProductVariantRead {
+    pub id: i64,
+    pub barcode: Option<String>,
+    pub name: Option<String>,
+    pub metadata: Option<Value>,
+    pub product: Product,
+    pub sell_prices: Vec<SellPrice>,
+    pub categories: Vec<Category>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VariantSearchFilter {
+    pub name: Option<String>,
+    pub product_type: Option<String>,
+    pub category_id: Option<i64>,
+    pub barcode: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VariantSearchQuery {
+    pub filter: VariantSearchFilter,
+    pub sort_field: ProductSortField,
+    pub sort_direction: SortDirection,
+    pub cursor: Option<ProductCursor>,
+    pub limit: u64,
+}

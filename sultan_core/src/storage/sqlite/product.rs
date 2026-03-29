@@ -9,7 +9,7 @@ use crate::{
         DomainResult, Error,
         model::product::{
             CursorPage, Product, ProductCreate, ProductUpdate, ProductVariant,
-            ProductVariantCreate, ProductVariantUpdate,
+            ProductVariantCreate, ProductVariantRead, ProductVariantUpdate,
         },
         model::sell_price::{
             SellDiscount, SellDiscountCreate, SellDiscountUpdate, SellPrice, SellPriceCreate,
@@ -1204,5 +1204,238 @@ impl ProductRepository for SqliteProductRepository {
             .await?;
 
         Ok(discount.map(|d| d.to_domain()))
+    }
+
+    async fn search_variants(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        query: &crate::domain::model::product::VariantSearchQuery,
+    ) -> DomainResult<CursorPage<ProductVariantRead>> {
+        use crate::domain::model::product::{ProductCursor, ProductSortField, SortDirection};
+        use sea_orm::{Condition, Order, QueryOrder};
+
+        // ── Base query: variant JOIN product (both non-deleted) ─────────
+        let mut select = ProductVariantEntity::find()
+            .filter(ProductVariantColumn::IsDeleted.eq(false))
+            .find_also_related(ProductEntity);
+
+        // ── Filters ─────────────────────────────────────────────────────
+        if let Some(name) = &query.filter.name {
+            select = select.filter(ProductColumn::Name.contains(name));
+        }
+        if let Some(product_type) = &query.filter.product_type {
+            select = select.filter(ProductColumn::ProductType.eq(product_type.clone()));
+        }
+        if let Some(barcode) = &query.filter.barcode {
+            select = select.filter(ProductVariantColumn::Barcode.eq(barcode.clone()));
+        }
+        if let Some(category_id) = query.filter.category_id {
+            select = select.filter(
+                ProductColumn::Id.in_subquery(
+                    sea_orm::sea_query::Query::select()
+                        .column((ProductCategoryEntity, ProductCategoryColumn::ProductId))
+                        .from(ProductCategoryEntity)
+                        .inner_join(
+                            CategoryEntity,
+                            sea_orm::sea_query::Expr::col((CategoryEntity, CategoryColumn::Id))
+                                .equals((ProductCategoryEntity, ProductCategoryColumn::CategoryId)),
+                        )
+                        .and_where(
+                            sea_orm::sea_query::Expr::col((
+                                ProductCategoryEntity,
+                                ProductCategoryColumn::CategoryId,
+                            ))
+                            .eq(category_id),
+                        )
+                        .and_where(
+                            sea_orm::sea_query::Expr::col((
+                                CategoryEntity,
+                                CategoryColumn::IsDeleted,
+                            ))
+                            .eq(false),
+                        )
+                        .to_owned(),
+                ),
+            );
+        }
+
+        // ── Sort field → product column ─────────────────────────────────
+        let sort_col = match query.sort_field {
+            ProductSortField::Name => ProductColumn::Name,
+            ProductSortField::CreatedAt => ProductColumn::CreatedAt,
+            ProductSortField::UpdatedAt => ProductColumn::UpdatedAt,
+        };
+
+        let order = match query.sort_direction {
+            SortDirection::Asc => Order::Asc,
+            SortDirection::Desc => Order::Desc,
+        };
+
+        // ── Cursor condition (keyset) ───────────────────────────────────
+        // Cursor id refers to the variant id (tiebreaker).
+        // field_value refers to the product's sort column value.
+        if let Some(cursor) = &query.cursor {
+            let cond = match query.sort_direction {
+                SortDirection::Asc => Condition::any()
+                    .add(Expr::col((ProductEntity, sort_col)).gt(cursor.field_value.clone()))
+                    .add(
+                        Condition::all()
+                            .add(
+                                Expr::col((ProductEntity, sort_col)).eq(cursor.field_value.clone()),
+                            )
+                            .add(
+                                Expr::col((ProductVariantEntity, ProductVariantColumn::Id))
+                                    .gt(cursor.id),
+                            ),
+                    ),
+                SortDirection::Desc => Condition::any()
+                    .add(Expr::col((ProductEntity, sort_col)).lt(cursor.field_value.clone()))
+                    .add(
+                        Condition::all()
+                            .add(
+                                Expr::col((ProductEntity, sort_col)).eq(cursor.field_value.clone()),
+                            )
+                            .add(
+                                Expr::col((ProductVariantEntity, ProductVariantColumn::Id))
+                                    .lt(cursor.id),
+                            ),
+                    ),
+            };
+            select = select.filter(cond);
+        }
+
+        // ── Ordering: (sort_field on product, variant.id) ───────────────
+        select = select
+            .order_by(sort_col, order.clone())
+            .order_by(ProductVariantColumn::Id, order);
+
+        // Fetch limit + 1 to detect next page
+        let fetch_limit = query.limit + 1;
+        let rows = select.limit(fetch_limit).all(&ctx.db).await?;
+
+        // Filter out variants whose parent product is deleted or missing
+        let valid_rows: Vec<_> = rows
+            .into_iter()
+            .filter(|(_, product_opt)| matches!(product_opt, Some(p) if !p.is_deleted))
+            .collect();
+
+        let has_next = valid_rows.len() as u64 > query.limit;
+        let page_rows: Vec<_> = valid_rows.into_iter().take(query.limit as usize).collect();
+
+        // ── Collect unique product + variant IDs for batch loading ───────
+        let variant_ids: Vec<i64> = page_rows.iter().map(|(v, _)| v.id).collect();
+        let product_ids: Vec<i64> = page_rows
+            .iter()
+            .filter_map(|(_, p)| p.as_ref().map(|pm| pm.id))
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        // ── Batch-load sell prices (with discounts) for all variants ────
+        let mut prices_by_variant: std::collections::HashMap<i64, Vec<SellPrice>> =
+            std::collections::HashMap::new();
+
+        if !variant_ids.is_empty() {
+            let all_prices_with_discounts = SellPriceEntity::find()
+                .filter(SellPriceColumn::ProductVariantId.is_in(variant_ids))
+                .filter(SellPriceColumn::IsDeleted.eq(false))
+                .find_with_related(SellDiscountEntity)
+                .all(&ctx.db)
+                .await?;
+
+            for (price_model, discount_models) in all_prices_with_discounts {
+                let variant_id = price_model.product_variant_id;
+                let mut sell_price = price_model.to_domain();
+                sell_price.discounts = discount_models
+                    .into_iter()
+                    .filter(|d| !d.is_deleted)
+                    .map(|d| d.to_domain())
+                    .collect();
+                prices_by_variant
+                    .entry(variant_id)
+                    .or_default()
+                    .push(sell_price);
+            }
+        }
+
+        // ── Batch-load categories for all products ──────────────────────
+        let mut categories_by_product: std::collections::HashMap<i64, Vec<_>> =
+            std::collections::HashMap::new();
+
+        if !product_ids.is_empty() {
+            // ProductCategory → Category join
+            let pc_rows = ProductCategoryEntity::find()
+                .filter(ProductCategoryColumn::ProductId.is_in(product_ids))
+                .find_also_related(CategoryEntity)
+                .all(&ctx.db)
+                .await?;
+
+            for (pc, cat_opt) in pc_rows {
+                if let Some(cat) = cat_opt
+                    && !cat.is_deleted
+                {
+                    categories_by_product
+                        .entry(pc.product_id)
+                        .or_default()
+                        .push(cat.to_domain());
+                }
+            }
+        }
+
+        // ── Build next cursor ───────────────────────────────────────────
+        let next_cursor = if has_next {
+            page_rows.last().map(|(v, p)| {
+                let field_value = match (query.sort_field, p.as_ref()) {
+                    (ProductSortField::Name, Some(pm)) => pm.name.clone(),
+                    (ProductSortField::CreatedAt, Some(pm)) => pm.created_at.clone(),
+                    (ProductSortField::UpdatedAt, Some(pm)) => pm.updated_at.clone(),
+                    _ => String::new(),
+                };
+                ProductCursor {
+                    field_value,
+                    id: v.id,
+                }
+            })
+        } else {
+            None
+        };
+
+        // ── Assemble ProductVariantRead items ───────────────────────────
+        let items = page_rows
+            .into_iter()
+            .map(|(variant_model, product_model)| {
+                let product_model = product_model.unwrap(); // safe: filtered above
+                let product_id = product_model.id;
+                let mut product = product_model.to_domain();
+                product.categories = categories_by_product
+                    .get(&product_id)
+                    .cloned()
+                    .unwrap_or_default();
+
+                let sell_prices = prices_by_variant
+                    .remove(&variant_model.id)
+                    .unwrap_or_default();
+
+                let metadata = variant_model
+                    .metadata
+                    .as_ref()
+                    .and_then(|m| serde_json::from_str(m).ok());
+
+                ProductVariantRead {
+                    id: variant_model.id,
+                    barcode: variant_model.barcode,
+                    name: variant_model.name,
+                    metadata,
+                    product,
+                    sell_prices,
+                    categories: categories_by_product
+                        .get(&product_id)
+                        .cloned()
+                        .unwrap_or_default(),
+                }
+            })
+            .collect();
+
+        Ok(CursorPage { items, next_cursor })
     }
 }
