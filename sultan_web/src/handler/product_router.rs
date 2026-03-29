@@ -18,7 +18,8 @@ use crate::dto::category::CategoryChildResponse;
 use crate::dto::product::{
     ProductFullCreateRequest, ProductListResponse, ProductQueryParams, ProductResponse,
     ProductUpdateRequest, ProductVariantCreateResponse, ProductVariantFullCreateRequest,
-    ProductVariantResponse, ProductVariantUpdateRequest, SellDiscountResponse,
+    ProductVariantResponse, ProductVariantUpdateRequest, SellDiscountCreateRequest,
+    SellDiscountCreateResponse, SellDiscountResponse, SellDiscountUpdateRequest,
     SellPriceCreateResponse, SellPriceFullCreateRequest, SellPriceResponse, SellPriceUpdateRequest,
 };
 use crate::dto::{ErrorResponse, ProductCreateResponse};
@@ -41,6 +42,9 @@ use crate::dto::{ErrorResponse, ProductCreateResponse};
         create_sell_price,
         update_sell_price,
         delete_sell_price,
+        create_sell_discount,
+        update_sell_discount,
+        delete_sell_discount,
     ),
     components(schemas(
         ProductFullCreateRequest,
@@ -58,6 +62,9 @@ use crate::dto::{ErrorResponse, ProductCreateResponse};
         SellPriceUpdateRequest,
         SellPriceResponse,
         SellDiscountResponse,
+        SellDiscountCreateRequest,
+        SellDiscountCreateResponse,
+        SellDiscountUpdateRequest,
         CategoryChildResponse,
         ErrorResponse,
     )),
@@ -476,6 +483,130 @@ async fn delete_sell_price(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Create a sell discount for a sell price
+///
+/// Creates a new sell discount for the specified sell price.
+/// The `price_id` in the request body is ignored; the path `price_id` is used instead.
+/// Requires authentication.
+#[utoipa::path(
+    post,
+    path = "/api/product/{id}/variant/{variant_id}/price/{price_id}/discount",
+    tag = "product",
+    params(
+        ("id" = i64, Path, description = "Product ID"),
+        ("variant_id" = i64, Path, description = "Variant ID"),
+        ("price_id" = i64, Path, description = "Sell price ID")
+    ),
+    request_body = SellDiscountCreateRequest,
+    responses(
+        (status = 201, description = "Sell discount created successfully", body = SellDiscountCreateResponse),
+        (status = 400, description = "Bad request - validation error", body = ErrorResponse),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse),
+        (status = 404, description = "Sell price not found", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+#[instrument(skip(product_service, payload, ctx))]
+async fn create_sell_discount(
+    State(product_service): State<Arc<dyn ProductServiceTrait>>,
+    Extension(ctx): Extension<Context>,
+    Path((_id, _variant_id, price_id)): Path<(i64, i64, i64)>,
+    Json(payload): Json<SellDiscountCreateRequest>,
+) -> DomainResult<impl IntoResponse> {
+    payload
+        .validate()
+        .map_err(|e| Error::ValidationError(format!("{}", e)))?;
+
+    let mut domain = sultan_core::domain::model::sell_price::SellDiscountCreate::from(payload);
+    domain.price_id = price_id;
+
+    let discount_id = product_service.create_sell_discount(&ctx, &domain).await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(SellDiscountCreateResponse { id: discount_id }),
+    ))
+}
+
+/// Update a sell discount
+///
+/// Partially updates a sell discount by ID. Fields absent from the JSON are left unchanged.
+/// Nullable fields (`customer_level`, `metadata`) can be cleared by sending `null`.
+/// Requires authentication.
+#[utoipa::path(
+    patch,
+    path = "/api/product/{id}/variant/{variant_id}/price/{price_id}/discount/{discount_id}",
+    tag = "product",
+    params(
+        ("id" = i64, Path, description = "Product ID"),
+        ("variant_id" = i64, Path, description = "Variant ID"),
+        ("price_id" = i64, Path, description = "Sell price ID"),
+        ("discount_id" = i64, Path, description = "Sell discount ID")
+    ),
+    request_body = SellDiscountUpdateRequest,
+    responses(
+        (status = 204, description = "Sell discount updated successfully"),
+        (status = 400, description = "Bad request - validation error", body = ErrorResponse),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse),
+        (status = 404, description = "Sell discount not found", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+#[instrument(skip(product_service, payload, ctx))]
+async fn update_sell_discount(
+    State(product_service): State<Arc<dyn ProductServiceTrait>>,
+    Extension(ctx): Extension<Context>,
+    Path((_id, _variant_id, _price_id, discount_id)): Path<(i64, i64, i64, i64)>,
+    Json(payload): Json<SellDiscountUpdateRequest>,
+) -> DomainResult<impl IntoResponse> {
+    payload
+        .validate()
+        .map_err(|e| Error::ValidationError(format!("{}", e)))?;
+
+    product_service
+        .update_sell_discount(&ctx, discount_id, &payload.to_domain())
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Delete a sell discount
+///
+/// Soft deletes a sell discount by ID. Requires authentication.
+#[utoipa::path(
+    delete,
+    path = "/api/product/{id}/variant/{variant_id}/price/{price_id}/discount/{discount_id}",
+    tag = "product",
+    params(
+        ("id" = i64, Path, description = "Product ID"),
+        ("variant_id" = i64, Path, description = "Variant ID"),
+        ("price_id" = i64, Path, description = "Sell price ID"),
+        ("discount_id" = i64, Path, description = "Sell discount ID")
+    ),
+    responses(
+        (status = 204, description = "Sell discount deleted successfully"),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse),
+        (status = 404, description = "Sell discount not found", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+#[instrument(skip(product_service, ctx))]
+async fn delete_sell_discount(
+    State(product_service): State<Arc<dyn ProductServiceTrait>>,
+    Extension(ctx): Extension<Context>,
+    Path((_id, _variant_id, _price_id, discount_id)): Path<(i64, i64, i64, i64)>,
+) -> DomainResult<impl IntoResponse> {
+    product_service
+        .delete_sell_discount(&ctx, discount_id)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub fn product_router() -> Router<AppState> {
     Router::new()
         .route("/", post(create))
@@ -494,5 +625,17 @@ pub fn product_router() -> Router<AppState> {
         .route(
             "/{id}/variant/{variant_id}/price/{price_id}",
             delete(delete_sell_price),
+        )
+        .route(
+            "/{id}/variant/{variant_id}/price/{price_id}/discount",
+            post(create_sell_discount),
+        )
+        .route(
+            "/{id}/variant/{variant_id}/price/{price_id}/discount/{discount_id}",
+            patch(update_sell_discount),
+        )
+        .route(
+            "/{id}/variant/{variant_id}/price/{price_id}/discount/{discount_id}",
+            delete(delete_sell_discount),
         )
 }
