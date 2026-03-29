@@ -3410,7 +3410,7 @@ fn default_variant_query() -> VariantSearchQuery {
     }
 }
 
-/// Test: basic search returns variants with product, sell_prices, and categories
+/// Test: basic search returns a variant with its parent product; no sell prices or categories
 pub async fn product_test_search_variants_basic<R: ProductRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &R,

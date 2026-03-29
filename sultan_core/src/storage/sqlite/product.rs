@@ -1214,9 +1214,15 @@ impl ProductRepository for SqliteProductRepository {
         use crate::domain::model::product::{ProductCursor, ProductSortField, SortDirection};
         use sea_orm::{Condition, Order, QueryOrder};
 
-        // ── Base query: variant JOIN product (both non-deleted) ─────────
+        // Guard: a limit of 0 would fetch 1 row then return 0 items with no cursor.
+        let limit = Ord::max(query.limit, 1);
+
+        // ── Base query: variant INNER JOIN product (both non-deleted) ───
+        // Adding ProductColumn::IsDeleted.eq(false) ensures deleted products
+        // are excluded at the SQL level, keeping pagination counts correct.
         let mut select = ProductVariantEntity::find()
             .filter(ProductVariantColumn::IsDeleted.eq(false))
+            .filter(ProductColumn::IsDeleted.eq(false))
             .find_also_related(ProductEntity);
 
         // ── Filters ─────────────────────────────────────────────────────
@@ -1310,17 +1316,12 @@ impl ProductRepository for SqliteProductRepository {
             .order_by(ProductVariantColumn::Id, order);
 
         // Fetch limit + 1 to detect next page
-        let fetch_limit = query.limit + 1;
+        let fetch_limit = limit + 1;
         let rows = select.limit(fetch_limit).all(&ctx.db).await?;
 
-        // Filter out variants whose parent product is deleted or missing
-        let valid_rows: Vec<_> = rows
-            .into_iter()
-            .filter(|(_, product_opt)| matches!(product_opt, Some(p) if !p.is_deleted))
-            .collect();
-
-        let has_next = valid_rows.len() as u64 > query.limit;
-        let page_rows: Vec<_> = valid_rows.into_iter().take(query.limit as usize).collect();
+        // All rows already satisfy the non-deleted constraint from the SQL filter.
+        let has_next = rows.len() as u64 > limit;
+        let page_rows: Vec<_> = rows.into_iter().take(limit as usize).collect();
 
         // ── Collect unique product + variant IDs for batch loading ───────
         let variant_ids: Vec<i64> = page_rows.iter().map(|(v, _)| v.id).collect();
