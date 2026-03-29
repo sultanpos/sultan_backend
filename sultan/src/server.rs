@@ -88,7 +88,7 @@ async fn init_sqlite_db(config: &AppConfig) -> anyhow::Result<DatabaseConnection
     Ok(database)
 }
 
-async fn init_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
+pub async fn create_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
     let db_connection = init_sqlite_db(config).await?;
 
     let branch_repository = SqliteBranchRepository::new();
@@ -252,9 +252,16 @@ fn init_tracing(write_log_to_file: bool) {
 
 pub async fn create_app_with_config(config: AppConfig) -> anyhow::Result<Router> {
     init_tracing(config.write_log_to_file);
+    let app_state = create_app_state(&config).await?;
+    build_router(app_state)
+}
 
-    let app_state = init_app_state(&config).await?;
-
+/// Build the Axum router from an already-constructed `AppState`.
+///
+/// This is useful when the caller needs to retain a reference to `AppState`
+/// before handing the router to an HTTP server (e.g. the Android direct-call
+/// initialisation path that reuses `app_state` for `call()` dispatch).
+pub fn build_router(app_state: AppState) -> anyhow::Result<Router> {
     let cors = CorsLayer::new()
         .allow_origin(
             "http://localhost:5173"
