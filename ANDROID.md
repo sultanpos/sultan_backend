@@ -172,8 +172,13 @@ object SultanServer {
      * @param method  HTTP method: "GET", "POST", "PATCH", "PUT", "DELETE"
      * @param path    Full path, e.g. "/api/branch", "/api/product/123456789"
      * @param token   Raw Bearer token (without "Bearer " prefix). Pass "" for public endpoints.
-     * @param body    JSON request body as a string. Pass "" when no body is needed.
-     * @return        Raw JSON response body exactly as the HTTP server would produce it.
+     * @param body    JSON request body as a string.
+     *                Pass the real JSON for POST/PATCH/PUT endpoints that expect a body.
+     *                Pass "{}" as a safe default for endpoints that do not read the body.
+     *                Pass "" only for GET/DELETE or endpoints that never read the body.
+     * @return        JSON string: {"status": <http_status_code>, "body": <response_body>}
+     *                where `body` is the parsed JSON response (or a plain string when not JSON).
+     *                On internal errors before an HTTP response is produced, `status` is 0.
      */
     external fun call(method: String, path: String, token: String, body: String): String
 }
@@ -271,33 +276,42 @@ class MyApplication : Application() {
 
 **Making calls** (direct call mode):
 
+`call()` always returns a JSON envelope:
+```json
+{"status": 200, "body": { ... }}
+```
+Check `status` to distinguish success (`2xx`) from errors (`4xx`/`5xx`). A `status` of `0` means an internal error occurred before the request reached the router.
+
 ```kotlin
-// Login (no token needed)
+// Login (no token needed for public endpoints)
 val loginResp = SultanServer.call(
     "POST", "/api/auth", "",
     """{"username":"sultan","password":"sultan"}"""
 )
-// loginResp = {"access_token":"...","refresh_token":"..."}
+// loginResp = {"status": 200, "body": {"access_token":"...","refresh_token":"..."}}
 
-val token = parseToken(loginResp)  // extract from JSON
+val parsed = JSONObject(loginResp)
+if (parsed.getInt("status") == 200) {
+    val token = parsed.getJSONObject("body").getString("access_token")
 
-// Create a branch
-val createResp = SultanServer.call(
-    "POST", "/api/branch", token,
-    """{"name":"Main Branch","code":"MAIN","is_main":true}"""
-)
+    // Create a branch (POST body required)
+    val createResp = SultanServer.call(
+        "POST", "/api/branch", token,
+        """{"name":"Main Branch","code":"MAIN","is_main":true}"""
+    )
 
-// Get a branch by ID
-val getResp = SultanServer.call("GET", "/api/branch/123456789", token, "")
+    // Get a branch by ID (no body; pass "" for GET)
+    val getResp = SultanServer.call("GET", "/api/branch/123456789", token, "")
 
-// Update a branch
-val updateResp = SultanServer.call(
-    "PATCH", "/api/branch/123456789", token,
-    """{"name":"Updated Name"}"""
-)
+    // Update a branch (PATCH body required)
+    val updateResp = SultanServer.call(
+        "PATCH", "/api/branch/123456789", token,
+        """{"name":"Updated Name"}"""
+    )
 
-// Delete a branch
-val deleteResp = SultanServer.call("DELETE", "/api/branch/123456789", token, "")
+    // Delete a branch (no body; pass "" for DELETE)
+    val deleteResp = SultanServer.call("DELETE", "/api/branch/123456789", token, "")
+}
 ```
 
 Register the Application class in `AndroidManifest.xml`:
@@ -333,11 +347,11 @@ val request = Request.Builder()
 
 #### Direct Call Mode — in-process via `call()`
 
-No HTTP client needed. Call `SultanServer.call()` directly:
+No HTTP client needed. Call `SultanServer.call()` directly. The return value is always a JSON envelope `{"status": <code>, "body": ...}`:
 
 ```kotlin
 val resp = SultanServer.call("POST", "/api/auth", "", """{"username":"sultan","password":"sultan"}""")
-// Returns JSON string: {"access_token":"...","refresh_token":"..."}
+// Returns: {"status": 200, "body": {"access_token":"...","refresh_token":"..."}}
 
 ## Architecture Reference
 

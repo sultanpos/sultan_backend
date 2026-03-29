@@ -30,7 +30,7 @@ fn get_jstring(env: &mut JNIEnv, s: &JString) -> Option<String> {
 }
 
 fn make_error_string(env: &mut JNIEnv, msg: &str) -> jstring {
-    let json = serde_json::json!({ "error": msg }).to_string();
+    let json = serde_json::json!({"status": 0, "body": {"error": msg}}).to_string();
     env.new_string(json)
         .map(|s| s.into_raw())
         .unwrap_or(std::ptr::null_mut())
@@ -58,6 +58,7 @@ pub extern "C" fn Java_com_lekapin_sultan_SultanServer_start(
             .with_max_level(log::LevelFilter::Debug)
             .with_tag("sultan"),
     );
+    sultan::server::init_tracing(false);
 
     if STARTING
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -206,6 +207,7 @@ pub extern "C" fn Java_com_lekapin_sultan_SultanServer_init(
             .with_max_level(log::LevelFilter::Debug)
             .with_tag("sultan"),
     );
+    sultan::server::init_tracing(false);
 
     if STARTING
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -287,10 +289,15 @@ pub extern "C" fn Java_com_lekapin_sultan_SultanServer_init(
 /// - `method` — HTTP method: `"GET"`, `"POST"`, `"PATCH"`, `"PUT"`, `"DELETE"`
 /// - `path`   — Full API path, e.g. `"/api/branch"`, `"/api/product/123456789"`
 /// - `token`  — Raw Bearer token (without `"Bearer "` prefix). Pass `""` for public endpoints.
-/// - `body`   — JSON request body as a string. Pass `"{}"` when no body is needed.
+/// - `body`   — Request body as a JSON string.
+///   - For endpoints that expect a JSON body (POST/PATCH/PUT using Axum's `Json<T>` extractor),
+///     pass a valid JSON object, e.g. `"{\"name\":\"foo\"}"` or at minimum `"{}"`.
+///   - For endpoints with no body (GET, DELETE, or any route that does not read the body),
+///     pass `""` or `"{}"`.
 ///
-/// Returns the raw response body string exactly as the HTTP server would produce it.
-/// The HTTP status code is encoded in the body for errors (which already contain `{"error": "..."}`).
+/// Returns a JSON string with the shape `{"status": <http_status_code>, "body": <response_body>}`
+/// where `body` is the parsed JSON response, or a plain string when the response is not JSON.
+/// On internal errors (before an HTTP response is produced), `status` is `0`.
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_com_lekapin_sultan_SultanServer_call(
     mut env: JNIEnv,
@@ -323,12 +330,16 @@ pub extern "C" fn Java_com_lekapin_sultan_SultanServer_call(
         match lock.as_ref() {
             Some(app) => (app.rt.handle().clone(), app.router.clone()),
             None => {
-                return make_error_string(&mut env, "Sultan not initialised — call init() first");
+                let envelope = serde_json::json!({"status": 0, "body": {"error": "Sultan not initialised — call init() first"}});
+                return env
+                    .new_string(envelope.to_string())
+                    .map(|s| s.into_raw())
+                    .unwrap_or(std::ptr::null_mut());
             }
         }
     };
 
-    let response_body = rt_handle.block_on(async move {
+    let response_str = rt_handle.block_on(async move {
         let mut builder = Request::builder()
             .method(method.as_str())
             .uri(path.as_str())
@@ -340,23 +351,48 @@ pub extern "C" fn Java_com_lekapin_sultan_SultanServer_call(
 
         let request = match builder.body(Body::from(body_str)) {
             Ok(r) => r,
-            Err(e) => return format!("{{\"error\": \"failed to build request: {}\"}}", e),
+            Err(e) => {
+                return serde_json::json!({
+                    "status": 0,
+                    "body": {"error": format!("failed to build request: {}", e)}
+                })
+                .to_string();
+            }
         };
 
         let response = match router.oneshot(request).await {
             Ok(r) => r,
-            Err(e) => return format!("{{\"error\": \"internal error: {}\"}}", e),
+            Err(e) => {
+                return serde_json::json!({
+                    "status": 0,
+                    "body": {"error": format!("internal error: {}", e)}
+                })
+                .to_string();
+            }
         };
+
+        let status = response.status().as_u16();
 
         let bytes = match axum::body::to_bytes(response.into_body(), 10 * 1024 * 1024).await {
             Ok(b) => b,
-            Err(e) => return format!("{{\"error\": \"failed to read response: {}\"}}", e),
+            Err(e) => {
+                return serde_json::json!({
+                    "status": status,
+                    "body": {"error": format!("failed to read response: {}", e)}
+                })
+                .to_string();
+            }
         };
 
-        String::from_utf8_lossy(&bytes).into_owned()
+        // Embed the body as a parsed JSON value when possible; fall back to a plain string.
+        let body_value: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_else(|_| {
+            serde_json::Value::String(String::from_utf8_lossy(&bytes).into_owned())
+        });
+
+        serde_json::json!({"status": status, "body": body_value}).to_string()
     });
 
-    match env.new_string(response_body) {
+    match env.new_string(response_str) {
         Ok(s) => s.into_raw(),
         Err(_) => make_error_string(&mut env, "failed to create response string"),
     }

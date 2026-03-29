@@ -221,7 +221,7 @@ async fn handle_404() -> impl IntoResponse {
     )
 }
 
-fn init_tracing(write_log_to_file: bool) {
+pub fn init_tracing(write_log_to_file: bool) {
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| "clean_architecture=debug,tower_http=debug".into());
 
@@ -256,11 +256,11 @@ pub async fn create_app_with_config(config: AppConfig) -> anyhow::Result<Router>
     build_router(app_state)
 }
 
-/// Build the Axum router from an already-constructed `AppState`.
+/// Build the Axum router from an already-constructed [`AppState`].
 ///
-/// This is useful when the caller needs to retain a reference to `AppState`
-/// before handing the router to an HTTP server (e.g. the Android direct-call
-/// initialisation path that reuses `app_state` for `call()` dispatch).
+/// Consumes `app_state` — all services are moved into the router via
+/// `Router::with_state`. Use [`create_app_with_config`] when you do not need
+/// the app state or router as separate values.
 pub fn build_router(app_state: AppState) -> anyhow::Result<Router> {
     let cors = CorsLayer::new()
         .allow_origin(
