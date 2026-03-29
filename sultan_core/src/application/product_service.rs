@@ -1409,6 +1409,18 @@ mod tests {
         ) -> DomainResult<Option<SellDiscount>> {
             panic!("get_sell_discount_by_id not mocked")
         }
+
+        async fn search_variants(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            _query: &crate::domain::model::product::VariantSearchQuery,
+        ) -> DomainResult<
+            crate::domain::model::product::CursorPage<
+                crate::domain::model::product::ProductVariantRead,
+            >,
+        > {
+            panic!("search_variants not mocked")
+        }
     }
 
     fn create_test_ctx() -> Context {

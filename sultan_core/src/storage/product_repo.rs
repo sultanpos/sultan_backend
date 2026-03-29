@@ -5,7 +5,7 @@ use crate::domain::{
     DomainResult,
     model::product::{
         CursorPage, Product, ProductCreate, ProductQuery, ProductUpdate, ProductVariant,
-        ProductVariantCreate, ProductVariantUpdate,
+        ProductVariantCreate, ProductVariantRead, ProductVariantUpdate, VariantSearchQuery,
     },
     model::sell_price::{
         SellDiscount, SellDiscountCreate, SellDiscountUpdate, SellPrice, SellPriceCreate,
@@ -624,4 +624,26 @@ pub trait ProductRepository: Send + Sync {
         ctx: &super::RepoCtx<impl ConnectionTrait>,
         id: i64,
     ) -> DomainResult<Option<SellDiscount>>;
+
+    /// Searches product variants with cursor-based pagination and optional filters.
+    ///
+    /// Returns [`ProductVariantRead`] which includes the full parent [`Product`],
+    /// associated [`SellPrice`]s (with discounts), and the product's [`Category`]s.
+    ///
+    /// Results are ordered by `(sort_field, variant.id)` for stable cursor pagination.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx`   - Repository context with database connection
+    /// * `query` - Search options including filters, sort, cursor, and limit
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(CursorPage<ProductVariantRead>)` - Page of variant results with an optional next cursor
+    /// * `Err(Error)` - Database error
+    async fn search_variants(
+        &self,
+        ctx: &super::RepoCtx<impl ConnectionTrait>,
+        query: &VariantSearchQuery,
+    ) -> DomainResult<CursorPage<ProductVariantRead>>;
 }
