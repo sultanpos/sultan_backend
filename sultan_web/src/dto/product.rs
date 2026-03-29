@@ -773,6 +773,49 @@ impl SellPriceUpdateRequest {
     }
 }
 
+/// Response after creating a sell discount
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SellDiscountCreateResponse {
+    /// Sell discount ID
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "i64_to_string")]
+    pub id: i64,
+}
+
+/// Request to update a sell discount
+#[derive(Debug, Default, Deserialize, Validate, ToSchema)]
+#[serde(default)]
+pub struct SellDiscountUpdateRequest {
+    /// Minimum quantity for this discount (omit to leave unchanged)
+    #[schema(example = 10)]
+    #[validate(range(min = 1, message = "Quantity must be greater than 0"))]
+    pub quantity: Option<i64>,
+
+    /// Discount formula (omit to leave unchanged)
+    #[schema(example = "price * 0.9")]
+    #[validate(length(min = 1, message = "Discount formula cannot be empty"))]
+    pub discount_formula: Option<String>,
+
+    /// Customer level this discount applies to. Omit to leave unchanged, `null` to clear
+    #[schema(value_type = Option<i64>, example = 1)]
+    pub customer_level: Update<i64>,
+
+    /// Additional metadata. Omit to leave unchanged, `null` to clear
+    #[schema(value_type = Option<Value>)]
+    pub metadata: Update<Value>,
+}
+
+impl SellDiscountUpdateRequest {
+    pub fn to_domain(&self) -> sultan_core::domain::model::sell_price::SellDiscountUpdate {
+        sultan_core::domain::model::sell_price::SellDiscountUpdate {
+            quantity: self.quantity,
+            discount_formula: self.discount_formula.clone(),
+            customer_level: self.customer_level.clone(),
+            metadata: self.metadata.clone(),
+        }
+    }
+}
+
 /// Request to create stock for a product variant
 #[derive(Debug, Clone, Deserialize, Validate, ToSchema)]
 pub struct StockCreateRequest {

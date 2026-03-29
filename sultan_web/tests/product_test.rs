@@ -1125,3 +1125,293 @@ async fn test_delete_sell_price_service_error() {
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert!(response["error"].as_str().is_some());
 }
+
+// ============================================================================
+// POST /api/product/{id}/variant/{variant_id}/price/{price_id}/discount - Create Sell Discount Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_create_sell_discount_success() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let body = json!({
+        "price_id": "1",
+        "quantity": 10,
+        "discount_formula": "price * 0.9"
+    });
+
+    let (status, response) = make_request(
+        app,
+        "POST",
+        "/api/product/1/variant/1/price/1/discount",
+        Some(body),
+    )
+    .await
+    .expect("Request failed");
+
+    assert_eq!(status, StatusCode::CREATED);
+    assert!(response.get("id").is_some());
+    assert_eq!(response["id"].as_str().unwrap(), "1");
+}
+
+#[tokio::test]
+async fn test_create_sell_discount_service_error() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_failure()));
+
+    let app = build_test_router(app_state);
+
+    let body = json!({
+        "price_id": "1",
+        "quantity": 10,
+        "discount_formula": "price * 0.9"
+    });
+
+    let (status, response) = make_request(
+        app,
+        "POST",
+        "/api/product/1/variant/1/price/1/discount",
+        Some(body),
+    )
+    .await
+    .expect("Request failed");
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(response["error"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn test_create_sell_discount_invalid_quantity_zero() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let body = json!({
+        "price_id": "1",
+        "quantity": 0,
+        "discount_formula": "price * 0.9"
+    });
+
+    let (status, response) = make_request(
+        app,
+        "POST",
+        "/api/product/1/variant/1/price/1/discount",
+        Some(body),
+    )
+    .await
+    .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(response["error"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn test_create_sell_discount_invalid_empty_formula() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let body = json!({
+        "price_id": "1",
+        "quantity": 10,
+        "discount_formula": ""
+    });
+
+    let (status, response) = make_request(
+        app,
+        "POST",
+        "/api/product/1/variant/1/price/1/discount",
+        Some(body),
+    )
+    .await
+    .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(response["error"].as_str().is_some());
+}
+
+// ============================================================================
+// PATCH /api/product/{id}/variant/{variant_id}/price/{price_id}/discount/{discount_id} - Update Sell Discount Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_update_sell_discount_success() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let body = json!({
+        "quantity": 5,
+        "discount_formula": "price * 0.8"
+    });
+
+    let (status, response) = make_request(
+        app,
+        "PATCH",
+        "/api/product/1/variant/1/price/1/discount/1",
+        Some(body),
+    )
+    .await
+    .expect("Request failed");
+
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(response.is_null() || response.as_object().is_none_or(|o| o.is_empty()));
+}
+
+#[tokio::test]
+async fn test_update_sell_discount_not_found() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let body = json!({ "quantity": 5 });
+
+    let (status, response) = make_request(
+        app,
+        "PATCH",
+        "/api/product/1/variant/1/price/1/discount/9999",
+        Some(body),
+    )
+    .await
+    .expect("Request failed");
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(response["error"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn test_update_sell_discount_service_error() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_failure()));
+
+    let app = build_test_router(app_state);
+
+    let body = json!({ "quantity": 5 });
+
+    let (status, response) = make_request(
+        app,
+        "PATCH",
+        "/api/product/1/variant/1/price/1/discount/1",
+        Some(body),
+    )
+    .await
+    .expect("Request failed");
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(response["error"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn test_update_sell_discount_invalid_quantity_zero() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let body = json!({ "quantity": 0 });
+
+    let (status, response) = make_request(
+        app,
+        "PATCH",
+        "/api/product/1/variant/1/price/1/discount/1",
+        Some(body),
+    )
+    .await
+    .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(response["error"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn test_update_sell_discount_invalid_empty_formula() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let body = json!({ "discount_formula": "" });
+
+    let (status, response) = make_request(
+        app,
+        "PATCH",
+        "/api/product/1/variant/1/price/1/discount/1",
+        Some(body),
+    )
+    .await
+    .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(response["error"].as_str().is_some());
+}
+
+// ============================================================================
+// DELETE /api/product/{id}/variant/{variant_id}/price/{price_id}/discount/{discount_id} - Delete Sell Discount Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_delete_sell_discount_success() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(
+        app,
+        "DELETE",
+        "/api/product/1/variant/1/price/1/discount/1",
+        None,
+    )
+    .await
+    .expect("Request failed");
+
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(response.is_null() || response.as_object().is_none_or(|o| o.is_empty()));
+}
+
+#[tokio::test]
+async fn test_delete_sell_discount_not_found() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(
+        app,
+        "DELETE",
+        "/api/product/1/variant/1/price/1/discount/9999",
+        None,
+    )
+    .await
+    .expect("Request failed");
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(response["error"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn test_delete_sell_discount_service_error() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_failure()));
+
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(
+        app,
+        "DELETE",
+        "/api/product/1/variant/1/price/1/discount/1",
+        None,
+    )
+    .await
+    .expect("Request failed");
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(response["error"].as_str().is_some());
+}

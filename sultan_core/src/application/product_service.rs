@@ -34,6 +34,8 @@ use crate::domain::model::product::{
     CursorPage, Product, ProductQuery, ProductUpdate, ProductVariant, ProductVariantFullCreate,
     ProductVariantUpdate,
 };
+use crate::domain::model::sell_price::SellDiscountCreate;
+use crate::domain::model::sell_price::SellDiscountUpdate;
 use crate::domain::model::sell_price::SellPriceUpdate;
 use crate::snowflake::IdGenerator;
 use crate::storage::StockRepository;
@@ -276,6 +278,59 @@ pub trait ProductServiceTrait: Send + Sync {
     /// - `Forbidden` if the user lacks `product:delete` permission
     /// - `NotFound` if the sell price doesn't exist
     async fn delete_sell_price(&self, ctx: &Context, id: i64) -> DomainResult<()>;
+
+    /// Creates a new sell discount for a sell price.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - The request context containing user info and permissions
+    /// * `discount` - The discount data to create, including the `price_id` it belongs to
+    ///
+    /// # Returns
+    ///
+    /// The ID of the newly created sell discount.
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the user lacks `product:create` permission
+    /// - `DatabaseError` if the database operation fails
+    async fn create_sell_discount(
+        &self,
+        ctx: &Context,
+        discount: &SellDiscountCreate,
+    ) -> DomainResult<i64>;
+
+    /// Updates an existing sell discount.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - The request context containing user info and permissions
+    /// * `id` - The ID of the sell discount to update
+    /// * `discount` - The update data
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the user lacks `product:update` permission
+    /// - `NotFound` if the sell discount doesn't exist
+    async fn update_sell_discount(
+        &self,
+        ctx: &Context,
+        id: i64,
+        discount: &SellDiscountUpdate,
+    ) -> DomainResult<()>;
+
+    /// Soft deletes a sell discount.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - The request context containing user info and permissions
+    /// * `id` - The ID of the sell discount to delete
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the user lacks `product:delete` permission
+    /// - `NotFound` if the sell discount doesn't exist
+    async fn delete_sell_discount(&self, ctx: &Context, id: i64) -> DomainResult<()>;
 }
 
 /// Concrete implementation of the product service.
@@ -709,6 +764,55 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
 
         Ok(())
     }
+
+    async fn create_sell_discount(
+        &self,
+        ctx: &Context,
+        discount: &SellDiscountCreate,
+    ) -> DomainResult<i64> {
+        ctx.require_access(None, resource::PRODUCT, action::CREATE)?;
+
+        let repo_ctx = RepoCtx {
+            ctx: ctx.clone(),
+            db: self.db.clone(),
+        };
+
+        let id = self.id_generator.generate()?;
+        self.repository
+            .create_sell_discount(&repo_ctx, id, discount)
+            .await?;
+
+        Ok(id)
+    }
+
+    async fn update_sell_discount(
+        &self,
+        ctx: &Context,
+        id: i64,
+        discount: &SellDiscountUpdate,
+    ) -> DomainResult<()> {
+        ctx.require_access(None, resource::PRODUCT, action::UPDATE)?;
+
+        let repo_ctx = RepoCtx {
+            ctx: ctx.clone(),
+            db: self.db.clone(),
+        };
+
+        self.repository
+            .update_sell_discount(&repo_ctx, id, discount)
+            .await
+    }
+
+    async fn delete_sell_discount(&self, ctx: &Context, id: i64) -> DomainResult<()> {
+        ctx.require_access(None, resource::PRODUCT, action::DELETE)?;
+
+        let repo_ctx = RepoCtx {
+            ctx: ctx.clone(),
+            db: self.db.clone(),
+        };
+
+        self.repository.delete_sell_discount(&repo_ctx, id).await
+    }
 }
 
 #[cfg(test)]
@@ -769,6 +873,9 @@ mod tests {
             Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<()> + Send>>>>,
         create_sell_discount_fn:
             Arc<Mutex<Option<Box<dyn Fn(i64, SellDiscountCreate) -> DomainResult<()> + Send>>>>,
+        update_sell_discount_fn:
+            Arc<Mutex<Option<Box<dyn Fn(i64, SellDiscountUpdate) -> DomainResult<()> + Send>>>>,
+        delete_sell_discount_fn: Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<()> + Send>>>>,
         delete_sell_prices_by_product_variant_ids_fn:
             Arc<Mutex<Option<Box<dyn Fn(Vec<i64>) -> DomainResult<()> + Send>>>>,
     }
@@ -795,6 +902,8 @@ mod tests {
                 delete_sell_price_fn: Arc::new(Mutex::new(None)),
                 delete_sell_discounts_by_sell_price_id_fn: Arc::new(Mutex::new(None)),
                 create_sell_discount_fn: Arc::new(Mutex::new(None)),
+                update_sell_discount_fn: Arc::new(Mutex::new(None)),
+                delete_sell_discount_fn: Arc::new(Mutex::new(None)),
                 delete_sell_prices_by_product_variant_ids_fn: Arc::new(Mutex::new(None)),
             }
         }
@@ -940,6 +1049,22 @@ mod tests {
             F: Fn(i64, SellDiscountCreate) -> DomainResult<()> + Send + 'static,
         {
             *self.create_sell_discount_fn.lock().unwrap() = Some(Box::new(f));
+        }
+
+        #[allow(dead_code)]
+        fn expect_update_sell_discount<F>(&mut self, f: F)
+        where
+            F: Fn(i64, SellDiscountUpdate) -> DomainResult<()> + Send + 'static,
+        {
+            *self.update_sell_discount_fn.lock().unwrap() = Some(Box::new(f));
+        }
+
+        #[allow(dead_code)]
+        fn expect_delete_sell_discount<F>(&mut self, f: F)
+        where
+            F: Fn(i64) -> DomainResult<()> + Send + 'static,
+        {
+            *self.delete_sell_discount_fn.lock().unwrap() = Some(Box::new(f));
         }
 
         fn expect_delete_sell_prices_by_product_variant_ids<F>(&mut self, f: F)
@@ -1233,17 +1358,27 @@ mod tests {
         async fn update_sell_discount(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
-            _id: i64,
-            _discount: &SellDiscountUpdate,
+            id: i64,
+            discount: &SellDiscountUpdate,
         ) -> DomainResult<()> {
-            panic!("update_sell_discount not mocked")
+            let lock = self.update_sell_discount_fn.lock().unwrap();
+            if let Some(f) = lock.as_ref() {
+                f(id, discount.clone())
+            } else {
+                panic!("update_sell_discount not mocked")
+            }
         }
         async fn delete_sell_discount(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
-            _id: i64,
+            id: i64,
         ) -> DomainResult<()> {
-            panic!("delete_sell_discount not mocked")
+            let lock = self.delete_sell_discount_fn.lock().unwrap();
+            if let Some(f) = lock.as_ref() {
+                f(id)
+            } else {
+                panic!("delete_sell_discount not mocked")
+            }
         }
         async fn delete_sell_discounts_by_sell_price_id(
             &self,
@@ -2278,6 +2413,180 @@ mod tests {
         let ctx = Context::new(); // No permissions
 
         let result = service.delete_sell_price(&ctx, 1).await;
+        assert!(matches!(result, Err(Error::Forbidden(_))));
+    }
+
+    #[tokio::test]
+    async fn test_create_sell_discount_success() {
+        let mut mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+        let id_gen = create_mock_id_gen(99);
+        let db = create_test_db().await;
+
+        mock_repo.expect_create_sell_discount(|id, discount| {
+            assert_eq!(id, 99);
+            assert_eq!(discount.price_id, 42);
+            Ok(())
+        });
+
+        let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
+        let ctx = create_test_ctx();
+
+        let discount = SellDiscountCreate {
+            price_id: 42,
+            quantity: 1,
+            discount_formula: "10%".to_string(),
+            customer_level: None,
+            metadata: None,
+        };
+
+        let result = service.create_sell_discount(&ctx, &discount).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 99);
+    }
+
+    #[tokio::test]
+    async fn test_create_sell_discount_forbidden() {
+        let mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+        let id_gen = create_mock_id_gen(1);
+        let db = create_test_db().await;
+
+        let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
+        let ctx = Context::new(); // No permissions
+
+        let discount = SellDiscountCreate {
+            price_id: 42,
+            quantity: 1,
+            discount_formula: "10%".to_string(),
+            customer_level: None,
+            metadata: None,
+        };
+
+        let result = service.create_sell_discount(&ctx, &discount).await;
+        assert!(matches!(result, Err(Error::Forbidden(_))));
+    }
+
+    #[tokio::test]
+    async fn test_update_sell_discount_success() {
+        let mut mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+        let id_gen = create_mock_id_gen(1);
+        let db = create_test_db().await;
+
+        mock_repo.expect_update_sell_discount(|id, _| {
+            assert_eq!(id, 55);
+            Ok(())
+        });
+
+        let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
+        let ctx = create_test_ctx();
+
+        let update = SellDiscountUpdate {
+            quantity: Some(5),
+            discount_formula: Some("20%".to_string()),
+            customer_level: Update::Unchanged,
+            metadata: Update::Unchanged,
+        };
+
+        let result = service.update_sell_discount(&ctx, 55, &update).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_update_sell_discount_not_found() {
+        let mut mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+        let id_gen = create_mock_id_gen(1);
+        let db = create_test_db().await;
+
+        mock_repo.expect_update_sell_discount(|_, _| {
+            Err(Error::NotFound("SellDiscount with id 999 not found".into()))
+        });
+
+        let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
+        let ctx = create_test_ctx();
+
+        let update = SellDiscountUpdate {
+            quantity: Some(1),
+            discount_formula: None,
+            customer_level: Update::Unchanged,
+            metadata: Update::Unchanged,
+        };
+
+        let result = service.update_sell_discount(&ctx, 999, &update).await;
+        assert!(matches!(result, Err(Error::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_update_sell_discount_forbidden() {
+        let mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+        let id_gen = create_mock_id_gen(1);
+        let db = create_test_db().await;
+
+        let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
+        let ctx = Context::new(); // No permissions
+
+        let update = SellDiscountUpdate {
+            quantity: Some(1),
+            discount_formula: None,
+            customer_level: Update::Unchanged,
+            metadata: Update::Unchanged,
+        };
+
+        let result = service.update_sell_discount(&ctx, 1, &update).await;
+        assert!(matches!(result, Err(Error::Forbidden(_))));
+    }
+
+    #[tokio::test]
+    async fn test_delete_sell_discount_success() {
+        let mut mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+        let id_gen = create_mock_id_gen(1);
+        let db = create_test_db().await;
+
+        mock_repo.expect_delete_sell_discount(|id| {
+            assert_eq!(id, 77);
+            Ok(())
+        });
+
+        let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
+        let ctx = create_test_ctx();
+
+        let result = service.delete_sell_discount(&ctx, 77).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_delete_sell_discount_not_found() {
+        let mut mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+        let id_gen = create_mock_id_gen(1);
+        let db = create_test_db().await;
+
+        mock_repo.expect_delete_sell_discount(|_| {
+            Err(Error::NotFound("SellDiscount with id 999 not found".into()))
+        });
+
+        let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
+        let ctx = create_test_ctx();
+
+        let result = service.delete_sell_discount(&ctx, 999).await;
+        assert!(matches!(result, Err(Error::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_delete_sell_discount_forbidden() {
+        let mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+        let id_gen = create_mock_id_gen(1);
+        let db = create_test_db().await;
+
+        let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
+        let ctx = Context::new(); // No permissions
+
+        let result = service.delete_sell_discount(&ctx, 1).await;
         assert!(matches!(result, Err(Error::Forbidden(_))));
     }
 }
