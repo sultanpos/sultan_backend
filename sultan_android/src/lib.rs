@@ -1,33 +1,49 @@
+mod app_state;
+
+use app_state::{APP, App, Mode, STARTING};
+use axum::body::Body;
+use axum::http::Request;
 use jni::JNIEnv;
 use jni::objects::{JClass, JString};
-use jni::sys::{JNI_FALSE, JNI_TRUE, jboolean, jint};
-use once_cell::sync::Lazy;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use jni::sys::{JNI_FALSE, JNI_TRUE, jboolean, jint, jstring};
+use std::sync::atomic::Ordering;
 use sultan::config::AppConfig;
+use tower::ServiceExt;
 
-/// Global tokio runtime for the server.
-static RUNTIME: Lazy<Mutex<Option<tokio::runtime::Runtime>>> = Lazy::new(|| Mutex::new(None));
+// ============================================================================
+// Shared helpers
+// ============================================================================
 
-/// Global shutdown sender to signal the server to stop.
-static SHUTDOWN_TX: Lazy<Mutex<Option<tokio::sync::oneshot::Sender<()>>>> =
-    Lazy::new(|| Mutex::new(None));
+fn make_config(db_path: String, jwt_secret: String) -> AppConfig {
+    AppConfig {
+        database_url: format!("sqlite://{}", db_path),
+        jwt_secret,
+        write_log_to_file: false,
+        access_token_ttl: time::Duration::seconds(900),
+        refresh_token_ttl: time::Duration::days(365),
+        database_max_connections: 5,
+    }
+}
 
-/// Guard flag set to `true` while start() is in progress.
-/// Prevents two concurrent start() calls from both passing the "already running"
-/// check before RUNTIME is populated.
-static STARTING: AtomicBool = AtomicBool::new(false);
+fn get_jstring(env: &mut JNIEnv, s: &JString) -> Option<String> {
+    env.get_string(s).ok().map(|s| s.into())
+}
+
+fn make_error_string(env: &mut JNIEnv, msg: &str) -> jstring {
+    let json = serde_json::json!({"status": 0, "body": {"error": msg}}).to_string();
+    env.new_string(json)
+        .map(|s| s.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
+// ============================================================================
+// Server Mode — start / stop / isRunning
+// ============================================================================
 
 /// JNI: com.lekapin.sultan.SultanServer.start(dbPath, jwtSecret, port)
 ///
-/// Starts the Sultan server in a background Tokio runtime.
-///
-/// Parameters:
-///   db_path   - Absolute path to the SQLite database file (e.g. /data/data/com.myapp/files/sultan.db)
-///   jwt_secret - Secret key for JWT signing
-///   port      - TCP port to listen on (e.g. 8721)
-///
-/// Returns true on success, false on failure.
+/// Starts the Sultan REST API server in a background Tokio runtime.
+/// Returns `true` on success, `false` if already running or an error occurs.
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_com_lekapin_sultan_SultanServer_start(
     mut env: JNIEnv,
@@ -36,17 +52,14 @@ pub extern "C" fn Java_com_lekapin_sultan_SultanServer_start(
     jwt_secret: JString,
     port: jint,
 ) -> jboolean {
-    // Init Android logger (safe to call multiple times)
     #[cfg(target_os = "android")]
     android_logger::init_once(
         android_logger::Config::default()
             .with_max_level(log::LevelFilter::Debug)
             .with_tag("sultan"),
     );
+    sultan::server::init_tracing(false);
 
-    // Atomically claim the "starting" slot. If another thread is already inside
-    // start() (STARTING == true) or has just set RUNTIME, we bail out immediately.
-    // This ensures no two callers can both pass the RUNTIME check before it is set.
     if STARTING
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
@@ -55,57 +68,36 @@ pub extern "C" fn Java_com_lekapin_sultan_SultanServer_start(
         return JNI_FALSE;
     }
 
-    // Secondary check: RUNTIME may already be Some if a previous start completed
-    // just before we claimed STARTING (stop() clears RUNTIME but also lets
-    // STARTING fall back to false, so this path covers rapid stop+start races).
     {
-        let rt_lock = RUNTIME.lock().unwrap_or_else(|e| e.into_inner());
-        if rt_lock.is_some() {
+        let lock = APP.lock().unwrap_or_else(|e| e.into_inner());
+        if lock.is_some() {
             STARTING.store(false, Ordering::SeqCst);
             log::warn!("Sultan server is already running");
             return JNI_FALSE;
         }
     }
 
-    // Extract Java strings
-    let db_path: String = match env.get_string(&db_path) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get db_path: {:?}", e);
+    let db_path = match get_jstring(&mut env, &db_path) {
+        Some(s) => s,
+        None => {
+            log::error!("Failed to get db_path");
+            STARTING.store(false, Ordering::SeqCst);
             return JNI_FALSE;
         }
     };
-
-    let jwt_secret: String = match env.get_string(&jwt_secret) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get jwt_secret: {:?}", e);
+    let jwt_secret = match get_jstring(&mut env, &jwt_secret) {
+        Some(s) => s,
+        None => {
+            log::error!("Failed to get jwt_secret");
+            STARTING.store(false, Ordering::SeqCst);
             return JNI_FALSE;
         }
     };
-
     let port = port as u16;
+    let config = make_config(db_path, jwt_secret);
 
-    // Build config directly — no env var mutation needed.
-    let config = AppConfig {
-        database_url: format!("sqlite://{}", db_path),
-        jwt_secret,
-        write_log_to_file: false,
-        access_token_ttl: time::Duration::seconds(900),
-        refresh_token_ttl: time::Duration::days(365),
-        database_max_connections: 5,
-    };
-
-    // Create shutdown channel
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
-    // Store shutdown sender
-    {
-        let mut tx_lock = SHUTDOWN_TX.lock().unwrap_or_else(|e| e.into_inner());
-        *tx_lock = Some(shutdown_tx);
-    }
-
-    // Build and start the tokio runtime
     let rt = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -113,103 +105,295 @@ pub extern "C" fn Java_com_lekapin_sultan_SultanServer_start(
         Ok(rt) => rt,
         Err(e) => {
             log::error!("Failed to create tokio runtime: {:?}", e);
+            STARTING.store(false, Ordering::SeqCst);
             return JNI_FALSE;
         }
     };
 
-    let started = rt.block_on(async move {
-        match sultan::server::create_app_with_config(config).await {
-            Ok(app) => {
-                let addr = format!("0.0.0.0:{}", port);
-                match tokio::net::TcpListener::bind(&addr).await {
-                    Ok(listener) => {
-                        match listener.local_addr() {
-                            Ok(actual_addr) => {
-                                log::info!("Sultan server listening on {}", actual_addr)
-                            }
-                            Err(e) => log::warn!(
-                                "Sultan server started but could not get local addr: {:?}",
-                                e
-                            ),
-                        };
-                        // Spawn server in background task
-                        tokio::spawn(async move {
-                            if let Err(e) = axum::serve(listener, app)
-                                .with_graceful_shutdown(async {
-                                    shutdown_rx.await.ok();
-                                    log::info!("Sultan server shutting down");
-                                })
-                                .await
-                            {
-                                log::error!("Sultan server stopped with error: {:?}", e);
-                            } else {
-                                log::info!("Sultan server stopped cleanly");
-                            }
-                        });
-                        true
-                    }
-                    Err(e) => {
-                        log::error!("Failed to bind to {}: {:?}", addr, e);
-                        false
-                    }
-                }
-            }
-            Err(e) => {
-                log::error!("Failed to create app: {:?}", e);
-                false
-            }
+    let result = rt.block_on(async move {
+        let app_state = sultan::server::create_app_state(&config).await?;
+        let router = sultan::server::build_router(app_state)?;
+        let addr = format!("0.0.0.0:{}", port);
+        let listener = tokio::net::TcpListener::bind(&addr).await?;
+        if let Ok(actual_addr) = listener.local_addr() {
+            log::info!("Sultan server listening on {}", actual_addr);
         }
+        let serve_router = router.clone();
+        tokio::spawn(async move {
+            if let Err(e) = axum::serve(listener, serve_router)
+                .with_graceful_shutdown(async {
+                    shutdown_rx.await.ok();
+                    log::info!("Sultan server shutting down");
+                })
+                .await
+            {
+                log::error!("Sultan server stopped with error: {:?}", e);
+            }
+        });
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(router)
     });
 
-    if started {
-        let mut rt_lock = RUNTIME.lock().unwrap_or_else(|e| e.into_inner());
-        *rt_lock = Some(rt);
-        // Release the starting guard only after RUNTIME is populated so that any
-        // concurrent start() caller that lost the compare_exchange sees a consistent
-        // state when it retries (it will find RUNTIME is Some).
-        STARTING.store(false, Ordering::SeqCst);
-        log::info!("Sultan server started on port {}", port);
-        JNI_TRUE
-    } else {
-        // Also release the guard on failure so a future start() attempt is possible.
-        STARTING.store(false, Ordering::SeqCst);
-        JNI_FALSE
+    match result {
+        Ok(router) => {
+            let mut lock = APP.lock().unwrap_or_else(|e| e.into_inner());
+            *lock = Some(App {
+                rt,
+                router,
+                mode: Mode::Server { shutdown_tx },
+            });
+            STARTING.store(false, Ordering::SeqCst);
+            log::info!("Sultan server started on port {}", port);
+            JNI_TRUE
+        }
+        Err(e) => {
+            log::error!("Failed to start Sultan server: {:?}", e);
+            STARTING.store(false, Ordering::SeqCst);
+            JNI_FALSE
+        }
     }
 }
 
 /// JNI: com.lekapin.sultan.SultanServer.stop()
 ///
-/// Gracefully stops the Sultan server.
+/// Gracefully stops the server and shuts down the runtime.
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_com_lekapin_sultan_SultanServer_stop(_env: JNIEnv, _class: JClass) {
-    // Send shutdown signal
-    {
-        let mut tx_lock = SHUTDOWN_TX.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(tx) = tx_lock.take() {
-            let _ = tx.send(());
+    let mut lock = APP.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(app) = lock.take() {
+        if let Mode::Server { shutdown_tx } = app.mode {
+            let _ = shutdown_tx.send(());
         }
-    }
-
-    // Shut down the runtime
-    let mut rt_lock = RUNTIME.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(rt) = rt_lock.take() {
-        rt.shutdown_background();
+        app.rt.shutdown_background();
         log::info!("Sultan server stopped");
     }
 }
 
 /// JNI: com.lekapin.sultan.SultanServer.isRunning()
 ///
-/// Returns true if the server is currently running.
+/// Returns `true` if the server is currently running in server mode.
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_com_lekapin_sultan_SultanServer_isRunning(
     _env: JNIEnv,
     _class: JClass,
 ) -> jboolean {
-    let rt_lock = RUNTIME.lock().unwrap_or_else(|e| e.into_inner());
-    if rt_lock.is_some() {
+    let lock = APP.lock().unwrap_or_else(|e| e.into_inner());
+    if matches!(lock.as_ref().map(|a| &a.mode), Some(Mode::Server { .. })) {
         JNI_TRUE
     } else {
         JNI_FALSE
+    }
+}
+
+// ============================================================================
+// Direct Call Mode — init / call
+// ============================================================================
+
+/// JNI: com.lekapin.sultan.SultanServer.init(dbPath, jwtSecret)
+///
+/// Initialises Sultan in **direct call mode** — no TCP server is started.
+/// After this succeeds, use `call()` to invoke endpoints directly in-process.
+///
+/// Returns `true` on success, `false` if already initialised or an error occurs.
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_lekapin_sultan_SultanServer_init(
+    mut env: JNIEnv,
+    _class: JClass,
+    db_path: JString,
+    jwt_secret: JString,
+) -> jboolean {
+    #[cfg(target_os = "android")]
+    android_logger::init_once(
+        android_logger::Config::default()
+            .with_max_level(log::LevelFilter::Debug)
+            .with_tag("sultan"),
+    );
+    sultan::server::init_tracing(false);
+
+    if STARTING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        log::warn!("Sultan already initialising");
+        return JNI_FALSE;
+    }
+
+    {
+        let lock = APP.lock().unwrap_or_else(|e| e.into_inner());
+        if lock.is_some() {
+            STARTING.store(false, Ordering::SeqCst);
+            log::warn!("Sultan already initialised");
+            return JNI_FALSE;
+        }
+    }
+
+    let db_path = match get_jstring(&mut env, &db_path) {
+        Some(s) => s,
+        None => {
+            log::error!("Failed to get db_path");
+            STARTING.store(false, Ordering::SeqCst);
+            return JNI_FALSE;
+        }
+    };
+    let jwt_secret = match get_jstring(&mut env, &jwt_secret) {
+        Some(s) => s,
+        None => {
+            log::error!("Failed to get jwt_secret");
+            STARTING.store(false, Ordering::SeqCst);
+            return JNI_FALSE;
+        }
+    };
+    let config = make_config(db_path, jwt_secret);
+
+    let rt = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            log::error!("Failed to create tokio runtime: {:?}", e);
+            STARTING.store(false, Ordering::SeqCst);
+            return JNI_FALSE;
+        }
+    };
+
+    let result = rt.block_on(async move {
+        let app_state = sultan::server::create_app_state(&config).await?;
+        sultan::server::build_router(app_state)
+    });
+
+    match result {
+        Ok(router) => {
+            let mut lock = APP.lock().unwrap_or_else(|e| e.into_inner());
+            *lock = Some(App {
+                rt,
+                router,
+                mode: Mode::Direct,
+            });
+            STARTING.store(false, Ordering::SeqCst);
+            log::info!("Sultan initialised in direct call mode");
+            JNI_TRUE
+        }
+        Err(e) => {
+            log::error!("Failed to init Sultan: {:?}", e);
+            STARTING.store(false, Ordering::SeqCst);
+            JNI_FALSE
+        }
+    }
+}
+
+/// JNI: com.lekapin.sultan.SultanServer.call(method, path, token, body)
+///
+/// Calls a Sultan endpoint directly in-process — identical code path to HTTP.
+///
+/// Parameters:
+/// - `method` — HTTP method: `"GET"`, `"POST"`, `"PATCH"`, `"PUT"`, `"DELETE"`
+/// - `path`   — Full API path, e.g. `"/api/branch"`, `"/api/product/123456789"`
+/// - `token`  — Raw Bearer token (without `"Bearer "` prefix). Pass `""` for public endpoints.
+/// - `body`   — Request body as a JSON string.
+///   - For endpoints that expect a JSON body (POST/PATCH/PUT using Axum's `Json<T>` extractor),
+///     pass a valid JSON object, e.g. `"{\"name\":\"foo\"}"` or at minimum `"{}"`.
+///   - For endpoints with no body (GET, DELETE, or any route that does not read the body),
+///     pass `""` or `"{}"`.
+///
+/// Returns a JSON string with the shape `{"status": <http_status_code>, "body": <response_body>}`
+/// where `body` is the parsed JSON response, or a plain string when the response is not JSON.
+/// On internal errors (before an HTTP response is produced), `status` is `0`.
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_lekapin_sultan_SultanServer_call(
+    mut env: JNIEnv,
+    _class: JClass,
+    method: JString,
+    path: JString,
+    token: JString,
+    body: JString,
+) -> jstring {
+    let method = match get_jstring(&mut env, &method) {
+        Some(s) => s,
+        None => return make_error_string(&mut env, "invalid method parameter"),
+    };
+    let path = match get_jstring(&mut env, &path) {
+        Some(s) => s,
+        None => return make_error_string(&mut env, "invalid path parameter"),
+    };
+    let token = match get_jstring(&mut env, &token) {
+        Some(s) => s,
+        None => return make_error_string(&mut env, "invalid token parameter"),
+    };
+    let body_str = match get_jstring(&mut env, &body) {
+        Some(s) => s,
+        None => return make_error_string(&mut env, "invalid body parameter"),
+    };
+
+    // Clone the router + rt handle before releasing the lock.
+    let (rt_handle, router) = {
+        let lock = APP.lock().unwrap_or_else(|e| e.into_inner());
+        match lock.as_ref() {
+            Some(app) => (app.rt.handle().clone(), app.router.clone()),
+            None => {
+                let envelope = serde_json::json!({"status": 0, "body": {"error": "Sultan not initialised — call init() first"}});
+                return env
+                    .new_string(envelope.to_string())
+                    .map(|s| s.into_raw())
+                    .unwrap_or(std::ptr::null_mut());
+            }
+        }
+    };
+
+    let response_str = rt_handle.block_on(async move {
+        let mut builder = Request::builder()
+            .method(method.as_str())
+            .uri(path.as_str())
+            .header("content-type", "application/json");
+
+        if !token.is_empty() {
+            builder = builder.header("authorization", format!("Bearer {}", token));
+        }
+
+        let request = match builder.body(Body::from(body_str)) {
+            Ok(r) => r,
+            Err(e) => {
+                return serde_json::json!({
+                    "status": 0,
+                    "body": {"error": format!("failed to build request: {}", e)}
+                })
+                .to_string();
+            }
+        };
+
+        let response = match router.oneshot(request).await {
+            Ok(r) => r,
+            Err(e) => {
+                return serde_json::json!({
+                    "status": 0,
+                    "body": {"error": format!("internal error: {}", e)}
+                })
+                .to_string();
+            }
+        };
+
+        let status = response.status().as_u16();
+
+        let bytes = match axum::body::to_bytes(response.into_body(), 10 * 1024 * 1024).await {
+            Ok(b) => b,
+            Err(e) => {
+                return serde_json::json!({
+                    "status": status,
+                    "body": {"error": format!("failed to read response: {}", e)}
+                })
+                .to_string();
+            }
+        };
+
+        // Embed the body as a parsed JSON value when possible; fall back to a plain string.
+        let body_value: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_else(|_| {
+            serde_json::Value::String(String::from_utf8_lossy(&bytes).into_owned())
+        });
+
+        serde_json::json!({"status": status, "body": body_value}).to_string()
+    });
+
+    match env.new_string(response_str) {
+        Ok(s) => s.into_raw(),
+        Err(_) => make_error_string(&mut env, "failed to create response string"),
     }
 }

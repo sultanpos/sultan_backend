@@ -2754,10 +2754,11 @@ dependencies = [
  "jni",
  "log",
  "once_cell",
+ "serde_json",
  "sultan",
- "sultan_core",
  "time",
  "tokio",
+ "tower",
 ]
 
 [[package]]
