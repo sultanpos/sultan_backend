@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
 
 use crate::{
-    application::NumberServiceTrait,
+    application::{NumberServiceTrait, ServiceDbHelper},
     domain::{
         Context, DomainResult,
         model::{
@@ -14,7 +14,7 @@ use crate::{
         },
     },
     snowflake::IdGenerator,
-    storage::{CustomerRepository, RepoCtx},
+    storage::CustomerRepository,
 };
 
 #[async_trait]
@@ -59,6 +59,16 @@ where
     }
 }
 
+impl<R, I> ServiceDbHelper for CustomerService<R, I>
+where
+    R: CustomerRepository,
+    I: IdGenerator,
+{
+    fn database(&self) -> &DatabaseConnection {
+        &self.db
+    }
+}
+
 #[async_trait]
 impl<R, I> CustomerServiceTrait for CustomerService<R, I>
 where
@@ -73,10 +83,7 @@ where
             let generated_number = self.number_service.generate(ctx, "CUS", None, None).await?;
             customer_with_number.number = generated_number;
         }
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repository
             .create(&repo_ctx, id, &customer_with_number)
             .await?;
@@ -85,37 +92,25 @@ where
 
     async fn update(&self, ctx: &Context, id: i64, customer: &CustomerUpdate) -> DomainResult<()> {
         ctx.require_access(None, resource::CUSTOMER, action::UPDATE)?;
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repository.update(&repo_ctx, id, customer).await
     }
 
     async fn delete(&self, ctx: &Context, id: i64) -> DomainResult<()> {
         ctx.require_access(None, resource::CUSTOMER, action::DELETE)?;
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repository.delete(&repo_ctx, id).await
     }
 
     async fn get_by_number(&self, ctx: &Context, number: &str) -> DomainResult<Option<Customer>> {
         ctx.require_access(None, resource::CUSTOMER, action::READ)?;
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repository.get_by_number(&repo_ctx, number).await
     }
 
     async fn get_by_id(&self, ctx: &Context, id: i64) -> DomainResult<Option<Customer>> {
         ctx.require_access(None, resource::CUSTOMER, action::READ)?;
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repository.get_by_id(&repo_ctx, id).await
     }
 
@@ -126,10 +121,7 @@ where
         pagination: &PaginationOptions,
     ) -> DomainResult<Vec<Customer>> {
         ctx.require_access(None, resource::CUSTOMER, action::READ)?;
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repository.get_all(&repo_ctx, filter, pagination).await
     }
 }

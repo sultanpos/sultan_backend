@@ -3,8 +3,9 @@ use chrono::Datelike;
 use sea_orm::DatabaseConnection;
 
 use crate::{
+    application::ServiceDbHelper,
     domain::{Context, DomainResult, Error, model::number::NumberGenerateParams},
-    storage::{BranchRepository, NumberRepository, RepoCtx},
+    storage::{BranchRepository, NumberRepository},
 };
 
 /// Service trait for number generation
@@ -53,7 +54,6 @@ where
             db,
         }
     }
-
     /// Format the number according to specification
     fn format_number(
         branch_code: Option<String>,
@@ -75,6 +75,16 @@ where
         } else {
             format!("{}-{}{}", prefix, year_suffix, number_part)
         }
+    }
+}
+
+impl<R, B> ServiceDbHelper for NumberService<R, B>
+where
+    R: NumberRepository,
+    B: BranchRepository,
+{
+    fn database(&self) -> &DatabaseConnection {
+        &self.db
     }
 }
 
@@ -103,10 +113,7 @@ where
 
         // Get branch code if branch_id is provided
         let branch_code = if let Some(bid) = branch_id {
-            let repo_ctx = RepoCtx {
-                ctx: ctx.clone(),
-                db: self.db.clone(),
-            };
+            let repo_ctx = self.repo_ctx(ctx);
             let branch = self
                 .branch_repository
                 .get_by_id(&repo_ctx, bid)
@@ -130,10 +137,7 @@ where
         };
 
         // Generate next number atomically
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         let next_number = self.repository.generate_next(&repo_ctx, &params).await?;
 
         // Format and return the number string
@@ -152,6 +156,7 @@ where
 mod tests {
     use super::*;
     use crate::domain::model::branch::Branch;
+    use crate::storage::RepoCtx;
     use async_trait::async_trait;
     use chrono::Utc;
     use sea_orm::{ConnectionTrait, Database};

@@ -1,13 +1,14 @@
 use async_trait::async_trait;
-use sea_orm::{DatabaseConnection, TransactionTrait};
+use sea_orm::DatabaseConnection;
 
+use crate::application::ServiceDbHelper;
 use crate::domain::Context;
 use crate::domain::DomainResult;
 use crate::domain::model::branch::{Branch, BranchCreate, BranchUpdate};
 use crate::domain::model::permission::action;
 use crate::domain::model::permission::resource;
 use crate::snowflake::IdGenerator;
-use crate::storage::{BranchRepository, RepoCtx};
+use crate::storage::BranchRepository;
 
 #[async_trait]
 pub trait BranchServiceTrait: Send + Sync {
@@ -34,6 +35,12 @@ impl<R: BranchRepository, I: IdGenerator> BranchService<R, I> {
     }
 }
 
+impl<R: BranchRepository, I: IdGenerator> ServiceDbHelper for BranchService<R, I> {
+    fn database(&self) -> &DatabaseConnection {
+        &self.db
+    }
+}
+
 #[async_trait]
 impl<R: BranchRepository, I: IdGenerator> BranchServiceTrait for BranchService<R, I> {
     async fn create(&self, ctx: &Context, branch: &BranchCreate) -> DomainResult<i64> {
@@ -41,10 +48,7 @@ impl<R: BranchRepository, I: IdGenerator> BranchServiceTrait for BranchService<R
         let id = self.id_generator.generate()?;
 
         // Use transaction to ensure atomicity
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.begin().await?,
-        };
+        let repo_ctx = self.txn_repo_ctx(ctx).await?;
 
         // If this branch is being set as main, unset all other branches first
         if branch.is_main {
@@ -65,10 +69,7 @@ impl<R: BranchRepository, I: IdGenerator> BranchServiceTrait for BranchService<R
         ctx.require_access(None, resource::BRANCH, action::UPDATE)?;
 
         // Use transaction to ensure atomicity
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.begin().await?,
-        };
+        let repo_ctx = self.txn_repo_ctx(ctx).await?;
 
         // If this branch is being set as main, unset all other branches first
         if let Some(true) = branch.is_main {
@@ -87,28 +88,19 @@ impl<R: BranchRepository, I: IdGenerator> BranchServiceTrait for BranchService<R
 
     async fn delete(&self, ctx: &Context, id: i64) -> DomainResult<()> {
         ctx.require_access(None, resource::BRANCH, action::DELETE)?;
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repository.delete(&repo_ctx, id).await
     }
 
     async fn get_by_id(&self, ctx: &Context, id: i64) -> DomainResult<Option<Branch>> {
         ctx.require_access(None, resource::BRANCH, action::READ)?;
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repository.get_by_id(&repo_ctx, id).await
     }
 
     async fn get_all(&self, ctx: &Context) -> DomainResult<Vec<Branch>> {
         ctx.require_access(None, resource::BRANCH, action::READ)?;
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repository.get_all(&repo_ctx).await
     }
 }

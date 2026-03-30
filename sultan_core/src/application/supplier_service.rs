@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
 
 use crate::{
+    application::ServiceDbHelper,
     domain::{
         Context, DomainResult,
         model::{
@@ -11,7 +12,7 @@ use crate::{
         },
     },
     snowflake::IdGenerator,
-    storage::{RepoCtx, SupplierRepository},
+    storage::SupplierRepository,
 };
 
 #[async_trait]
@@ -48,6 +49,16 @@ where
     }
 }
 
+impl<R, I> ServiceDbHelper for SupplierService<R, I>
+where
+    R: SupplierRepository,
+    I: IdGenerator,
+{
+    fn database(&self) -> &DatabaseConnection {
+        &self.db
+    }
+}
+
 #[async_trait]
 impl<R, I> SupplierServiceTrait for SupplierService<R, I>
 where
@@ -57,38 +68,26 @@ where
     async fn create(&self, ctx: &Context, supplier: &SupplierCreate) -> DomainResult<i64> {
         ctx.require_access(None, resource::SUPPLIER, action::CREATE)?;
         let id = self.id_generator.generate()?;
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repository.create(&repo_ctx, id, supplier).await?;
         Ok(id)
     }
 
     async fn update(&self, ctx: &Context, id: i64, supplier: &SupplierUpdate) -> DomainResult<()> {
         ctx.require_access(None, resource::SUPPLIER, action::UPDATE)?;
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repository.update(&repo_ctx, id, supplier).await
     }
 
     async fn delete(&self, ctx: &Context, id: i64) -> DomainResult<()> {
         ctx.require_access(None, resource::SUPPLIER, action::DELETE)?;
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repository.delete(&repo_ctx, id).await
     }
 
     async fn get_by_id(&self, ctx: &Context, id: i64) -> DomainResult<Option<Supplier>> {
         ctx.require_access(None, resource::SUPPLIER, action::READ)?;
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repository.get_by_id(&repo_ctx, id).await
     }
 
@@ -99,10 +98,7 @@ where
         pagination: &PaginationOptions,
     ) -> DomainResult<Vec<Supplier>> {
         ctx.require_access(None, resource::SUPPLIER, action::READ)?;
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repository.get_all(&repo_ctx, filter, pagination).await
     }
 }

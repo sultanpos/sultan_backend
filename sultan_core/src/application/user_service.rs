@@ -1,8 +1,9 @@
 use async_trait::async_trait;
-use sea_orm::{DatabaseConnection, TransactionTrait};
+use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::application::ServiceDbHelper;
 use crate::application::cache::CacheService;
 use crate::crypto::password::PasswordHash;
 use crate::domain::model::pagination::PaginationOptions;
@@ -10,7 +11,7 @@ use crate::domain::model::permission::{Permission, PermissionCreate, action, res
 use crate::domain::model::user::{UserCreate, UserFilter, UserUpdate};
 use crate::domain::{Context, DomainResult, User};
 use crate::snowflake::IdGenerator;
-use crate::storage::{RepoCtx, UserRepository};
+use crate::storage::UserRepository;
 
 /// Trait for user service operations.
 ///
@@ -94,6 +95,18 @@ where
     }
 }
 
+impl<R, P, I, C> ServiceDbHelper for UserService<R, P, I, C>
+where
+    R: UserRepository,
+    P: PasswordHash,
+    I: IdGenerator,
+    C: CacheService<i64>,
+{
+    fn database(&self) -> &DatabaseConnection {
+        &self.db
+    }
+}
+
 #[async_trait]
 impl<R, P, I, C> UserServiceTrait for UserService<R, P, I, C>
 where
@@ -114,10 +127,7 @@ where
         let id = self.id_generator.generate()?;
         user_with_password.password = password_hash;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.begin().await?,
-        };
+        let repo_ctx = self.txn_repo_ctx(ctx).await?;
         self.repository
             .create(&repo_ctx, id, &user_with_password)
             .await?;
@@ -140,10 +150,7 @@ where
     ) -> DomainResult<()> {
         ctx.require_access(None, resource::USER, action::UPDATE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.begin().await?,
-        };
+        let repo_ctx = self.txn_repo_ctx(ctx).await?;
         self.repository.update(&repo_ctx, id, user).await?;
 
         if let Some(perms) = permissions {
@@ -165,10 +172,7 @@ where
     async fn get_by_id(&self, ctx: &Context, user_id: i64) -> DomainResult<Option<User>> {
         ctx.require_access(None, resource::USER, action::READ)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repository.get_by_id(&repo_ctx, user_id).await
     }
 
@@ -180,10 +184,7 @@ where
     ) -> DomainResult<Vec<User>> {
         ctx.require_access(None, resource::USER, action::READ)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repository.get_all(&repo_ctx, filter, pagination).await
     }
 
@@ -196,10 +197,7 @@ where
         ctx.require_access(None, resource::USER, action::UPDATE)?;
         let password_hash = self.password_hasher.hash_password(&new_password)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repository
             .update_password(&repo_ctx, user_id, &password_hash)
             .await?;
@@ -220,10 +218,7 @@ where
             crate::domain::Error::BadRequest("User ID not found in context".to_string())
         })?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         let user = self
             .repository
             .get_by_id(&repo_ctx, user_id)
@@ -257,10 +252,7 @@ where
     async fn delete(&self, ctx: &Context, user_id: i64) -> DomainResult<()> {
         ctx.require_access(None, resource::USER, action::DELETE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repository.delete(&repo_ctx, user_id).await?;
 
         // Invalidate cache when user is deleted
@@ -282,10 +274,7 @@ where
         }
 
         // Cache miss - fetch from repository
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         let permissions = self.repository.get_permissions(&repo_ctx, user_id).await?;
 
         // Store in cache with 5 minute TTL
@@ -313,6 +302,7 @@ mod tests {
     use crate::domain::model::pagination::PaginationOptions;
     use crate::domain::model::permission::Permission;
     use crate::domain::model::user::UserFilter;
+    use crate::storage::RepoCtx;
     use sea_orm::ConnectionTrait;
     use std::collections::HashMap;
     use std::sync::Mutex;
