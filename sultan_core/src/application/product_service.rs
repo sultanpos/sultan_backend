@@ -23,8 +23,8 @@
 
 use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
-use sea_orm::TransactionTrait;
 
+use crate::application::ServiceDbHelper;
 use crate::domain::Context;
 use crate::domain::DomainResult;
 use crate::domain::model::permission::{action, resource};
@@ -38,8 +38,8 @@ use crate::domain::model::sell_price::SellDiscountCreate;
 use crate::domain::model::sell_price::SellDiscountUpdate;
 use crate::domain::model::sell_price::SellPriceUpdate;
 use crate::snowflake::IdGenerator;
+use crate::storage::ProductRepository;
 use crate::storage::StockRepository;
-use crate::storage::{ProductRepository, RepoCtx};
 
 /// Trait defining the contract for product service operations.
 ///
@@ -387,6 +387,14 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductService<R,
     }
 }
 
+impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ServiceDbHelper
+    for ProductService<R, S, I>
+{
+    fn database(&self) -> &DatabaseConnection {
+        &self.db
+    }
+}
+
 #[async_trait]
 impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTrait
     for ProductService<R, S, I>
@@ -398,10 +406,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<i64> {
         ctx.require_access(None, resource::PRODUCT, action::CREATE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.begin().await?,
-        };
+        let repo_ctx = self.txn_repo_ctx(ctx).await?;
 
         let id = self.id_generator.generate()?;
         self.repository
@@ -469,10 +474,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<()> {
         ctx.require_access(None, resource::PRODUCT, action::UPDATE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         self.repository.update_product(&repo_ctx, id, product).await
     }
@@ -480,10 +482,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     async fn delete_product(&self, ctx: &Context, id: i64) -> DomainResult<()> {
         ctx.require_access(None, resource::PRODUCT, action::DELETE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.begin().await?,
-        };
+        let repo_ctx = self.txn_repo_ctx(ctx).await?;
 
         let variant_ids = self
             .repository
@@ -511,10 +510,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     async fn get_by_id(&self, ctx: &Context, id: i64) -> DomainResult<Option<Product>> {
         ctx.require_access(None, resource::PRODUCT, action::READ)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         self.repository.get_by_id(&repo_ctx, id).await
     }
@@ -526,10 +522,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<CursorPage<Product>> {
         ctx.require_access(None, resource::PRODUCT, action::READ)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         self.repository.get_all(&repo_ctx, query).await
     }
@@ -541,10 +534,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<i64> {
         ctx.require_access(None, resource::PRODUCT, action::CREATE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.begin().await?,
-        };
+        let repo_ctx = self.txn_repo_ctx(ctx).await?;
 
         let variant_id = self.id_generator.generate()?;
         self.repository
@@ -596,10 +586,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<()> {
         ctx.require_access(None, resource::PRODUCT, action::UPDATE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         self.repository.update_variant(&repo_ctx, id, variant).await
     }
@@ -607,10 +594,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     async fn delete_variant(&self, ctx: &Context, id: i64) -> DomainResult<()> {
         ctx.require_access(None, resource::PRODUCT, action::DELETE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.begin().await?,
-        };
+        let repo_ctx = self.txn_repo_ctx(ctx).await?;
 
         self.stock_repository
             .delete_by_product_variant_ids(&repo_ctx, &[id])
@@ -634,10 +618,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<()> {
         ctx.require_access(None, resource::PRODUCT, action::DELETE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.begin().await?,
-        };
+        let repo_ctx = self.txn_repo_ctx(ctx).await?;
 
         let variant_ids = self
             .repository
@@ -668,10 +649,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<Option<ProductVariant>> {
         ctx.require_access(None, resource::PRODUCT, action::READ)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         self.repository
             .get_variant_by_barcode(&repo_ctx, barcode)
@@ -685,10 +663,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<Option<ProductVariant>> {
         ctx.require_access(None, resource::PRODUCT, action::READ)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         self.repository.get_variant_by_id(&repo_ctx, id).await
     }
@@ -700,10 +675,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<Vec<ProductVariant>> {
         ctx.require_access(None, resource::PRODUCT, action::READ)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         self.repository
             .get_variant_by_product_id(&repo_ctx, product_id)
@@ -717,10 +689,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<i64> {
         ctx.require_access(None, resource::PRODUCT, action::CREATE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.begin().await?,
-        };
+        let repo_ctx = self.txn_repo_ctx(ctx).await?;
 
         let price_id = self.id_generator.generate()?;
         self.repository
@@ -752,10 +721,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<()> {
         ctx.require_access(None, resource::PRODUCT, action::UPDATE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         self.repository
             .update_sell_price(&repo_ctx, id, sell_price)
@@ -765,10 +731,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     async fn delete_sell_price(&self, ctx: &Context, id: i64) -> DomainResult<()> {
         ctx.require_access(None, resource::PRODUCT, action::DELETE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.begin().await?,
-        };
+        let repo_ctx = self.txn_repo_ctx(ctx).await?;
 
         self.repository
             .delete_sell_discounts_by_sell_price_id(&repo_ctx, id)
@@ -788,10 +751,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<i64> {
         ctx.require_access(None, resource::PRODUCT, action::CREATE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         let id = self.id_generator.generate()?;
         self.repository
@@ -809,10 +769,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<()> {
         ctx.require_access(None, resource::PRODUCT, action::UPDATE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         self.repository
             .update_sell_discount(&repo_ctx, id, discount)
@@ -822,10 +779,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     async fn delete_sell_discount(&self, ctx: &Context, id: i64) -> DomainResult<()> {
         ctx.require_access(None, resource::PRODUCT, action::DELETE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         self.repository.delete_sell_discount(&repo_ctx, id).await
     }
@@ -837,10 +791,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<CursorPage<ProductVariantRead>> {
         ctx.require_access(None, resource::PRODUCT, action::READ)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         self.repository.search_variants(&repo_ctx, query).await
     }
