@@ -1,4 +1,5 @@
 use crate::{
+    application::ServiceDbHelper,
     domain::{
         Context, DomainResult,
         model::{
@@ -7,7 +8,7 @@ use crate::{
         },
     },
     snowflake::IdGenerator,
-    storage::{CategoryRepository, RepoCtx},
+    storage::CategoryRepository,
 };
 use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
@@ -41,6 +42,16 @@ where
     }
 }
 
+impl<R, I> ServiceDbHelper for CategoryService<R, I>
+where
+    R: CategoryRepository,
+    I: IdGenerator,
+{
+    fn database(&self) -> &DatabaseConnection {
+        &self.db
+    }
+}
+
 #[async_trait]
 impl<R, I> CategoryServiceTrait for CategoryService<R, I>
 where
@@ -50,47 +61,32 @@ where
     async fn create(&self, ctx: &Context, category: &CategoryCreate) -> DomainResult<i64> {
         ctx.require_access(None, resource::CATEGORY, action::CREATE)?;
         let id = self.id_generator.generate()?;
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repo.create(&repo_ctx, id, category).await?;
         Ok(id)
     }
 
     async fn update(&self, ctx: &Context, id: i64, category: &CategoryUpdate) -> DomainResult<()> {
         ctx.require_access(None, resource::CATEGORY, action::UPDATE)?;
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repo.update(&repo_ctx, id, category).await
     }
 
     async fn delete(&self, ctx: &Context, id: i64) -> DomainResult<()> {
         ctx.require_access(None, resource::CATEGORY, action::DELETE)?;
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repo.delete(&repo_ctx, id).await
     }
 
     async fn get_all(&self, ctx: &Context) -> DomainResult<Vec<Category>> {
         ctx.require_access(None, resource::CATEGORY, action::READ)?;
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repo.get_all(&repo_ctx).await
     }
 
     async fn get_by_id(&self, ctx: &Context, id: i64) -> DomainResult<Option<Category>> {
         ctx.require_access(None, resource::CATEGORY, action::READ)?;
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
         self.repo.get_by_id(&repo_ctx, id).await
     }
 }
@@ -102,6 +98,7 @@ mod tests {
     use crate::application::create_mock_id_gen;
     use crate::domain::Error;
     use crate::domain::model::Update;
+    use crate::storage::RepoCtx;
     use async_trait::async_trait;
     use sea_orm::{ConnectionTrait, Database};
     use std::collections::HashMap;
