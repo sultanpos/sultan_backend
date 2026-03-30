@@ -5,7 +5,8 @@ use sultan_core::domain::{
     context::Context,
     model::product::{
         CursorPage, Product, ProductFullCreate, ProductQuery, ProductUpdate, ProductVariant,
-        ProductVariantFullCreate, ProductVariantUpdate, SellPriceFullCreate,
+        ProductVariantFullCreate, ProductVariantRead, ProductVariantUpdate, SellPriceFullCreate,
+        VariantSearchQuery,
     },
     model::sell_price::SellPriceUpdate,
     model::sell_price::{SellDiscountCreate, SellDiscountUpdate},
@@ -323,5 +324,19 @@ impl ProductServiceTrait for MockProductService {
             )));
         }
         Ok(())
+    }
+
+    async fn search_variants(
+        &self,
+        _ctx: &Context,
+        _query: &VariantSearchQuery,
+    ) -> DomainResult<CursorPage<ProductVariantRead>> {
+        if !self.should_succeed {
+            return Err(Error::Internal("Failed to search variants".to_string()));
+        }
+        Ok(CursorPage {
+            items: vec![],
+            next_cursor: None,
+        })
     }
 }
