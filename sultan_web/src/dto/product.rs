@@ -294,56 +294,60 @@ fn default_sort_direction() -> String {
     "desc".to_string()
 }
 
+fn parse_sort_field(
+    s: &str,
+) -> Result<sultan_core::domain::model::product::ProductSortField, sultan_core::domain::Error> {
+    use sultan_core::domain::model::product::ProductSortField;
+    match s {
+        "name" => Ok(ProductSortField::Name),
+        "created_at" => Ok(ProductSortField::CreatedAt),
+        "updated_at" => Ok(ProductSortField::UpdatedAt),
+        other => Err(sultan_core::domain::Error::ValidationError(format!(
+            "Invalid sort_field '{}'. Must be one of: name, created_at, updated_at",
+            other
+        ))),
+    }
+}
+
+fn parse_sort_direction(
+    s: &str,
+) -> Result<sultan_core::domain::model::product::SortDirection, sultan_core::domain::Error> {
+    use sultan_core::domain::model::product::SortDirection;
+    match s {
+        "asc" => Ok(SortDirection::Asc),
+        "desc" => Ok(SortDirection::Desc),
+        other => Err(sultan_core::domain::Error::ValidationError(format!(
+            "Invalid sort_direction '{}'. Must be 'asc' or 'desc'",
+            other
+        ))),
+    }
+}
+
+fn decode_cursor(
+    encoded: &str,
+) -> Result<sultan_core::domain::model::product::ProductCursor, sultan_core::domain::Error> {
+    use base64::Engine;
+    use sultan_core::domain::model::product::ProductCursor;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(encoded)
+        .map_err(|_| {
+            sultan_core::domain::Error::ValidationError("Invalid cursor encoding".to_string())
+        })?;
+    serde_json::from_slice::<ProductCursor>(&bytes).map_err(|_| {
+        sultan_core::domain::Error::ValidationError("Invalid cursor format".to_string())
+    })
+}
+
 impl ProductQueryParams {
     /// Convert query params into the domain `ProductQuery`.
     pub fn to_query(
         &self,
     ) -> Result<sultan_core::domain::model::product::ProductQuery, sultan_core::domain::Error> {
-        use base64::Engine;
-        use sultan_core::domain::model::product::{
-            ProductCursor, ProductFilter, ProductQuery, ProductSortField, SortDirection,
-        };
+        use sultan_core::domain::model::product::{ProductFilter, ProductQuery};
 
-        let sort_field = match self.sort_field.as_str() {
-            "name" => ProductSortField::Name,
-            "created_at" => ProductSortField::CreatedAt,
-            "updated_at" => ProductSortField::UpdatedAt,
-            other => {
-                return Err(sultan_core::domain::Error::ValidationError(format!(
-                    "Invalid sort_field '{}'. Must be one of: name, created_at, updated_at",
-                    other
-                )));
-            }
-        };
-
-        let sort_direction = match self.sort_direction.as_str() {
-            "asc" => SortDirection::Asc,
-            "desc" => SortDirection::Desc,
-            other => {
-                return Err(sultan_core::domain::Error::ValidationError(format!(
-                    "Invalid sort_direction '{}'. Must be 'asc' or 'desc'",
-                    other
-                )));
-            }
-        };
-
-        let cursor = match &self.cursor {
-            Some(encoded) => {
-                let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
-                    .decode(encoded)
-                    .map_err(|_| {
-                        sultan_core::domain::Error::ValidationError(
-                            "Invalid cursor encoding".to_string(),
-                        )
-                    })?;
-                let cursor: ProductCursor = serde_json::from_slice(&bytes).map_err(|_| {
-                    sultan_core::domain::Error::ValidationError("Invalid cursor format".to_string())
-                })?;
-                Some(cursor)
-            }
-            None => None,
-        };
-
+        let sort_field = parse_sort_field(&self.sort_field)?;
+        let sort_direction = parse_sort_direction(&self.sort_direction)?;
+        let cursor = self.cursor.as_deref().map(decode_cursor).transpose()?;
         let limit = self.limit.clamp(1, 100) as u64;
 
         Ok(ProductQuery {
@@ -920,12 +924,12 @@ impl ProductFullCreateRequest {
 /// Query parameters for searching product variants with cursor-based pagination.
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct VariantSearchQueryParams {
-    /// Filter by variant name (partial match)
-    #[schema(example = "Black")]
+    /// Filter by product name (partial match)
+    #[schema(example = "Macbook Pro M5")]
     pub name: Option<String>,
 
     /// Filter by product type
-    #[schema(example = "goods")]
+    #[schema(example = "product")]
     pub product_type: Option<String>,
 
     /// Filter by category ID
@@ -962,51 +966,11 @@ impl VariantSearchQueryParams {
         &self,
     ) -> Result<sultan_core::domain::model::product::VariantSearchQuery, sultan_core::domain::Error>
     {
-        use base64::Engine;
-        use sultan_core::domain::model::product::{
-            ProductCursor, ProductSortField, SortDirection, VariantSearchFilter, VariantSearchQuery,
-        };
+        use sultan_core::domain::model::product::{VariantSearchFilter, VariantSearchQuery};
 
-        let sort_field = match self.sort_field.as_str() {
-            "name" => ProductSortField::Name,
-            "created_at" => ProductSortField::CreatedAt,
-            "updated_at" => ProductSortField::UpdatedAt,
-            other => {
-                return Err(sultan_core::domain::Error::ValidationError(format!(
-                    "Invalid sort_field '{}'. Must be one of: name, created_at, updated_at",
-                    other
-                )));
-            }
-        };
-
-        let sort_direction = match self.sort_direction.as_str() {
-            "asc" => SortDirection::Asc,
-            "desc" => SortDirection::Desc,
-            other => {
-                return Err(sultan_core::domain::Error::ValidationError(format!(
-                    "Invalid sort_direction '{}'. Must be 'asc' or 'desc'",
-                    other
-                )));
-            }
-        };
-
-        let cursor = match &self.cursor {
-            Some(encoded) => {
-                let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
-                    .decode(encoded)
-                    .map_err(|_| {
-                        sultan_core::domain::Error::ValidationError(
-                            "Invalid cursor encoding".to_string(),
-                        )
-                    })?;
-                let cursor: ProductCursor = serde_json::from_slice(&bytes).map_err(|_| {
-                    sultan_core::domain::Error::ValidationError("Invalid cursor format".to_string())
-                })?;
-                Some(cursor)
-            }
-            None => None,
-        };
-
+        let sort_field = parse_sort_field(&self.sort_field)?;
+        let sort_direction = parse_sort_direction(&self.sort_direction)?;
+        let cursor = self.cursor.as_deref().map(decode_cursor).transpose()?;
         let limit = self.limit.clamp(1, 100) as u64;
 
         Ok(VariantSearchQuery {
