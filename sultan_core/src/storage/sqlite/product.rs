@@ -75,7 +75,7 @@ impl ProductRepository for SqliteProductRepository {
             id: Set(id),
             name: Set(product.name.clone()),
             description: Set(product.description.clone()),
-            product_type: Set(product.product_type.clone()),
+            product_type: Set(product.product_type.to_string()),
             main_image: Set(product.main_image.clone()),
             sellable: Set(product.sellable),
             buyable: Set(product.buyable),
@@ -126,7 +126,7 @@ impl ProductRepository for SqliteProductRepository {
         if let Some(product_type) = &product.product_type {
             update_query = update_query.col_expr(
                 ProductColumn::ProductType,
-                Expr::value(product_type.clone()),
+                Expr::value(product_type.to_string()),
             );
         }
 
@@ -320,7 +320,7 @@ impl ProductRepository for SqliteProductRepository {
             select = select.filter(ProductColumn::Name.contains(name));
         }
         if let Some(product_type) = &query.filter.product_type {
-            select = select.filter(ProductColumn::ProductType.eq(product_type.clone()));
+            select = select.filter(ProductColumn::ProductType.eq(product_type.to_string()));
         }
         if let Some(category_id) = query.filter.category_id {
             select = select.filter(
@@ -1230,7 +1230,7 @@ impl ProductRepository for SqliteProductRepository {
             select = select.filter(ProductColumn::Name.contains(name));
         }
         if let Some(product_type) = &query.filter.product_type {
-            select = select.filter(ProductColumn::ProductType.eq(product_type.clone()));
+            select = select.filter(ProductColumn::ProductType.eq(product_type.to_string()));
         }
         if let Some(barcode) = &query.filter.barcode {
             select = select.filter(ProductVariantColumn::Barcode.eq(barcode.clone()));

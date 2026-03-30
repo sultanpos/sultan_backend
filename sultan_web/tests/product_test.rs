@@ -36,7 +36,7 @@ async fn test_create_product_success() {
         "product": {
             "name": "Laptop ASUS ROG",
             "description": "High-performance gaming laptop",
-            "product_type": "goods",
+            "product_type": "product",
             "main_image": null,
             "sellable": true,
             "buyable": true,
@@ -69,7 +69,7 @@ async fn test_create_product_validation_error_empty_name() {
         "product": {
             "name": "",
             "description": null,
-            "product_type": "goods",
+            "product_type": "product",
             "main_image": null,
             "sellable": true,
             "buyable": true,
@@ -106,7 +106,7 @@ async fn test_create_product_validation_error_name_too_long() {
         "product": {
             "name": "a".repeat(257),
             "description": null,
-            "product_type": "goods",
+            "product_type": "product",
             "main_image": null,
             "sellable": true,
             "buyable": true,
@@ -143,7 +143,7 @@ async fn test_create_product_validation_error_missing_name() {
     let body = json!({
         "product": {
             "description": null,
-            "product_type": "goods",
+            "product_type": "product",
             "main_image": null,
             "sellable": true,
             "buyable": true,
@@ -170,43 +170,6 @@ async fn test_create_product_validation_error_missing_name() {
 }
 
 #[tokio::test]
-async fn test_create_product_validation_error_missing_product_type() {
-    let app_state = MockAppStateBuilder::new()
-        .with_product_service(Arc::new(MockProductService::new_success()));
-
-    let app = build_test_router(app_state);
-
-    // Missing required "product_type" field in product
-    let body = json!({
-        "product": {
-            "name": "Laptop",
-            "description": null,
-            "main_image": null,
-            "sellable": true,
-            "buyable": true,
-            "editable_price": false,
-            "has_variant": false,
-            "metadata": null,
-            "category_ids": []
-        },
-        "variants": [],
-        "categories": []
-    });
-
-    let (status, response) = make_request(app, "POST", "/api/product", Some(body))
-        .await
-        .expect("Request failed");
-
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    let error_msg = response["error"].as_str().unwrap();
-    assert!(
-        error_msg.contains("Product type must be between 1 and 50 characters"),
-        "Expected product_type validation error, got: {}",
-        error_msg
-    );
-}
-
-#[tokio::test]
 async fn test_create_product_service_error() {
     let app_state = MockAppStateBuilder::new()
         .with_product_service(Arc::new(MockProductService::new_failure()));
@@ -217,7 +180,7 @@ async fn test_create_product_service_error() {
         "product": {
             "name": "Laptop ASUS ROG",
             "description": null,
-            "product_type": "goods",
+            "product_type": "product",
             "main_image": null,
             "sellable": true,
             "buyable": true,
@@ -265,7 +228,7 @@ async fn test_get_product_by_id_success() {
         response["description"].as_str().unwrap(),
         "Test Description"
     );
-    assert_eq!(response["product_type"].as_str().unwrap(), "goods");
+    assert_eq!(response["product_type"].as_str().unwrap(), "product");
     assert!(response["sellable"].as_bool().unwrap());
     assert!(response["buyable"].as_bool().unwrap());
     assert!(!response["editable_price"].as_bool().unwrap());
@@ -1446,7 +1409,7 @@ async fn test_search_variants_with_filters() {
     let (status, response) = make_request(
         app,
         "GET",
-        "/api/product/search-variant?name=Test&product_type=goods&sort_field=name&sort_direction=asc&limit=10",
+        "/api/product/search-variant?name=Test&product_type=product&sort_field=name&sort_direction=asc&limit=10",
         None,
     )
     .await

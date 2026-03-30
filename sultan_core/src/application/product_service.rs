@@ -804,7 +804,7 @@ mod tests {
     use crate::application::{MockIdGen, create_mock_id_gen};
     use crate::domain::Error;
     use crate::domain::model::Update;
-    use crate::domain::model::product::{ProductCreate, ProductVariantCreate};
+    use crate::domain::model::product::{ProductCreate, ProductType, ProductVariantCreate};
     use crate::domain::model::product::{ProductVariantRead, VariantSearchQuery};
     use crate::domain::model::sell_price::{
         SellDiscount, SellDiscountCreate, SellDiscountUpdate, SellPrice, SellPriceCreate,
@@ -1448,7 +1448,7 @@ mod tests {
             is_deleted: false,
             name: "Test Product".to_string(),
             description: Some("Test Description".to_string()),
-            product_type: "product".to_string(),
+            product_type: ProductType::Product,
             main_image: None,
             sellable: true,
             buyable: true,
@@ -1652,7 +1652,7 @@ mod tests {
             product: ProductCreate {
                 name: "Test Product".to_string(),
                 description: Some("A test description".to_string()),
-                product_type: "product".to_string(),
+                product_type: ProductType::Product,
                 main_image: None,
                 sellable: true,
                 buyable: true,
@@ -1741,7 +1741,7 @@ mod tests {
             product: ProductCreate {
                 name: "Test".to_string(),
                 description: None,
-                product_type: "product".to_string(),
+                product_type: ProductType::Product,
                 main_image: None,
                 sellable: true,
                 buyable: true,

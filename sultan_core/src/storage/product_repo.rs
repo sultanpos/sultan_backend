@@ -40,7 +40,7 @@ use crate::domain::{
 ///     let product = ProductCreate {
 ///         name: "Widget".to_string(),
 ///         description: Some("A useful widget".to_string()),
-///         product_type: "product".to_string(),
+///         product_type: ProductType::Product,
 ///         main_image: None,
 ///         sellable: true,
 ///         buyable: true,

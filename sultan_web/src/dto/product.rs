@@ -7,7 +7,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sultan_core::domain::model::Update;
-use sultan_core::domain::model::product::Product;
+use sultan_core::domain::model::product::{Product, ProductType};
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
 
@@ -31,14 +31,9 @@ pub struct ProductCreateRequest {
     #[schema(example = "High-performance gaming laptop")]
     pub description: Option<String>,
 
-    /// Product type (e.g., "goods", "service")
-    #[validate(length(
-        min = 1,
-        max = 50,
-        message = "Product type must be between 1 and 50 characters"
-    ))]
-    #[schema(example = "goods")]
-    pub product_type: String,
+    /// Product type: "product", "service", or "bundle"
+    #[schema(example = "product", value_type = String)]
+    pub product_type: ProductType,
 
     /// Main product image URL (optional)
     #[schema(example = "https://example.com/images/laptop.jpg")]
@@ -71,7 +66,7 @@ impl ProductCreateRequest {
         sultan_core::domain::model::product::ProductCreate {
             name: self.name.clone(),
             description: self.description.clone(),
-            product_type: self.product_type.clone(),
+            product_type: self.product_type,
             main_image: self.main_image.clone(),
             sellable: self.sellable,
             buyable: self.buyable,
@@ -102,14 +97,9 @@ pub struct ProductUpdateRequest {
     #[schema(value_type = Option<String>, example = "High-performance gaming laptop")]
     pub description: Update<String>,
 
-    /// Product type (e.g., "goods", "service")
-    #[validate(length(
-        min = 1,
-        max = 50,
-        message = "Product type must be between 1 and 50 characters"
-    ))]
-    #[schema(example = "goods")]
-    pub product_type: Option<String>,
+    /// Product type: "product", "service", or "bundle"
+    #[schema(example = "product", value_type = Option<String>)]
+    pub product_type: Option<ProductType>,
 
     /// Omit to leave unchanged, `null` to clear
     #[schema(value_type = Option<String>, example = "https://example.com/images/laptop.jpg")]
@@ -139,7 +129,7 @@ impl ProductUpdateRequest {
         sultan_core::domain::model::product::ProductUpdate {
             name: self.name.clone(),
             description: self.description.clone(),
-            product_type: self.product_type.clone(),
+            product_type: self.product_type,
             main_image: self.main_image.clone(),
             sellable: self.sellable,
             buyable: self.buyable,
@@ -182,8 +172,8 @@ pub struct ProductResponse {
     pub description: Option<String>,
 
     /// Product type
-    #[schema(example = "goods")]
-    pub product_type: String,
+    #[schema(example = "product", value_type = String)]
+    pub product_type: ProductType,
 
     /// Main product image URL
     #[schema(example = "https://example.com/images/laptop.jpg")]
@@ -258,7 +248,7 @@ pub struct ProductQueryParams {
     pub name: Option<String>,
 
     /// Product type filter
-    #[schema(example = "goods")]
+    #[schema(example = "product")]
     pub product_type: Option<String>,
 
     /// Category ID filter
@@ -353,7 +343,11 @@ impl ProductQueryParams {
         Ok(ProductQuery {
             filter: ProductFilter {
                 name: self.name.clone(),
-                product_type: self.product_type.clone(),
+                product_type: self
+                    .product_type
+                    .as_deref()
+                    .map(|pt| pt.parse())
+                    .transpose()?,
                 category_id: self.category_id,
             },
             sort_field,
@@ -976,7 +970,11 @@ impl VariantSearchQueryParams {
         Ok(VariantSearchQuery {
             filter: VariantSearchFilter {
                 name: self.name.clone(),
-                product_type: self.product_type.clone(),
+                product_type: self
+                    .product_type
+                    .as_deref()
+                    .map(|pt| pt.parse())
+                    .transpose()?,
                 category_id: self.category_id,
                 barcode: self.barcode.clone(),
             },

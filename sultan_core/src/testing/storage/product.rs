@@ -8,9 +8,9 @@ use crate::{
             Update,
             category::CategoryCreate,
             product::{
-                ProductCreate, ProductFilter, ProductQuery, ProductSortField, ProductUpdate,
-                ProductVariantCreate, ProductVariantUpdate, SortDirection, VariantSearchFilter,
-                VariantSearchQuery,
+                ProductCreate, ProductFilter, ProductQuery, ProductSortField, ProductType,
+                ProductUpdate, ProductVariantCreate, ProductVariantUpdate, SortDirection,
+                VariantSearchFilter, VariantSearchQuery,
             },
             sell_price::{SellDiscountCreate, SellPriceCreate},
         },
@@ -23,7 +23,7 @@ fn create_test_product() -> ProductCreate {
     ProductCreate {
         name: "Test Product".to_string(),
         description: Some("A test product description".to_string()),
-        product_type: "product".to_string(),
+        product_type: ProductType::Product,
         main_image: Some("https://example.com/image.jpg".to_string()),
         sellable: true,
         buyable: true,
@@ -193,7 +193,7 @@ pub async fn product_test_create_success<R: ProductRepository>(
         saved.description,
         Some("A test product description".to_string())
     );
-    assert_eq!(saved.product_type, "product");
+    assert_eq!(saved.product_type, ProductType::Product);
     assert_eq!(
         saved.main_image,
         Some("https://example.com/image.jpg".to_string())
@@ -214,7 +214,7 @@ pub async fn product_test_create_without_optional_fields<R: ProductRepository>(
     let product = ProductCreate {
         name: "Minimal Product".to_string(),
         description: None,
-        product_type: "service".to_string(),
+        product_type: ProductType::Service,
         main_image: None,
         sellable: false,
         buyable: false,
@@ -235,7 +235,7 @@ pub async fn product_test_create_without_optional_fields<R: ProductRepository>(
 
     assert_eq!(saved.name, "Minimal Product");
     assert_eq!(saved.description, None);
-    assert_eq!(saved.product_type, "service");
+    assert_eq!(saved.product_type, ProductType::Service);
     assert_eq!(saved.main_image, None);
     assert!(!saved.sellable);
     assert!(!saved.buyable);
@@ -347,7 +347,7 @@ pub async fn product_test_update_all_fields<R: ProductRepository>(
     let update = ProductUpdate {
         name: Some("Fully Updated Product".to_string()),
         description: Update::Set("New description".to_string()),
-        product_type: Some("service".to_string()),
+        product_type: Some(ProductType::Service),
         main_image: Update::Set("https://new-image.com/img.png".to_string()),
         sellable: Some(false),
         buyable: Some(false),
@@ -368,7 +368,7 @@ pub async fn product_test_update_all_fields<R: ProductRepository>(
 
     assert_eq!(saved.name, "Fully Updated Product");
     assert_eq!(saved.description, Some("New description".to_string()));
-    assert_eq!(saved.product_type, "service");
+    assert_eq!(saved.product_type, ProductType::Service);
     assert_eq!(
         saved.main_image,
         Some("https://new-image.com/img.png".to_string())
@@ -531,7 +531,7 @@ pub async fn product_test_with_metadata_json<R: ProductRepository>(
     let product = ProductCreate {
         name: "Complex Metadata Product".to_string(),
         description: None,
-        product_type: "product".to_string(),
+        product_type: ProductType::Product,
         main_image: None,
         sellable: true,
         buyable: true,
@@ -759,7 +759,7 @@ pub async fn product_test_update_product_type<R: ProductRepository>(
     let update = ProductUpdate {
         name: None,
         description: Update::Unchanged,
-        product_type: Some("service".to_string()),
+        product_type: Some(ProductType::Service),
         main_image: Update::Unchanged,
         sellable: None,
         buyable: None,
@@ -778,7 +778,7 @@ pub async fn product_test_update_product_type<R: ProductRepository>(
         .expect("Failed to get product")
         .expect("Product not found");
 
-    assert_eq!(saved.product_type, "service");
+    assert_eq!(saved.product_type, ProductType::Service);
 }
 
 // =============================================================================
@@ -1949,7 +1949,7 @@ pub async fn product_test_get_variant_by_id_with_nested_data<R>(
     let product = ProductCreate {
         name: "Test Product with Relations".to_string(),
         description: Some("Product for testing nested relations".to_string()),
-        product_type: "product".to_string(),
+        product_type: ProductType::Product,
         main_image: None,
         sellable: true,
         buyable: true,
@@ -2144,7 +2144,7 @@ pub async fn product_test_get_variant_by_barcode_with_nested_data<R>(
     let product = ProductCreate {
         name: "Barcode Test Product".to_string(),
         description: Some("Product for testing barcode lookup".to_string()),
-        product_type: "product".to_string(),
+        product_type: ProductType::Product,
         main_image: None,
         sellable: true,
         buyable: true,
@@ -2247,7 +2247,7 @@ pub async fn product_test_get_variant_excludes_soft_deleted_relations<R>(
     let product = ProductCreate {
         name: "Soft Delete Test Product".to_string(),
         description: None,
-        product_type: "product".to_string(),
+        product_type: ProductType::Product,
         main_image: None,
         sellable: true,
         buyable: true,
@@ -2454,7 +2454,7 @@ pub async fn product_test_get_by_id_with_variants_and_sell_prices<R: ProductRepo
     let product = ProductCreate {
         name: "Product with Variants".to_string(),
         description: None,
-        product_type: "product".to_string(),
+        product_type: ProductType::Product,
         main_image: None,
         sellable: true,
         buyable: true,
@@ -2612,7 +2612,7 @@ pub async fn product_test_get_by_id_with_full_data<R: ProductRepository>(
     let product = ProductCreate {
         name: "Full Data Product".to_string(),
         description: Some("Product with everything".to_string()),
-        product_type: "product".to_string(),
+        product_type: ProductType::Product,
         main_image: None,
         sellable: true,
         buyable: true,
@@ -3255,25 +3255,25 @@ pub async fn product_test_get_all_filter_by_product_type<R: ProductRepository>(
 
     let mut p1 = create_test_product();
     p1.name = "Service A".to_string();
-    p1.product_type = "service".to_string();
+    p1.product_type = ProductType::Service;
     repo.create_product(ctx, id1, &p1)
         .await
         .expect("Failed to create product");
 
     let mut p2 = create_test_product();
     p2.name = "Product B".to_string();
-    p2.product_type = "product".to_string();
+    p2.product_type = ProductType::Product;
     repo.create_product(ctx, id2, &p2)
         .await
         .expect("Failed to create product");
 
     let mut query = default_query();
-    query.filter.product_type = Some("service".to_string());
+    query.filter.product_type = Some(ProductType::Service);
 
     let page = repo.get_all(ctx, &query).await.expect("get_all failed");
 
     assert_eq!(page.items.len(), 1);
-    assert_eq!(page.items[0].product_type, "service");
+    assert_eq!(page.items[0].product_type, ProductType::Service);
 }
 
 /// Test: get_all on empty table returns empty page
@@ -3483,7 +3483,7 @@ pub async fn product_test_search_variants_filter_by_product_type<R: ProductRepos
     let v2_id = super::generate_test_id().await;
 
     let mut product_a = create_test_product();
-    product_a.product_type = "service".to_string();
+    product_a.product_type = ProductType::Service;
     repo.create_product(ctx, p1_id, &product_a)
         .await
         .expect("create p1");
@@ -3492,7 +3492,7 @@ pub async fn product_test_search_variants_filter_by_product_type<R: ProductRepos
         .expect("create v1");
 
     let mut product_b = create_test_product();
-    product_b.product_type = "product".to_string();
+    product_b.product_type = ProductType::Product;
     repo.create_product(ctx, p2_id, &product_b)
         .await
         .expect("create p2");
@@ -3501,11 +3501,11 @@ pub async fn product_test_search_variants_filter_by_product_type<R: ProductRepos
         .expect("create v2");
 
     let mut query = default_variant_query();
-    query.filter.product_type = Some("service".to_string());
+    query.filter.product_type = Some(ProductType::Service);
 
     let page = repo.search_variants(ctx, &query).await.expect("search");
     assert_eq!(page.items.len(), 1);
-    assert_eq!(page.items[0].product.product_type, "service");
+    assert_eq!(page.items[0].product.product_type, ProductType::Service);
 }
 
 /// Test: filter by barcode (partial match)
