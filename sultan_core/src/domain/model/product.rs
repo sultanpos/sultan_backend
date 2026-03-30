@@ -10,6 +10,48 @@ use crate::domain::model::{
 
 use super::Update;
 
+/// The type of a product.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ProductType {
+    #[default]
+    Product,
+    Service,
+    Bundle,
+}
+
+impl ProductType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ProductType::Product => "product",
+            ProductType::Service => "service",
+            ProductType::Bundle => "bundle",
+        }
+    }
+}
+
+impl std::fmt::Display for ProductType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for ProductType {
+    type Err = crate::domain::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "product" => Ok(ProductType::Product),
+            "service" => Ok(ProductType::Service),
+            "bundle" => Ok(ProductType::Bundle),
+            other => Err(crate::domain::Error::ValidationError(format!(
+                "Invalid product_type '{}'. Must be one of: product, service, bundle",
+                other
+            ))),
+        }
+    }
+}
+
 /// Sort fields available for product listing.
 ///
 /// The cursor-based pagination always appends `id` as a tiebreaker,
@@ -88,7 +130,7 @@ pub struct Product {
     pub is_deleted: bool,
     pub name: String,
     pub description: Option<String>,
-    pub product_type: String,
+    pub product_type: ProductType,
     pub main_image: Option<String>,
     pub sellable: bool,
     pub buyable: bool,
@@ -124,7 +166,7 @@ pub struct ProductVariantCreate {
 pub struct ProductCreate {
     pub name: String,
     pub description: Option<String>,
-    pub product_type: String,
+    pub product_type: ProductType,
     pub main_image: Option<String>,
     pub sellable: bool,
     pub buyable: bool,
@@ -137,7 +179,7 @@ pub struct ProductCreate {
 pub struct ProductUpdate {
     pub name: Option<String>,
     pub description: Update<String>,
-    pub product_type: Option<String>,
+    pub product_type: Option<ProductType>,
     pub main_image: Update<String>,
     pub sellable: Option<bool>,
     pub buyable: Option<bool>,
@@ -162,7 +204,7 @@ pub struct ProductCategory {
 #[derive(Debug, Clone)]
 pub struct ProductFilter {
     pub name: Option<String>,
-    pub product_type: Option<String>,
+    pub product_type: Option<ProductType>,
     pub category_id: Option<i64>,
 }
 
@@ -200,7 +242,7 @@ pub struct ProductVariantRead {
 #[derive(Debug, Clone)]
 pub struct VariantSearchFilter {
     pub name: Option<String>,
-    pub product_type: Option<String>,
+    pub product_type: Option<ProductType>,
     pub category_id: Option<i64>,
     pub barcode: Option<String>,
 }

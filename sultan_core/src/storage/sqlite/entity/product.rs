@@ -72,7 +72,10 @@ impl Model {
             is_deleted: self.is_deleted,
             name: self.name.clone(),
             description: self.description.clone(),
-            product_type: self.product_type.clone(),
+            product_type: self
+                .product_type
+                .parse()
+                .unwrap_or(crate::domain::model::product::ProductType::Product),
             main_image: self.main_image.clone(),
             sellable: self.sellable,
             buyable: self.buyable,
