@@ -18,6 +18,39 @@ pub use product_service::{ProductService, ProductServiceTrait};
 pub use supplier_service::{SupplierService, SupplierServiceTrait};
 pub use user_service::{UserService, UserServiceTrait};
 
+use sea_orm::{DatabaseConnection, TransactionTrait};
+
+use crate::domain::{Context, DomainResult};
+use crate::storage::RepoCtx;
+
+/// Shared helper trait for services that hold a `DatabaseConnection`.
+///
+/// Implement [`database`] and get [`repo_ctx`] / [`txn_repo_ctx`] for free.
+#[allow(async_fn_in_trait)]
+pub trait ServiceDbHelper {
+    /// Returns a reference to the underlying database connection.
+    fn database(&self) -> &DatabaseConnection;
+
+    /// Creates a [`RepoCtx`] backed by a plain (non-transactional) connection.
+    fn repo_ctx(&self, ctx: &Context) -> RepoCtx<DatabaseConnection> {
+        RepoCtx {
+            ctx: ctx.clone(),
+            db: self.database().clone(),
+        }
+    }
+
+    /// Creates a [`RepoCtx`] backed by a new database transaction.
+    async fn txn_repo_ctx(
+        &self,
+        ctx: &Context,
+    ) -> DomainResult<RepoCtx<sea_orm::DatabaseTransaction>> {
+        Ok(RepoCtx {
+            ctx: ctx.clone(),
+            db: self.database().begin().await?,
+        })
+    }
+}
+
 #[cfg(test)]
 mockall::mock! {
     pub IdGen {}

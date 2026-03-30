@@ -21,6 +21,7 @@ use crate::dto::product::{
     ProductVariantResponse, ProductVariantUpdateRequest, SellDiscountCreateRequest,
     SellDiscountCreateResponse, SellDiscountResponse, SellDiscountUpdateRequest,
     SellPriceCreateResponse, SellPriceFullCreateRequest, SellPriceResponse, SellPriceUpdateRequest,
+    VariantSearchItemResponse, VariantSearchListResponse, VariantSearchQueryParams,
 };
 use crate::dto::{ErrorResponse, ProductCreateResponse};
 
@@ -39,6 +40,7 @@ use crate::dto::{ErrorResponse, ProductCreateResponse};
         create_variant,
         update_variant,
         delete_variant,
+        search_variants,
         create_sell_price,
         update_sell_price,
         delete_sell_price,
@@ -66,6 +68,9 @@ use crate::dto::{ErrorResponse, ProductCreateResponse};
         SellDiscountCreateResponse,
         SellDiscountUpdateRequest,
         CategoryChildResponse,
+        VariantSearchQueryParams,
+        VariantSearchItemResponse,
+        VariantSearchListResponse,
         ErrorResponse,
     )),
     tags(
@@ -607,10 +612,47 @@ async fn delete_sell_discount(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Search product variants
+///
+/// Returns a paginated list of product variants using cursor-based pagination.
+/// Each result includes the full parent product, its categories, and sell prices.
+/// Results are ordered by `(sort_field, id)` to guarantee stable ordering.
+/// Pass `next_cursor` from the previous response as `cursor` to fetch the next page.
+#[utoipa::path(
+    get,
+    path = "/api/product/search-variant",
+    tag = "product",
+    params(VariantSearchQueryParams),
+    responses(
+        (status = 200, description = "Variants retrieved successfully", body = VariantSearchListResponse),
+        (status = 400, description = "Bad request - invalid query parameters", body = ErrorResponse),
+        (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+#[instrument(skip(product_service, ctx, params))]
+async fn search_variants(
+    State(product_service): State<Arc<dyn ProductServiceTrait>>,
+    Extension(ctx): Extension<Context>,
+    Query(params): Query<VariantSearchQueryParams>,
+) -> DomainResult<impl IntoResponse> {
+    let query = params.to_query()?;
+
+    let page = product_service.search_variants(&ctx, &query).await?;
+
+    Ok((
+        StatusCode::OK,
+        Json(VariantSearchListResponse::from_cursor_page(page)),
+    ))
+}
+
 pub fn product_router() -> Router<AppState> {
     Router::new()
         .route("/", post(create))
         .route("/", get(get_all))
+        .route("/search-variant", get(search_variants))
         .route("/{id}", patch(update_product))
         .route("/{id}", delete(delete_product))
         .route("/{id}", get(get_by_id))

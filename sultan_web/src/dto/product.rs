@@ -294,56 +294,60 @@ fn default_sort_direction() -> String {
     "desc".to_string()
 }
 
+fn parse_sort_field(
+    s: &str,
+) -> Result<sultan_core::domain::model::product::ProductSortField, sultan_core::domain::Error> {
+    use sultan_core::domain::model::product::ProductSortField;
+    match s {
+        "name" => Ok(ProductSortField::Name),
+        "created_at" => Ok(ProductSortField::CreatedAt),
+        "updated_at" => Ok(ProductSortField::UpdatedAt),
+        other => Err(sultan_core::domain::Error::ValidationError(format!(
+            "Invalid sort_field '{}'. Must be one of: name, created_at, updated_at",
+            other
+        ))),
+    }
+}
+
+fn parse_sort_direction(
+    s: &str,
+) -> Result<sultan_core::domain::model::product::SortDirection, sultan_core::domain::Error> {
+    use sultan_core::domain::model::product::SortDirection;
+    match s {
+        "asc" => Ok(SortDirection::Asc),
+        "desc" => Ok(SortDirection::Desc),
+        other => Err(sultan_core::domain::Error::ValidationError(format!(
+            "Invalid sort_direction '{}'. Must be 'asc' or 'desc'",
+            other
+        ))),
+    }
+}
+
+fn decode_cursor(
+    encoded: &str,
+) -> Result<sultan_core::domain::model::product::ProductCursor, sultan_core::domain::Error> {
+    use base64::Engine;
+    use sultan_core::domain::model::product::ProductCursor;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(encoded)
+        .map_err(|_| {
+            sultan_core::domain::Error::ValidationError("Invalid cursor encoding".to_string())
+        })?;
+    serde_json::from_slice::<ProductCursor>(&bytes).map_err(|_| {
+        sultan_core::domain::Error::ValidationError("Invalid cursor format".to_string())
+    })
+}
+
 impl ProductQueryParams {
     /// Convert query params into the domain `ProductQuery`.
     pub fn to_query(
         &self,
     ) -> Result<sultan_core::domain::model::product::ProductQuery, sultan_core::domain::Error> {
-        use base64::Engine;
-        use sultan_core::domain::model::product::{
-            ProductCursor, ProductFilter, ProductQuery, ProductSortField, SortDirection,
-        };
+        use sultan_core::domain::model::product::{ProductFilter, ProductQuery};
 
-        let sort_field = match self.sort_field.as_str() {
-            "name" => ProductSortField::Name,
-            "created_at" => ProductSortField::CreatedAt,
-            "updated_at" => ProductSortField::UpdatedAt,
-            other => {
-                return Err(sultan_core::domain::Error::ValidationError(format!(
-                    "Invalid sort_field '{}'. Must be one of: name, created_at, updated_at",
-                    other
-                )));
-            }
-        };
-
-        let sort_direction = match self.sort_direction.as_str() {
-            "asc" => SortDirection::Asc,
-            "desc" => SortDirection::Desc,
-            other => {
-                return Err(sultan_core::domain::Error::ValidationError(format!(
-                    "Invalid sort_direction '{}'. Must be 'asc' or 'desc'",
-                    other
-                )));
-            }
-        };
-
-        let cursor = match &self.cursor {
-            Some(encoded) => {
-                let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
-                    .decode(encoded)
-                    .map_err(|_| {
-                        sultan_core::domain::Error::ValidationError(
-                            "Invalid cursor encoding".to_string(),
-                        )
-                    })?;
-                let cursor: ProductCursor = serde_json::from_slice(&bytes).map_err(|_| {
-                    sultan_core::domain::Error::ValidationError("Invalid cursor format".to_string())
-                })?;
-                Some(cursor)
-            }
-            None => None,
-        };
-
+        let sort_field = parse_sort_field(&self.sort_field)?;
+        let sort_direction = parse_sort_direction(&self.sort_direction)?;
+        let cursor = self.cursor.as_deref().map(decode_cursor).transpose()?;
         let limit = self.limit.clamp(1, 100) as u64;
 
         Ok(ProductQuery {
@@ -911,6 +915,165 @@ impl ProductFullCreateRequest {
             product: self.product.to_domain(),
             variants: self.variants.iter().map(|v| v.to_domain()).collect(),
             categories: self.categories.clone(),
+        }
+    }
+}
+
+// ===== Variant Search DTOs =====
+
+/// Query parameters for searching product variants with cursor-based pagination.
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+pub struct VariantSearchQueryParams {
+    /// Filter by product name (partial match)
+    #[schema(example = "Macbook Pro M5")]
+    pub name: Option<String>,
+
+    /// Filter by product type
+    #[schema(example = "product")]
+    pub product_type: Option<String>,
+
+    /// Filter by category ID
+    #[schema(example = "1234567890")]
+    #[serde(default, deserialize_with = "option_string_to_i64")]
+    pub category_id: Option<i64>,
+
+    /// Filter by barcode (exact match)
+    #[schema(example = "8901234567890")]
+    pub barcode: Option<String>,
+
+    /// Sort field: "name", "created_at", or "updated_at" (default: "created_at")
+    #[serde(default = "default_sort_field")]
+    #[schema(example = "created_at")]
+    pub sort_field: String,
+
+    /// Sort direction: "asc" or "desc" (default: "desc")
+    #[serde(default = "default_sort_direction")]
+    #[schema(example = "desc")]
+    pub sort_direction: String,
+
+    /// Opaque cursor from the previous page's `next_cursor` (omit for the first page)
+    #[schema(example = "eyJmaWVsZF92YWx1ZSI6IjIwMjUtMDEtMDEiLCJpZCI6MTIzfQ==")]
+    pub cursor: Option<String>,
+
+    /// Maximum number of items per page (default: 20, max: 100)
+    #[serde(default = "default_page_size")]
+    #[schema(example = 20)]
+    pub limit: u32,
+}
+
+impl VariantSearchQueryParams {
+    pub fn to_query(
+        &self,
+    ) -> Result<sultan_core::domain::model::product::VariantSearchQuery, sultan_core::domain::Error>
+    {
+        use sultan_core::domain::model::product::{VariantSearchFilter, VariantSearchQuery};
+
+        let sort_field = parse_sort_field(&self.sort_field)?;
+        let sort_direction = parse_sort_direction(&self.sort_direction)?;
+        let cursor = self.cursor.as_deref().map(decode_cursor).transpose()?;
+        let limit = self.limit.clamp(1, 100) as u64;
+
+        Ok(VariantSearchQuery {
+            filter: VariantSearchFilter {
+                name: self.name.clone(),
+                product_type: self.product_type.clone(),
+                category_id: self.category_id,
+                barcode: self.barcode.clone(),
+            },
+            sort_field,
+            sort_direction,
+            cursor,
+            limit,
+        })
+    }
+}
+
+/// A single variant in the search result, including its parent product and categories.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct VariantSearchItemResponse {
+    /// Variant ID
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "i64_to_string")]
+    pub id: i64,
+
+    /// Variant barcode
+    #[schema(example = "8901234567890")]
+    pub barcode: Option<String>,
+
+    /// Variant name
+    #[schema(example = "Black - 16GB RAM")]
+    pub name: Option<String>,
+
+    /// Additional metadata
+    pub metadata: Option<Value>,
+
+    /// Parent product
+    pub product: ProductResponse,
+
+    /// Sell prices for this variant
+    pub sell_prices: Vec<SellPriceResponse>,
+
+    /// Categories (from the parent product)
+    pub categories: Vec<CategoryChildResponse>,
+}
+
+impl From<sultan_core::domain::model::product::ProductVariantRead> for VariantSearchItemResponse {
+    fn from(v: sultan_core::domain::model::product::ProductVariantRead) -> Self {
+        Self {
+            id: v.id,
+            barcode: v.barcode,
+            name: v.name,
+            metadata: v.metadata,
+            product: ProductResponse::from(v.product),
+            sell_prices: v
+                .sell_prices
+                .into_iter()
+                .map(SellPriceResponse::from)
+                .collect(),
+            categories: v
+                .categories
+                .into_iter()
+                .map(|c| CategoryChildResponse {
+                    id: c.id,
+                    name: c.name,
+                    description: c.description,
+                })
+                .collect(),
+        }
+    }
+}
+
+/// Response for a paginated variant search (cursor-based).
+#[derive(Debug, Serialize, ToSchema)]
+pub struct VariantSearchListResponse {
+    /// The items in this page
+    pub items: Vec<VariantSearchItemResponse>,
+
+    /// Opaque cursor to fetch the next page. `null` when there are no more pages.
+    #[schema(example = "eyJmaWVsZF92YWx1ZSI6IjIwMjUtMDEtMDEiLCJpZCI6MTIzfQ==")]
+    pub next_cursor: Option<String>,
+}
+
+impl VariantSearchListResponse {
+    pub fn from_cursor_page(
+        page: sultan_core::domain::model::product::CursorPage<
+            sultan_core::domain::model::product::ProductVariantRead,
+        >,
+    ) -> Self {
+        use base64::Engine;
+
+        let next_cursor = page.next_cursor.map(|c| {
+            let json = serde_json::to_vec(&c).expect("cursor is always serializable");
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(json)
+        });
+
+        Self {
+            items: page
+                .items
+                .into_iter()
+                .map(VariantSearchItemResponse::from)
+                .collect(),
+            next_cursor,
         }
     }
 }

@@ -23,8 +23,8 @@
 
 use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
-use sea_orm::TransactionTrait;
 
+use crate::application::ServiceDbHelper;
 use crate::domain::Context;
 use crate::domain::DomainResult;
 use crate::domain::model::permission::{action, resource};
@@ -32,14 +32,14 @@ use crate::domain::model::product::ProductFullCreate;
 use crate::domain::model::product::SellPriceFullCreate;
 use crate::domain::model::product::{
     CursorPage, Product, ProductQuery, ProductUpdate, ProductVariant, ProductVariantFullCreate,
-    ProductVariantUpdate,
+    ProductVariantRead, ProductVariantUpdate, VariantSearchQuery,
 };
 use crate::domain::model::sell_price::SellDiscountCreate;
 use crate::domain::model::sell_price::SellDiscountUpdate;
 use crate::domain::model::sell_price::SellPriceUpdate;
 use crate::snowflake::IdGenerator;
+use crate::storage::ProductRepository;
 use crate::storage::StockRepository;
-use crate::storage::{ProductRepository, RepoCtx};
 
 /// Trait defining the contract for product service operations.
 ///
@@ -331,6 +331,22 @@ pub trait ProductServiceTrait: Send + Sync {
     /// - `Forbidden` if the user lacks `product:delete` permission
     /// - `NotFound` if the sell discount doesn't exist
     async fn delete_sell_discount(&self, ctx: &Context, id: i64) -> DomainResult<()>;
+
+    /// Searches product variants with cursor-based pagination and optional filters.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - The request context containing user info and permissions
+    /// * `query` - Search options including filters, sort, cursor, and limit
+    ///
+    /// # Returns
+    ///
+    /// A page of variant results with an optional next cursor.
+    async fn search_variants(
+        &self,
+        ctx: &Context,
+        query: &VariantSearchQuery,
+    ) -> DomainResult<CursorPage<ProductVariantRead>>;
 }
 
 /// Concrete implementation of the product service.
@@ -371,6 +387,14 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductService<R,
     }
 }
 
+impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ServiceDbHelper
+    for ProductService<R, S, I>
+{
+    fn database(&self) -> &DatabaseConnection {
+        &self.db
+    }
+}
+
 #[async_trait]
 impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTrait
     for ProductService<R, S, I>
@@ -382,10 +406,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<i64> {
         ctx.require_access(None, resource::PRODUCT, action::CREATE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.begin().await?,
-        };
+        let repo_ctx = self.txn_repo_ctx(ctx).await?;
 
         let id = self.id_generator.generate()?;
         self.repository
@@ -453,10 +474,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<()> {
         ctx.require_access(None, resource::PRODUCT, action::UPDATE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         self.repository.update_product(&repo_ctx, id, product).await
     }
@@ -464,10 +482,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     async fn delete_product(&self, ctx: &Context, id: i64) -> DomainResult<()> {
         ctx.require_access(None, resource::PRODUCT, action::DELETE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.begin().await?,
-        };
+        let repo_ctx = self.txn_repo_ctx(ctx).await?;
 
         let variant_ids = self
             .repository
@@ -495,10 +510,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     async fn get_by_id(&self, ctx: &Context, id: i64) -> DomainResult<Option<Product>> {
         ctx.require_access(None, resource::PRODUCT, action::READ)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         self.repository.get_by_id(&repo_ctx, id).await
     }
@@ -510,10 +522,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<CursorPage<Product>> {
         ctx.require_access(None, resource::PRODUCT, action::READ)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         self.repository.get_all(&repo_ctx, query).await
     }
@@ -525,10 +534,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<i64> {
         ctx.require_access(None, resource::PRODUCT, action::CREATE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.begin().await?,
-        };
+        let repo_ctx = self.txn_repo_ctx(ctx).await?;
 
         let variant_id = self.id_generator.generate()?;
         self.repository
@@ -580,10 +586,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<()> {
         ctx.require_access(None, resource::PRODUCT, action::UPDATE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         self.repository.update_variant(&repo_ctx, id, variant).await
     }
@@ -591,10 +594,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     async fn delete_variant(&self, ctx: &Context, id: i64) -> DomainResult<()> {
         ctx.require_access(None, resource::PRODUCT, action::DELETE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.begin().await?,
-        };
+        let repo_ctx = self.txn_repo_ctx(ctx).await?;
 
         self.stock_repository
             .delete_by_product_variant_ids(&repo_ctx, &[id])
@@ -618,10 +618,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<()> {
         ctx.require_access(None, resource::PRODUCT, action::DELETE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.begin().await?,
-        };
+        let repo_ctx = self.txn_repo_ctx(ctx).await?;
 
         let variant_ids = self
             .repository
@@ -652,10 +649,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<Option<ProductVariant>> {
         ctx.require_access(None, resource::PRODUCT, action::READ)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         self.repository
             .get_variant_by_barcode(&repo_ctx, barcode)
@@ -669,10 +663,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<Option<ProductVariant>> {
         ctx.require_access(None, resource::PRODUCT, action::READ)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         self.repository.get_variant_by_id(&repo_ctx, id).await
     }
@@ -684,10 +675,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<Vec<ProductVariant>> {
         ctx.require_access(None, resource::PRODUCT, action::READ)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         self.repository
             .get_variant_by_product_id(&repo_ctx, product_id)
@@ -701,10 +689,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<i64> {
         ctx.require_access(None, resource::PRODUCT, action::CREATE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.begin().await?,
-        };
+        let repo_ctx = self.txn_repo_ctx(ctx).await?;
 
         let price_id = self.id_generator.generate()?;
         self.repository
@@ -736,10 +721,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<()> {
         ctx.require_access(None, resource::PRODUCT, action::UPDATE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         self.repository
             .update_sell_price(&repo_ctx, id, sell_price)
@@ -749,10 +731,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     async fn delete_sell_price(&self, ctx: &Context, id: i64) -> DomainResult<()> {
         ctx.require_access(None, resource::PRODUCT, action::DELETE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.begin().await?,
-        };
+        let repo_ctx = self.txn_repo_ctx(ctx).await?;
 
         self.repository
             .delete_sell_discounts_by_sell_price_id(&repo_ctx, id)
@@ -772,10 +751,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<i64> {
         ctx.require_access(None, resource::PRODUCT, action::CREATE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         let id = self.id_generator.generate()?;
         self.repository
@@ -793,10 +769,7 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     ) -> DomainResult<()> {
         ctx.require_access(None, resource::PRODUCT, action::UPDATE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         self.repository
             .update_sell_discount(&repo_ctx, id, discount)
@@ -806,12 +779,21 @@ impl<R: ProductRepository, S: StockRepository, I: IdGenerator> ProductServiceTra
     async fn delete_sell_discount(&self, ctx: &Context, id: i64) -> DomainResult<()> {
         ctx.require_access(None, resource::PRODUCT, action::DELETE)?;
 
-        let repo_ctx = RepoCtx {
-            ctx: ctx.clone(),
-            db: self.db.clone(),
-        };
+        let repo_ctx = self.repo_ctx(ctx);
 
         self.repository.delete_sell_discount(&repo_ctx, id).await
+    }
+
+    async fn search_variants(
+        &self,
+        ctx: &Context,
+        query: &VariantSearchQuery,
+    ) -> DomainResult<CursorPage<ProductVariantRead>> {
+        ctx.require_access(None, resource::PRODUCT, action::READ)?;
+
+        let repo_ctx = self.repo_ctx(ctx);
+
+        self.repository.search_variants(&repo_ctx, query).await
     }
 }
 
@@ -823,6 +805,7 @@ mod tests {
     use crate::domain::Error;
     use crate::domain::model::Update;
     use crate::domain::model::product::{ProductCreate, ProductVariantCreate};
+    use crate::domain::model::product::{ProductVariantRead, VariantSearchQuery};
     use crate::domain::model::sell_price::{
         SellDiscount, SellDiscountCreate, SellDiscountUpdate, SellPrice, SellPriceCreate,
         SellPriceUpdate,
@@ -878,6 +861,16 @@ mod tests {
         delete_sell_discount_fn: Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<()> + Send>>>>,
         delete_sell_prices_by_product_variant_ids_fn:
             Arc<Mutex<Option<Box<dyn Fn(Vec<i64>) -> DomainResult<()> + Send>>>>,
+        search_variants_fn: Arc<
+            Mutex<
+                Option<
+                    Box<
+                        dyn Fn(VariantSearchQuery) -> DomainResult<CursorPage<ProductVariantRead>>
+                            + Send,
+                    >,
+                >,
+            >,
+        >,
     }
 
     impl MockProductRepo {
@@ -905,6 +898,7 @@ mod tests {
                 update_sell_discount_fn: Arc::new(Mutex::new(None)),
                 delete_sell_discount_fn: Arc::new(Mutex::new(None)),
                 delete_sell_prices_by_product_variant_ids_fn: Arc::new(Mutex::new(None)),
+                search_variants_fn: Arc::new(Mutex::new(None)),
             }
         }
 
@@ -1075,6 +1069,15 @@ mod tests {
                 .delete_sell_prices_by_product_variant_ids_fn
                 .lock()
                 .unwrap() = Some(Box::new(f));
+        }
+
+        fn expect_search_variants<F>(&mut self, f: F)
+        where
+            F: Fn(VariantSearchQuery) -> DomainResult<CursorPage<ProductVariantRead>>
+                + Send
+                + 'static,
+        {
+            *self.search_variants_fn.lock().unwrap() = Some(Box::new(f));
         }
     }
 
@@ -1413,13 +1416,18 @@ mod tests {
         async fn search_variants(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
-            _query: &crate::domain::model::product::VariantSearchQuery,
+            query: &crate::domain::model::product::VariantSearchQuery,
         ) -> DomainResult<
             crate::domain::model::product::CursorPage<
                 crate::domain::model::product::ProductVariantRead,
             >,
         > {
-            panic!("search_variants not mocked")
+            let lock = self.search_variants_fn.lock().unwrap();
+            if let Some(f) = lock.as_ref() {
+                f(query.clone())
+            } else {
+                panic!("search_variants not mocked")
+            }
         }
     }
 
@@ -2600,5 +2608,174 @@ mod tests {
 
         let result = service.delete_sell_discount(&ctx, 1).await;
         assert!(matches!(result, Err(Error::Forbidden(_))));
+    }
+
+    fn create_default_variant_search_query() -> VariantSearchQuery {
+        use crate::domain::model::product::{ProductSortField, SortDirection, VariantSearchFilter};
+        VariantSearchQuery {
+            filter: VariantSearchFilter {
+                name: None,
+                product_type: None,
+                category_id: None,
+                barcode: None,
+            },
+            sort_field: ProductSortField::Name,
+            sort_direction: SortDirection::Asc,
+            cursor: None,
+            limit: 10,
+        }
+    }
+
+    fn create_test_variant_read() -> ProductVariantRead {
+        ProductVariantRead {
+            id: 1,
+            barcode: Some("1234567890".to_string()),
+            name: Some("Default Variant".to_string()),
+            metadata: None,
+            product: create_test_product(),
+            sell_prices: vec![],
+            categories: vec![],
+        }
+    }
+
+    #[tokio::test]
+    async fn test_search_variants_success() {
+        let mut mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+        let id_gen = create_mock_id_gen(1);
+        let db = create_test_db().await;
+
+        let expected_variant = create_test_variant_read();
+        mock_repo.expect_search_variants(move |_query| {
+            Ok(CursorPage {
+                items: vec![ProductVariantRead {
+                    id: 1,
+                    barcode: Some("1234567890".to_string()),
+                    name: Some("Default Variant".to_string()),
+                    metadata: None,
+                    product: create_test_product(),
+                    sell_prices: vec![],
+                    categories: vec![],
+                }],
+                next_cursor: None,
+            })
+        });
+
+        let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
+        let ctx = create_test_ctx();
+
+        let query = create_default_variant_search_query();
+        let result = service.search_variants(&ctx, &query).await;
+        assert!(result.is_ok());
+        let page = result.unwrap();
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].id, expected_variant.id);
+        assert_eq!(page.items[0].barcode, expected_variant.barcode);
+        assert!(page.next_cursor.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_search_variants_empty_result() {
+        let mut mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+        let id_gen = create_mock_id_gen(1);
+        let db = create_test_db().await;
+
+        mock_repo.expect_search_variants(move |_query| {
+            Ok(CursorPage {
+                items: vec![],
+                next_cursor: None,
+            })
+        });
+
+        let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
+        let ctx = create_test_ctx();
+
+        let query = create_default_variant_search_query();
+        let result = service.search_variants(&ctx, &query).await;
+        assert!(result.is_ok());
+        let page = result.unwrap();
+        assert!(page.items.is_empty());
+        assert!(page.next_cursor.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_search_variants_forbidden() {
+        let mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+        let id_gen = create_mock_id_gen(1);
+        let db = create_test_db().await;
+
+        let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
+        let ctx = Context::new(); // No permissions
+
+        let query = create_default_variant_search_query();
+        let result = service.search_variants(&ctx, &query).await;
+        assert!(matches!(result, Err(Error::Forbidden(_))));
+    }
+
+    #[tokio::test]
+    async fn test_search_variants_with_cursor() {
+        use crate::domain::model::product::ProductCursor;
+
+        let mut mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+        let id_gen = create_mock_id_gen(1);
+        let db = create_test_db().await;
+
+        mock_repo.expect_search_variants(move |query| {
+            // Verify cursor was passed through
+            assert!(query.cursor.is_some());
+            let cursor = query.cursor.as_ref().unwrap();
+            assert_eq!(cursor.id, 5);
+            assert_eq!(cursor.field_value, "Widget");
+
+            Ok(CursorPage {
+                items: vec![ProductVariantRead {
+                    id: 6,
+                    barcode: Some("NEXT".to_string()),
+                    name: Some("Next Variant".to_string()),
+                    metadata: None,
+                    product: create_test_product(),
+                    sell_prices: vec![],
+                    categories: vec![],
+                }],
+                next_cursor: None,
+            })
+        });
+
+        let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
+        let ctx = create_test_ctx();
+
+        let mut query = create_default_variant_search_query();
+        query.cursor = Some(ProductCursor {
+            field_value: "Widget".to_string(),
+            id: 5,
+        });
+
+        let result = service.search_variants(&ctx, &query).await;
+        assert!(result.is_ok());
+        let page = result.unwrap();
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].id, 6);
+    }
+
+    #[tokio::test]
+    async fn test_search_variants_repo_error() {
+        let mut mock_repo = MockProductRepo::new();
+        let mock_stock_repo = MockStockRepo::new();
+        let id_gen = create_mock_id_gen(1);
+        let db = create_test_db().await;
+
+        mock_repo.expect_search_variants(move |_query| {
+            Err(Error::Database("connection lost".to_string()))
+        });
+
+        let service = ProductService::new(mock_repo, mock_stock_repo, id_gen, db);
+        let ctx = create_test_ctx();
+
+        let query = create_default_variant_search_query();
+        let result = service.search_variants(&ctx, &query).await;
+        assert!(matches!(result, Err(Error::Database(_))));
     }
 }

@@ -1415,3 +1415,98 @@ async fn test_delete_sell_discount_service_error() {
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert!(response["error"].as_str().is_some());
 }
+
+// ============================================================================
+// GET /api/product/search-variant - Search Variants Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_search_variants_success() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/product/search-variant", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(response["items"].is_array());
+    assert!(response["next_cursor"].is_null() || response["next_cursor"].is_string());
+}
+
+#[tokio::test]
+async fn test_search_variants_with_filters() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(
+        app,
+        "GET",
+        "/api/product/search-variant?name=Test&product_type=goods&sort_field=name&sort_direction=asc&limit=10",
+        None,
+    )
+    .await
+    .expect("Request failed");
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(response["items"].is_array());
+}
+
+#[tokio::test]
+async fn test_search_variants_invalid_sort_field() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(
+        app,
+        "GET",
+        "/api/product/search-variant?sort_field=invalid",
+        None,
+    )
+    .await
+    .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(response["error"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn test_search_variants_invalid_sort_direction() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_success()));
+
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(
+        app,
+        "GET",
+        "/api/product/search-variant?sort_direction=invalid",
+        None,
+    )
+    .await
+    .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(response["error"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn test_search_variants_service_error() {
+    let app_state = MockAppStateBuilder::new()
+        .with_product_service(Arc::new(MockProductService::new_failure()));
+
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/product/search-variant", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(response["error"].as_str().is_some());
+}
