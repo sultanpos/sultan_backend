@@ -9,6 +9,7 @@ pub mod resource {
     pub const PRODUCT: i32 = 8;
     pub const CASHIER: i32 = 9;
     pub const SELL_PRICE: i32 = 10;
+    pub const MACHINE: i32 = 11;
 }
 
 pub mod action {
