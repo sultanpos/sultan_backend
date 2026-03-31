@@ -86,10 +86,6 @@ impl MachineRepository for SqliteMachineRepository {
             .filter(MachineColumn::Id.eq(id))
             .filter(MachineColumn::IsDeleted.eq(false));
 
-        if let Some(key) = &machine.key {
-            update_query = update_query.col_expr(MachineColumn::Key, Expr::value(key.clone()));
-        }
-
         if let Some(name) = &machine.name {
             update_query = update_query.col_expr(MachineColumn::Name, Expr::value(name.clone()));
         }

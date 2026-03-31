@@ -185,21 +185,21 @@ pub async fn machine_test_partial_update<C: MachineRepository>(
     .await
     .expect("create failed");
 
-    // Update only the key
+    // Update only the name
     repo.update(
         ctx,
         id,
         &MachineUpdate {
-            key: Some("POS-P2".to_string()),
+            name: Some("Updated Name".to_string()),
             ..Default::default()
         },
     )
     .await
-    .expect("update key failed");
+    .expect("update name failed");
 
     let fetched = repo.get_by_id(ctx, id).await.unwrap().unwrap();
-    assert_eq!(fetched.key, "POS-P2");
-    assert_eq!(fetched.name, "Original"); // unchanged
+    assert_eq!(fetched.name, "Updated Name");
+    assert_eq!(fetched.key, "POS-P"); // key is immutable — must not change
     assert_eq!(fetched.description, Some("Keep me".to_string())); // unchanged
 }
 

@@ -55,7 +55,6 @@ pub struct MachineCreate {
 
 #[derive(Debug, Clone, Default)]
 pub struct MachineUpdate {
-    pub key: Option<String>,
     pub name: Option<String>,
     pub description: Update<String>,
     pub metadata: Update<Value>,
