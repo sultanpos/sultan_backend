@@ -59,7 +59,18 @@ impl MachineRepository for SqliteMachineRepository {
             metadata: Set(metadata_json),
         };
 
-        model.insert(&ctx.db).await?;
+        model.insert(&ctx.db).await.map_err(|e| {
+            if let sea_orm::DbErr::Query(sea_orm::RuntimeErr::SqlxError(sqlx_err)) = &e
+                && let sqlx::Error::Database(db_err) = sqlx_err.as_ref()
+                && db_err.is_unique_violation()
+            {
+                return Error::Conflict(format!(
+                    "Machine with key '{}' already exists in this branch",
+                    machine.key
+                ));
+            }
+            e.into()
+        })?;
         Ok(())
     }
 

@@ -14,4 +14,4 @@ CREATE TABLE machines (
 
 CREATE INDEX idx_machines_is_deleted ON machines (is_deleted);
 
-CREATE UNIQUE INDEX idx_machines_unique_branch_key ON machines (branch_id, key);
+CREATE UNIQUE INDEX idx_machines_unique_branch_key ON machines (branch_id, key) WHERE is_deleted = 0;
