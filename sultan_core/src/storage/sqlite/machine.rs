@@ -10,7 +10,10 @@ use crate::{
         DomainResult,
         error::Error,
         model::{
-            machine::{Machine, MachineCreate, MachineCursor, MachinePage, MachineQuery, MachineSortField, MachineUpdate},
+            machine::{
+                Machine, MachineCreate, MachineCursor, MachinePage, MachineQuery, MachineSortField,
+                MachineUpdate,
+            },
             product::SortDirection,
         },
     },
@@ -73,13 +76,11 @@ impl MachineRepository for SqliteMachineRepository {
             .filter(MachineColumn::IsDeleted.eq(false));
 
         if let Some(key) = &machine.key {
-            update_query =
-                update_query.col_expr(MachineColumn::Key, Expr::value(key.clone()));
+            update_query = update_query.col_expr(MachineColumn::Key, Expr::value(key.clone()));
         }
 
         if let Some(name) = &machine.name {
-            update_query =
-                update_query.col_expr(MachineColumn::Name, Expr::value(name.clone()));
+            update_query = update_query.col_expr(MachineColumn::Name, Expr::value(name.clone()));
         }
 
         if machine.description.should_update() {
@@ -110,10 +111,7 @@ impl MachineRepository for SqliteMachineRepository {
         let result = update_query.exec(&ctx.db).await?;
 
         if result.rows_affected == 0 {
-            return Err(Error::NotFound(format!(
-                "Machine with id {} not found",
-                id
-            )));
+            return Err(Error::NotFound(format!("Machine with id {} not found", id)));
         }
 
         Ok(())
@@ -136,10 +134,7 @@ impl MachineRepository for SqliteMachineRepository {
             .await?;
 
         if result.rows_affected == 0 {
-            return Err(Error::NotFound(format!(
-                "Machine with id {} not found",
-                id
-            )));
+            return Err(Error::NotFound(format!("Machine with id {} not found", id)));
         }
 
         Ok(())
