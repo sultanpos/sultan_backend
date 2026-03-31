@@ -1,6 +1,7 @@
 pub mod branch_repo;
 pub mod category_repo;
 pub mod customer_repo;
+pub mod machine_repo;
 pub mod number_repo;
 pub mod product_repo;
 pub mod sqlite;
@@ -13,6 +14,7 @@ pub mod user_repo;
 pub use branch_repo::BranchRepository;
 pub use category_repo::CategoryRepository;
 pub use customer_repo::CustomerRepository;
+pub use machine_repo::MachineRepository;
 pub use number_repo::NumberRepository;
 pub use product_repo::ProductRepository;
 use sea_orm::ConnectionTrait;
