@@ -3,7 +3,7 @@ use sea_orm::ConnectionTrait;
 
 use crate::domain::{
     DomainResult,
-    model::machine::{Machine, MachineCreate, MachineFilter, MachineUpdate},
+    model::machine::{Machine, MachineCreate, MachinePage, MachineQuery, MachineUpdate},
 };
 
 #[async_trait]
@@ -34,6 +34,6 @@ pub trait MachineRepository: Send + Sync {
     async fn get_all(
         &self,
         ctx: &super::RepoCtx<impl ConnectionTrait>,
-        filter: &MachineFilter,
-    ) -> DomainResult<Vec<Machine>>;
+        query: &MachineQuery,
+    ) -> DomainResult<MachinePage>;
 }

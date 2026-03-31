@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter, Set,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait, Order,
+    QueryFilter, QueryOrder, QuerySelect, Set, sea_query::Expr,
 };
 
 use super::entity::{MachineActiveModel, MachineColumn, MachineEntity};
@@ -8,7 +9,10 @@ use crate::{
     domain::{
         DomainResult,
         error::Error,
-        model::machine::{Machine, MachineCreate, MachineFilter, MachineUpdate},
+        model::{
+            machine::{Machine, MachineCreate, MachineCursor, MachinePage, MachineQuery, MachineSortField, MachineUpdate},
+            product::SortDirection,
+        },
     },
     storage::{MachineRepository, RepoCtx},
 };
@@ -157,23 +161,83 @@ impl MachineRepository for SqliteMachineRepository {
     async fn get_all(
         &self,
         ctx: &RepoCtx<impl ConnectionTrait>,
-        filter: &MachineFilter,
-    ) -> DomainResult<Vec<Machine>> {
-        let mut condition = Condition::all().add(MachineColumn::IsDeleted.eq(false));
+        query: &MachineQuery,
+    ) -> DomainResult<MachinePage> {
+        let mut select = MachineEntity::find().filter(MachineColumn::IsDeleted.eq(false));
 
-        if let Some(branch_id) = filter.branch_id {
-            condition = condition.add(MachineColumn::BranchId.eq(branch_id));
+        // ── Filters ──────────────────────────────────────────────────────
+        if let Some(branch_id) = query.filter.branch_id {
+            select = select.filter(MachineColumn::BranchId.eq(branch_id));
         }
 
-        if let Some(name) = &filter.name {
-            condition = condition.add(MachineColumn::Name.contains(name));
+        if let Some(name) = &query.filter.name {
+            select = select.filter(MachineColumn::Name.contains(name));
         }
 
-        let models = MachineEntity::find()
-            .filter(condition)
-            .all(&ctx.db)
-            .await?;
+        // ── Map sort field to column ──────────────────────────────────────
+        let sort_col = match query.sort_field {
+            MachineSortField::Name => MachineColumn::Name,
+            MachineSortField::CreatedAt => MachineColumn::CreatedAt,
+        };
 
-        Ok(models.into_iter().map(|m| m.to_domain()).collect())
+        let order = match query.sort_direction {
+            SortDirection::Asc => Order::Asc,
+            SortDirection::Desc => Order::Desc,
+        };
+
+        // ── Cursor condition ──────────────────────────────────────────────
+        // WHERE (field > val) OR (field = val AND id > cursor_id)  [Asc]
+        // WHERE (field < val) OR (field = val AND id < cursor_id)  [Desc]
+        if let Some(cursor) = &query.cursor {
+            let cond = match query.sort_direction {
+                SortDirection::Asc => Condition::any()
+                    .add(Expr::col(sort_col).gt(cursor.field_value.clone()))
+                    .add(
+                        Condition::all()
+                            .add(Expr::col(sort_col).eq(cursor.field_value.clone()))
+                            .add(Expr::col(MachineColumn::Id).gt(cursor.id)),
+                    ),
+                SortDirection::Desc => Condition::any()
+                    .add(Expr::col(sort_col).lt(cursor.field_value.clone()))
+                    .add(
+                        Condition::all()
+                            .add(Expr::col(sort_col).eq(cursor.field_value.clone()))
+                            .add(Expr::col(MachineColumn::Id).lt(cursor.id)),
+                    ),
+            };
+            select = select.filter(cond);
+        }
+
+        // ── Ordering: (sort_field, id) ────────────────────────────────────
+        select = select
+            .order_by(sort_col, order.clone())
+            .order_by(MachineColumn::Id, order);
+
+        // Fetch limit + 1 to detect whether there is a next page
+        let fetch_limit = query.limit + 1;
+        let rows = select.limit(fetch_limit).all(&ctx.db).await?;
+
+        let has_next = rows.len() as u64 > query.limit;
+        let models: Vec<_> = rows.into_iter().take(query.limit as usize).collect();
+
+        // ── Build next_cursor from the last item ──────────────────────────
+        let next_cursor = if has_next {
+            models.last().map(|last| {
+                let field_value = match query.sort_field {
+                    MachineSortField::Name => last.name.clone(),
+                    MachineSortField::CreatedAt => last.created_at.clone(),
+                };
+                MachineCursor {
+                    field_value,
+                    id: last.id,
+                }
+            })
+        } else {
+            None
+        };
+
+        let items = models.into_iter().map(|m| m.to_domain()).collect();
+
+        Ok(MachinePage { items, next_cursor })
     }
 }
