@@ -1,6 +1,7 @@
 pub mod branch;
 pub mod category;
 pub mod customer;
+pub mod machine;
 pub mod number_sequence;
 pub mod permission;
 pub mod product;
@@ -27,6 +28,11 @@ pub use customer::ActiveModel as CustomerActiveModel;
 pub use customer::Column as CustomerColumn;
 pub use customer::Entity as CustomerEntity;
 pub use customer::Model as CustomerModel;
+
+pub use machine::ActiveModel as MachineActiveModel;
+pub use machine::Column as MachineColumn;
+pub use machine::Entity as MachineEntity;
+pub use machine::Model as MachineModel;
 
 pub use permission::ActiveModel as PermissionActiveModel;
 pub use permission::Column as PermissionColumn;
