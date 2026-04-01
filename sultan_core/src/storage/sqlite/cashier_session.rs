@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait, Order,
+    QueryFilter, QueryOrder, QuerySelect, Set, sea_query::Expr,
 };
 
 use super::entity::{CashierSessionActiveModel, CashierSessionColumn, CashierSessionEntity};
@@ -8,8 +9,12 @@ use crate::{
     domain::{
         DomainResult,
         error::Error,
-        model::cashier_session::{
-            CashierSession, CashierSessionClose, CashierSessionCreate, CashierSessionFilter,
+        model::{
+            cashier_session::{
+                CashierSession, CashierSessionClose, CashierSessionCreate, CashierSessionCursor,
+                CashierSessionPage, CashierSessionQuery, CashierSessionSortField,
+            },
+            product::SortDirection,
         },
     },
     storage::{CashierSessionRepository, RepoCtx},
@@ -130,25 +135,83 @@ impl CashierSessionRepository for SqliteCashierSessionRepository {
     async fn get_all(
         &self,
         ctx: &RepoCtx<impl ConnectionTrait>,
-        filter: &CashierSessionFilter,
-    ) -> DomainResult<Vec<CashierSession>> {
-        let mut query =
+        query: &CashierSessionQuery,
+    ) -> DomainResult<CashierSessionPage> {
+        let mut select =
             CashierSessionEntity::find().filter(CashierSessionColumn::IsDeleted.eq(false));
 
-        if let Some(branch_id) = filter.branch_id {
-            query = query.filter(CashierSessionColumn::BranchId.eq(branch_id));
+        // ── Filters ──────────────────────────────────────────────────────
+        if let Some(branch_id) = query.filter.branch_id {
+            select = select.filter(CashierSessionColumn::BranchId.eq(branch_id));
         }
 
-        if let Some(user_id) = filter.user_id {
-            query = query.filter(CashierSessionColumn::UserId.eq(user_id));
+        if let Some(user_id) = query.filter.user_id {
+            select = select.filter(CashierSessionColumn::UserId.eq(user_id));
         }
 
-        if let Some(status) = &filter.status {
-            query = query.filter(CashierSessionColumn::Status.eq(status.as_str()));
+        if let Some(status) = &query.filter.status {
+            select = select.filter(CashierSessionColumn::Status.eq(status.as_str()));
         }
 
-        let sessions = query.all(&ctx.db).await?;
-        Ok(sessions.into_iter().map(|s| s.to_domain()).collect())
+        // ── Map sort field to column ──────────────────────────────────────
+        let sort_col = match query.sort_field {
+            CashierSessionSortField::OpenedAt => CashierSessionColumn::OpenedAt,
+        };
+
+        let order = match query.sort_direction {
+            SortDirection::Asc => Order::Asc,
+            SortDirection::Desc => Order::Desc,
+        };
+
+        // ── Cursor condition ──────────────────────────────────────────────
+        if let Some(cursor) = &query.cursor {
+            let cond = match query.sort_direction {
+                SortDirection::Asc => Condition::any()
+                    .add(Expr::col(sort_col).gt(cursor.field_value.clone()))
+                    .add(
+                        Condition::all()
+                            .add(Expr::col(sort_col).eq(cursor.field_value.clone()))
+                            .add(Expr::col(CashierSessionColumn::Id).gt(cursor.id)),
+                    ),
+                SortDirection::Desc => Condition::any()
+                    .add(Expr::col(sort_col).lt(cursor.field_value.clone()))
+                    .add(
+                        Condition::all()
+                            .add(Expr::col(sort_col).eq(cursor.field_value.clone()))
+                            .add(Expr::col(CashierSessionColumn::Id).lt(cursor.id)),
+                    ),
+            };
+            select = select.filter(cond);
+        }
+
+        // ── Ordering: (sort_field, id) ────────────────────────────────────
+        select = select
+            .order_by(sort_col, order.clone())
+            .order_by(CashierSessionColumn::Id, order);
+
+        // Fetch limit + 1 to detect whether there is a next page
+        let fetch_limit = query.limit + 1;
+        let rows = select.limit(fetch_limit).all(&ctx.db).await?;
+
+        let has_next = rows.len() as u64 > query.limit;
+        let models: Vec<_> = rows.into_iter().take(query.limit as usize).collect();
+
+        // ── Build next_cursor from the last item ──────────────────────────
+        let next_cursor = if has_next {
+            models.last().map(|last| {
+                let field_value = last.opened_at.clone();
+                CashierSessionCursor {
+                    field_value,
+                    id: last.id,
+                }
+            })
+        } else {
+            None
+        };
+
+        let items = models.into_iter().map(|s| s.to_domain()).collect();
+
+        Ok(CashierSessionPage { items, next_cursor })
     }
 
     async fn delete(&self, ctx: &RepoCtx<impl ConnectionTrait>, id: i64) -> DomainResult<()> {

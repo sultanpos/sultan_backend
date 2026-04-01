@@ -1,6 +1,8 @@
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
+use super::product::SortDirection;
+
 /// Status of a cashier session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -76,4 +78,36 @@ pub struct CashierSessionFilter {
     pub branch_id: Option<i64>,
     pub user_id: Option<i64>,
     pub status: Option<SessionStatus>,
+}
+
+/// Sort fields available for cashier session listing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CashierSessionSortField {
+    OpenedAt,
+}
+
+/// Cursor for keyset (cursor-based) pagination over cashier sessions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CashierSessionCursor {
+    /// Value of the primary sort field from the last item of the previous page.
+    pub field_value: String,
+    /// ID of the last item of the previous page (tiebreaker).
+    pub id: i64,
+}
+
+/// Options for querying a list of cashier sessions with cursor-based pagination.
+#[derive(Debug, Clone)]
+pub struct CashierSessionQuery {
+    pub filter: CashierSessionFilter,
+    pub sort_field: CashierSessionSortField,
+    pub sort_direction: SortDirection,
+    pub cursor: Option<CashierSessionCursor>,
+    pub limit: u64,
+}
+
+/// A page of cashier sessions with an optional cursor pointing to the next page.
+#[derive(Debug, Clone)]
+pub struct CashierSessionPage {
+    pub items: Vec<CashierSession>,
+    pub next_cursor: Option<CashierSessionCursor>,
 }

@@ -4,7 +4,8 @@ use sea_orm::ConnectionTrait;
 use crate::domain::{
     DomainResult,
     model::cashier_session::{
-        CashierSession, CashierSessionClose, CashierSessionCreate, CashierSessionFilter,
+        CashierSession, CashierSessionClose, CashierSessionCreate, CashierSessionPage,
+        CashierSessionQuery,
     },
 };
 
@@ -43,8 +44,8 @@ pub trait CashierSessionRepository: Send + Sync {
     async fn get_all(
         &self,
         ctx: &super::RepoCtx<impl ConnectionTrait>,
-        filter: &CashierSessionFilter,
-    ) -> DomainResult<Vec<CashierSession>>;
+        query: &CashierSessionQuery,
+    ) -> DomainResult<CashierSessionPage>;
 
     async fn delete(&self, ctx: &super::RepoCtx<impl ConnectionTrait>, id: i64)
     -> DomainResult<()>;

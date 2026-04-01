@@ -1,8 +1,12 @@
 use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
 
 use crate::{
-    domain::model::cashier_session::{
-        CashierSessionClose, CashierSessionCreate, CashierSessionFilter, SessionStatus,
+    domain::model::{
+        cashier_session::{
+            CashierSessionClose, CashierSessionCreate, CashierSessionFilter, CashierSessionQuery,
+            CashierSessionSortField, SessionStatus,
+        },
+        product::SortDirection,
     },
     storage::{CashierSessionRepository, RepoCtx},
 };
@@ -35,6 +39,16 @@ async fn create_test_user(ctx: &RepoCtx<DatabaseConnection>) -> i64 {
     user_id
 }
 
+fn default_query(filter: CashierSessionFilter) -> CashierSessionQuery {
+    CashierSessionQuery {
+        filter,
+        sort_field: CashierSessionSortField::OpenedAt,
+        sort_direction: SortDirection::Asc,
+        cursor: None,
+        limit: 100,
+    }
+}
+
 pub async fn cashier_session_test_all<C, F, Fut>(repo: &C, ctx_factory: F)
 where
     C: CashierSessionRepository,
@@ -48,6 +62,8 @@ where
     cashier_session_test_get_all_filter_by_branch(&ctx_factory().await, repo).await;
     cashier_session_test_get_all_filter_by_user(&ctx_factory().await, repo).await;
     cashier_session_test_get_all_filter_by_status(&ctx_factory().await, repo).await;
+    cashier_session_test_cursor_pagination_asc(&ctx_factory().await, repo).await;
+    cashier_session_test_cursor_pagination_no_next_on_last_page(&ctx_factory().await, repo).await;
     cashier_session_test_soft_delete(&ctx_factory().await, repo).await;
     cashier_session_test_delete_not_found(&ctx_factory().await, repo).await;
     cashier_session_test_close_not_found(&ctx_factory().await, repo).await;
@@ -256,16 +272,16 @@ pub async fn cashier_session_test_get_all_filter_by_branch<C: CashierSessionRepo
     let results = repo
         .get_all(
             ctx,
-            &CashierSessionFilter {
+            &default_query(CashierSessionFilter {
                 branch_id: Some(branch_a),
                 ..Default::default()
-            },
+            }),
         )
         .await
         .expect("get_all failed");
 
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].id, id_a);
+    assert_eq!(results.items.len(), 1);
+    assert_eq!(results.items[0].id, id_a);
 }
 
 pub async fn cashier_session_test_get_all_filter_by_user<C: CashierSessionRepository>(
@@ -307,16 +323,16 @@ pub async fn cashier_session_test_get_all_filter_by_user<C: CashierSessionReposi
     let results = repo
         .get_all(
             ctx,
-            &CashierSessionFilter {
+            &default_query(CashierSessionFilter {
                 user_id: Some(user_a),
                 ..Default::default()
-            },
+            }),
         )
         .await
         .expect("get_all failed");
 
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].id, id_a);
+    assert_eq!(results.items.len(), 1);
+    assert_eq!(results.items[0].id, id_a);
 }
 
 pub async fn cashier_session_test_get_all_filter_by_status<C: CashierSessionRepository>(
@@ -370,17 +386,22 @@ pub async fn cashier_session_test_get_all_filter_by_status<C: CashierSessionRepo
     let open_results = repo
         .get_all(
             ctx,
-            &CashierSessionFilter {
+            &default_query(CashierSessionFilter {
                 status: Some(SessionStatus::Open),
                 ..Default::default()
-            },
+            }),
         )
         .await
         .expect("get_all open failed");
 
-    assert!(open_results.iter().all(|s| s.status == SessionStatus::Open));
-    assert!(open_results.iter().any(|s| s.id == id_open));
-    assert!(!open_results.iter().any(|s| s.id == id_closed));
+    assert!(
+        open_results
+            .items
+            .iter()
+            .all(|s| s.status == SessionStatus::Open)
+    );
+    assert!(open_results.items.iter().any(|s| s.id == id_open));
+    assert!(!open_results.items.iter().any(|s| s.id == id_closed));
 }
 
 // =============================================================================
@@ -495,4 +516,127 @@ pub async fn cashier_session_test_close_already_closed<C: CashierSessionReposito
         matches!(result, Err(crate::domain::error::Error::NotFound(_))),
         "Expected NotFound when closing an already-closed session"
     );
+}
+
+// =============================================================================
+// Cursor pagination
+// =============================================================================
+
+pub async fn cashier_session_test_cursor_pagination_asc<C: CashierSessionRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
+    let branch_id = create_test_branch(ctx).await;
+
+    // Create 3 sessions with different users (one open per user/branch)
+    for _ in 0..3 {
+        let user_id = create_test_user(ctx).await;
+        let id = super::generate_test_id().await;
+        repo.create(
+            ctx,
+            id,
+            &CashierSessionCreate {
+                branch_id,
+                user_id,
+                opening_cash: 0,
+                notes: None,
+            },
+        )
+        .await
+        .expect("create failed");
+    }
+
+    // Page 1: limit 2
+    let page1 = repo
+        .get_all(
+            ctx,
+            &CashierSessionQuery {
+                filter: CashierSessionFilter {
+                    branch_id: Some(branch_id),
+                    ..Default::default()
+                },
+                sort_field: CashierSessionSortField::OpenedAt,
+                sort_direction: SortDirection::Asc,
+                cursor: None,
+                limit: 2,
+            },
+        )
+        .await
+        .expect("page 1 failed");
+
+    assert_eq!(page1.items.len(), 2);
+    assert!(page1.next_cursor.is_some(), "Expected a next cursor");
+
+    // Page 2: use cursor from page 1
+    let page2 = repo
+        .get_all(
+            ctx,
+            &CashierSessionQuery {
+                filter: CashierSessionFilter {
+                    branch_id: Some(branch_id),
+                    ..Default::default()
+                },
+                sort_field: CashierSessionSortField::OpenedAt,
+                sort_direction: SortDirection::Asc,
+                cursor: page1.next_cursor,
+                limit: 2,
+            },
+        )
+        .await
+        .expect("page 2 failed");
+
+    assert_eq!(page2.items.len(), 1);
+    assert!(page2.next_cursor.is_none(), "No more pages expected");
+
+    // IDs across pages must not overlap
+    let ids_p1: Vec<i64> = page1.items.iter().map(|s| s.id).collect();
+    let ids_p2: Vec<i64> = page2.items.iter().map(|s| s.id).collect();
+    assert!(
+        ids_p1.iter().all(|id| !ids_p2.contains(id)),
+        "Pages must not contain duplicate IDs"
+    );
+}
+
+pub async fn cashier_session_test_cursor_pagination_no_next_on_last_page<
+    C: CashierSessionRepository,
+>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
+    let branch_id = create_test_branch(ctx).await;
+    let user_id = create_test_user(ctx).await;
+    let id = super::generate_test_id().await;
+
+    repo.create(
+        ctx,
+        id,
+        &CashierSessionCreate {
+            branch_id,
+            user_id,
+            opening_cash: 0,
+            notes: None,
+        },
+    )
+    .await
+    .expect("create failed");
+
+    let page = repo
+        .get_all(
+            ctx,
+            &CashierSessionQuery {
+                filter: CashierSessionFilter {
+                    branch_id: Some(branch_id),
+                    ..Default::default()
+                },
+                sort_field: CashierSessionSortField::OpenedAt,
+                sort_direction: SortDirection::Asc,
+                cursor: None,
+                limit: 10,
+            },
+        )
+        .await
+        .expect("get_all failed");
+
+    assert_eq!(page.items.len(), 1);
+    assert!(page.next_cursor.is_none());
 }
