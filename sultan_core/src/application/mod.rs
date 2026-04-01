@@ -1,6 +1,7 @@
 pub mod auth_service;
 pub mod branch_service;
 pub mod cache;
+pub mod cashier_session_service;
 pub mod category_service;
 pub mod customer_service;
 pub mod machine_service;
@@ -12,6 +13,7 @@ pub mod user_service;
 pub use auth_service::{AuthService, AuthServiceTrait, AuthTokens};
 pub use branch_service::{BranchService, BranchServiceTrait};
 pub use cache::{CacheService, InMemoryCache};
+pub use cashier_session_service::{CashierSessionService, CashierSessionServiceTrait};
 pub use category_service::{CategoryService, CategoryServiceTrait};
 pub use customer_service::{CustomerService, CustomerServiceTrait};
 pub use machine_service::{MachineService, MachineServiceTrait};
