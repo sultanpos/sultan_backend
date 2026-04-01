@@ -1,4 +1,5 @@
 pub mod branch_repo;
+pub mod cashier_session_repo;
 pub mod category_repo;
 pub mod customer_repo;
 pub mod machine_repo;
@@ -12,6 +13,7 @@ pub mod unit_repo;
 pub mod user_repo;
 
 pub use branch_repo::BranchRepository;
+pub use cashier_session_repo::CashierSessionRepository;
 pub use category_repo::CategoryRepository;
 pub use customer_repo::CustomerRepository;
 pub use machine_repo::MachineRepository;

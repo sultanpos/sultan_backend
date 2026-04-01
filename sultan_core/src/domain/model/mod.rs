@@ -1,4 +1,5 @@
 pub mod branch;
+pub mod cashier_session;
 pub mod category;
 pub mod customer;
 pub mod machine;
