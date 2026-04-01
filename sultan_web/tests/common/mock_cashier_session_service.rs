@@ -83,11 +83,7 @@ impl CashierSessionServiceTrait for MockCashierSessionService {
         Ok(())
     }
 
-    async fn get_by_id(
-        &self,
-        _ctx: &Context,
-        id: i64,
-    ) -> DomainResult<Option<CashierSession>> {
+    async fn get_by_id(&self, _ctx: &Context, id: i64) -> DomainResult<Option<CashierSession>> {
         if !self.should_succeed {
             return Err(Error::Internal("Failed to get session".to_string()));
         }
@@ -105,9 +101,7 @@ impl CashierSessionServiceTrait for MockCashierSessionService {
         _user_id: i64,
     ) -> DomainResult<Option<CashierSession>> {
         if !self.should_succeed {
-            return Err(Error::Internal(
-                "Failed to get current session".to_string(),
-            ));
+            return Err(Error::Internal("Failed to get current session".to_string()));
         }
         Ok(Some(sample_session(1)))
     }

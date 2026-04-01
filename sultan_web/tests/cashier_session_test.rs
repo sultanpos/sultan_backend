@@ -221,14 +221,10 @@ async fn test_get_current_session_success() {
 
     let app = build_test_router(app_state);
 
-    let (status, response) = make_request(
-        app,
-        "GET",
-        "/api/cashier-session/current?branch_id=1",
-        None,
-    )
-    .await
-    .expect("Request failed");
+    let (status, response) =
+        make_request(app, "GET", "/api/cashier-session/current?branch_id=1", None)
+            .await
+            .expect("Request failed");
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(response["id"].as_str().unwrap(), "1");
@@ -242,14 +238,9 @@ async fn test_get_current_session_service_failure() {
 
     let app = build_test_router(app_state);
 
-    let (status, _) = make_request(
-        app,
-        "GET",
-        "/api/cashier-session/current?branch_id=1",
-        None,
-    )
-    .await
-    .expect("Request failed");
+    let (status, _) = make_request(app, "GET", "/api/cashier-session/current?branch_id=1", None)
+        .await
+        .expect("Request failed");
 
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
 }
