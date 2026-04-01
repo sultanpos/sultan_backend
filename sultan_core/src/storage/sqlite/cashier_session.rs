@@ -12,7 +12,7 @@ use crate::{
         model::{
             cashier_session::{
                 CashierSession, CashierSessionClose, CashierSessionCreate, CashierSessionCursor,
-                CashierSessionPage, CashierSessionQuery, CashierSessionSortField,
+                CashierSessionPage, CashierSessionQuery, CashierSessionSortField, SessionStatus,
             },
             product::SortDirection,
         },
@@ -51,7 +51,7 @@ impl CashierSessionRepository for SqliteCashierSessionRepository {
             user_id: Set(data.user_id),
             opened_at: Set(now),
             closed_at: Set(None),
-            status: Set("open".to_string()),
+            status: Set(SessionStatus::Open.as_str().to_string()),
             opening_cash: Set(data.opening_cash),
             closing_cash: Set(None),
             notes: Set(data.notes.clone()),
@@ -83,7 +83,7 @@ impl CashierSessionRepository for SqliteCashierSessionRepository {
         let session = CashierSessionEntity::find()
             .filter(CashierSessionColumn::BranchId.eq(branch_id))
             .filter(CashierSessionColumn::UserId.eq(user_id))
-            .filter(CashierSessionColumn::Status.eq("open"))
+            .filter(CashierSessionColumn::Status.eq(SessionStatus::Open.as_str()))
             .filter(CashierSessionColumn::IsDeleted.eq(false))
             .one(&ctx.db)
             .await?;
@@ -103,8 +103,11 @@ impl CashierSessionRepository for SqliteCashierSessionRepository {
         let mut update_query = CashierSessionEntity::update_many()
             .filter(CashierSessionColumn::Id.eq(id))
             .filter(CashierSessionColumn::IsDeleted.eq(false))
-            .filter(CashierSessionColumn::Status.eq("open"))
-            .col_expr(CashierSessionColumn::Status, Expr::value("closed"))
+            .filter(CashierSessionColumn::Status.eq(SessionStatus::Open.as_str()))
+            .col_expr(
+                CashierSessionColumn::Status,
+                Expr::value(SessionStatus::Closed.as_str()),
+            )
             .col_expr(
                 CashierSessionColumn::ClosedAt,
                 Expr::value(Some(now.clone())),
