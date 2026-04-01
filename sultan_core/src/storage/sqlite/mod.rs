@@ -1,4 +1,5 @@
 pub mod branch;
+pub mod cashier_session;
 pub mod category;
 pub mod customer;
 pub mod entity;
@@ -12,6 +13,7 @@ pub mod unit;
 pub mod user;
 
 pub use branch::SqliteBranchRepository;
+pub use cashier_session::SqliteCashierSessionRepository;
 pub use category::SqliteCategoryRepository;
 pub use customer::SqliteCustomerRepository;
 pub use machine::SqliteMachineRepository;

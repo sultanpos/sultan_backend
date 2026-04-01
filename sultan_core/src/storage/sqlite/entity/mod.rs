@@ -1,4 +1,5 @@
 pub mod branch;
+pub mod cashier_session;
 pub mod category;
 pub mod customer;
 pub mod machine;
@@ -18,6 +19,11 @@ pub use branch::ActiveModel as BranchActiveModel;
 pub use branch::Column as BranchColumn;
 pub use branch::Entity as BranchEntity;
 pub use branch::Model as BranchModel;
+
+pub use cashier_session::ActiveModel as CashierSessionActiveModel;
+pub use cashier_session::Column as CashierSessionColumn;
+pub use cashier_session::Entity as CashierSessionEntity;
+pub use cashier_session::Model as CashierSessionModel;
 
 pub use category::ActiveModel as CategoryActiveModel;
 pub use category::Column as CategoryColumn;
