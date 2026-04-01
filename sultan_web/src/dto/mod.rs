@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 pub mod branch;
+pub mod cashier_session;
 pub mod category;
 pub mod customer;
 pub mod login;
@@ -60,7 +61,7 @@ where
     }
 }
 
-fn string_to_i64<'de, D>(d: D) -> Result<i64, D::Error>
+pub(crate) fn string_to_i64<'de, D>(d: D) -> Result<i64, D::Error>
 where
     D: Deserializer<'de>,
 {

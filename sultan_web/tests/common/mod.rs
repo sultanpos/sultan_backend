@@ -1,5 +1,6 @@
 pub mod mock_auth_service;
 pub mod mock_branch_service;
+pub mod mock_cashier_session_service;
 pub mod mock_category_service;
 pub mod mock_customer_service;
 pub mod mock_machine_service;
@@ -9,6 +10,7 @@ pub mod mock_user_service;
 
 pub use mock_auth_service::MockAuthService;
 pub use mock_branch_service::MockBranchService;
+pub use mock_cashier_session_service::MockCashierSessionService;
 pub use mock_category_service::MockCategoryService;
 pub use mock_customer_service::MockCustomerService;
 pub use mock_machine_service::MockMachineService;
@@ -25,8 +27,9 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::Arc;
 use sultan_core::application::{
-    AuthServiceTrait, BranchServiceTrait, CategoryServiceTrait, CustomerServiceTrait,
-    MachineServiceTrait, ProductServiceTrait, SupplierServiceTrait, UserServiceTrait,
+    AuthServiceTrait, BranchServiceTrait, CashierSessionServiceTrait, CategoryServiceTrait,
+    CustomerServiceTrait, MachineServiceTrait, ProductServiceTrait, SupplierServiceTrait,
+    UserServiceTrait,
 };
 use sultan_core::crypto::{DefaultJwtManager, JwtConfig};
 use sultan_web::AppState;
@@ -42,6 +45,7 @@ pub struct MockAppStateBuilder {
     user_service: Option<Arc<dyn UserServiceTrait>>,
     product_service: Option<Arc<dyn ProductServiceTrait>>,
     machine_service: Option<Arc<dyn MachineServiceTrait>>,
+    cashier_session_service: Option<Arc<dyn CashierSessionServiceTrait>>,
     extensions: HashMap<TypeId, Arc<dyn Any + Send + Sync>>,
 }
 
@@ -57,6 +61,7 @@ impl MockAppStateBuilder {
             user_service: None,
             product_service: None,
             machine_service: None,
+            cashier_session_service: None,
             extensions: HashMap::new(),
         }
     }
@@ -117,6 +122,16 @@ impl MockAppStateBuilder {
         self
     }
 
+    /// Override the cashier session service
+    #[allow(dead_code)]
+    pub fn with_cashier_session_service(
+        mut self,
+        service: Arc<dyn CashierSessionServiceTrait>,
+    ) -> Self {
+        self.cashier_session_service = Some(service);
+        self
+    }
+
     /// Add an extension to the AppState
     #[allow(dead_code)]
     pub fn add_extension<T: Send + Sync + 'static>(mut self, value: Arc<T>) -> Self {
@@ -157,6 +172,9 @@ impl MockAppStateBuilder {
             machine_service: self
                 .machine_service
                 .unwrap_or_else(|| Arc::new(MockMachineService::new_success())),
+            cashier_session_service: self
+                .cashier_session_service
+                .unwrap_or_else(|| Arc::new(MockCashierSessionService::new_success())),
 
             extensions: Arc::new(self.extensions),
         }
