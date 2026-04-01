@@ -38,6 +38,14 @@ fn build_test_router(app_state: MockAppStateBuilder) -> Router {
         .with_state(app_state.build())
 }
 
+/// Router without an authenticated user (uses the bare context_middleware, user_id = None)
+fn build_unauthenticated_router(app_state: MockAppStateBuilder) -> Router {
+    Router::new()
+        .nest("/api/cashier-session", cashier_session_router())
+        .layer(from_fn(context_middleware))
+        .with_state(app_state.build())
+}
+
 // ============================================================================
 // POST /api/cashier-session - Open Session Tests
 // ============================================================================
@@ -99,6 +107,26 @@ async fn test_open_session_negative_cash() {
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(response["error"].as_str().unwrap().contains("Opening cash"));
+}
+
+#[tokio::test]
+async fn test_open_session_unauthorized_no_user_in_context() {
+    let app_state = MockAppStateBuilder::new()
+        .with_cashier_session_service(Arc::new(MockCashierSessionService::new_success()));
+
+    let app = build_unauthenticated_router(app_state);
+
+    let body = json!({
+        "branch_id": "1",
+        "opening_cash": 100000
+    });
+
+    let (status, response) = make_request(app, "POST", "/api/cashier-session", Some(body))
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert!(response["error"].as_str().is_some());
 }
 
 // ============================================================================
@@ -243,6 +271,22 @@ async fn test_get_current_session_service_failure() {
         .expect("Request failed");
 
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+async fn test_get_current_session_unauthorized_no_user_in_context() {
+    let app_state = MockAppStateBuilder::new()
+        .with_cashier_session_service(Arc::new(MockCashierSessionService::new_success()));
+
+    let app = build_unauthenticated_router(app_state);
+
+    let (status, response) =
+        make_request(app, "GET", "/api/cashier-session/current?branch_id=1", None)
+            .await
+            .expect("Request failed");
+
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert!(response["error"].as_str().is_some());
 }
 
 // ============================================================================
