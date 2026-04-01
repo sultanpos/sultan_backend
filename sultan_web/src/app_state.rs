@@ -5,8 +5,9 @@ use std::{
     collections::HashMap,
 };
 use sultan_core::application::{
-    AuthServiceTrait, BranchServiceTrait, CategoryServiceTrait, CustomerServiceTrait,
-    MachineServiceTrait, ProductServiceTrait, SupplierServiceTrait, UserServiceTrait,
+    AuthServiceTrait, BranchServiceTrait, CashierSessionServiceTrait, CategoryServiceTrait,
+    CustomerServiceTrait, MachineServiceTrait, ProductServiceTrait, SupplierServiceTrait,
+    UserServiceTrait,
 };
 use sultan_core::crypto::JwtManager;
 
@@ -21,6 +22,7 @@ pub struct AppState {
     pub user_service: Arc<dyn UserServiceTrait>,
     pub product_service: Arc<dyn ProductServiceTrait>,
     pub machine_service: Arc<dyn MachineServiceTrait>,
+    pub cashier_session_service: Arc<dyn CashierSessionServiceTrait>,
     pub extensions: Arc<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>,
 }
 
@@ -77,5 +79,11 @@ impl FromRef<AppState> for Arc<dyn ProductServiceTrait> {
 impl FromRef<AppState> for Arc<dyn MachineServiceTrait> {
     fn from_ref(app_state: &AppState) -> Self {
         app_state.machine_service.clone()
+    }
+}
+
+impl FromRef<AppState> for Arc<dyn CashierSessionServiceTrait> {
+    fn from_ref(app_state: &AppState) -> Self {
+        app_state.cashier_session_service.clone()
     }
 }

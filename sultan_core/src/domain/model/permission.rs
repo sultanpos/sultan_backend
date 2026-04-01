@@ -10,6 +10,7 @@ pub mod resource {
     pub const CASHIER: i32 = 9;
     pub const SELL_PRICE: i32 = 10;
     pub const MACHINE: i32 = 11;
+    pub const CASHIER_SESSION: i32 = 12;
 }
 
 pub mod action {
