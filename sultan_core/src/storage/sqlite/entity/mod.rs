@@ -8,6 +8,9 @@ pub mod permission;
 pub mod product;
 pub mod product_category;
 pub mod product_variant;
+pub mod purchase_order;
+pub mod purchase_order_item;
+pub mod purchase_payment;
 pub mod sell_discount;
 pub mod sell_price;
 pub mod supplier;
@@ -100,3 +103,18 @@ pub use stock::ActiveModel as StockActiveModel;
 pub use stock::Column as StockColumn;
 pub use stock::Entity as StockEntity;
 pub use stock::Model as StockModel;
+
+pub use purchase_order::ActiveModel as PurchaseOrderActiveModel;
+pub use purchase_order::Column as PurchaseOrderColumn;
+pub use purchase_order::Entity as PurchaseOrderEntity;
+pub use purchase_order::Model as PurchaseOrderModel;
+
+pub use purchase_order_item::ActiveModel as PurchaseOrderItemActiveModel;
+pub use purchase_order_item::Column as PurchaseOrderItemColumn;
+pub use purchase_order_item::Entity as PurchaseOrderItemEntity;
+pub use purchase_order_item::Model as PurchaseOrderItemModel;
+
+pub use purchase_payment::ActiveModel as PurchasePaymentActiveModel;
+pub use purchase_payment::Column as PurchasePaymentColumn;
+pub use purchase_payment::Entity as PurchasePaymentEntity;
+pub use purchase_payment::Model as PurchasePaymentModel;
