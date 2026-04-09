@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait, Order,
-    QueryFilter, QueryOrder, QuerySelect, Set, sea_query::Expr,
+    QueryFilter, QueryOrder, QuerySelect, Set, Statement, sea_query::Expr,
 };
 
 use super::entity::{
@@ -174,20 +174,41 @@ impl PurchaseOrderRepository for SqlitePurchaseOrderRepository {
     ) -> DomainResult<()> {
         let now = now_str();
 
-        let order = PurchaseOrderEntity::find_by_id(purchase_order_id)
-            .filter(PurchaseOrderColumn::IsDeleted.eq(false))
-            .one(&ctx.db)
-            .await?
-            .ok_or_else(|| {
-                Error::NotFound(format!(
-                    "Purchase order with id {} not found",
-                    purchase_order_id
-                ))
-            })?;
+        // Atomically increment paid_amount and derive payment_status in one
+        // statement — eliminates the read-modify-write race under concurrent
+        // payments.  The CASE references the *pre-update* paid_amount value,
+        // which equals (old_paid + data.amount) when evaluated by SQLite.
+        let stmt = Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Sqlite,
+            "UPDATE purchase_orders \
+             SET paid_amount    = paid_amount + ?, \
+                 payment_status = CASE \
+                     WHEN paid_amount + ? >= total_amount THEN 'paid' \
+                     WHEN paid_amount + ?  > 0            THEN 'partial' \
+                     ELSE 'unpaid' \
+                 END, \
+                 updated_at = ? \
+             WHERE id = ? AND is_deleted = 0",
+            [
+                data.amount.into(),
+                data.amount.into(),
+                data.amount.into(),
+                now.clone().into(),
+                purchase_order_id.into(),
+            ],
+        );
+        let result = ctx.db.execute_raw(stmt).await?;
+
+        if result.rows_affected() == 0 {
+            return Err(Error::NotFound(format!(
+                "Purchase order with id {} not found",
+                purchase_order_id
+            )));
+        }
 
         let payment = PurchasePaymentActiveModel {
             id: Set(payment_id),
-            created_at: Set(now.clone()),
+            created_at: Set(now),
             purchase_order_id: Set(purchase_order_id),
             amount: Set(data.amount),
             channel: Set(data.channel.as_str().to_string()),
@@ -196,30 +217,6 @@ impl PurchaseOrderRepository for SqlitePurchaseOrderRepository {
             notes: Set(data.notes.clone()),
         };
         payment.insert(&ctx.db).await?;
-
-        let new_paid_amount = order.paid_amount + data.amount;
-        let new_payment_status = if new_paid_amount >= order.total_amount {
-            PaymentStatus::Paid.as_str()
-        } else if new_paid_amount > 0 {
-            PaymentStatus::Partial.as_str()
-        } else {
-            PaymentStatus::Unpaid.as_str()
-        };
-
-        PurchaseOrderEntity::update_many()
-            .filter(PurchaseOrderColumn::Id.eq(purchase_order_id))
-            .filter(PurchaseOrderColumn::IsDeleted.eq(false))
-            .col_expr(
-                PurchaseOrderColumn::PaidAmount,
-                Expr::value(new_paid_amount),
-            )
-            .col_expr(
-                PurchaseOrderColumn::PaymentStatus,
-                Expr::value(new_payment_status),
-            )
-            .col_expr(PurchaseOrderColumn::UpdatedAt, Expr::value(now))
-            .exec(&ctx.db)
-            .await?;
 
         Ok(())
     }
