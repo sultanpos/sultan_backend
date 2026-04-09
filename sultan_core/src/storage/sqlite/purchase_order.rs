@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait, Order,
@@ -76,19 +78,31 @@ fn assemble_orders(
     item_models: Vec<super::entity::purchase_order_item::Model>,
     payment_models: Vec<super::entity::purchase_payment::Model>,
 ) -> Vec<PurchaseOrder> {
+    // Pre-group by purchase_order_id so assembly is O(#orders + #items + #payments)
+    // rather than O(#orders × (#items + #payments)).
+    let mut items_by_order: HashMap<i64, Vec<PurchaseOrderItem>> =
+        HashMap::with_capacity(order_models.len());
+    for item in item_models {
+        items_by_order
+            .entry(item.purchase_order_id)
+            .or_default()
+            .push(item.to_domain());
+    }
+
+    let mut payments_by_order: HashMap<i64, Vec<PurchasePayment>> =
+        HashMap::with_capacity(order_models.len());
+    for payment in payment_models {
+        payments_by_order
+            .entry(payment.purchase_order_id)
+            .or_default()
+            .push(payment.to_domain());
+    }
+
     order_models
         .into_iter()
         .map(|o| {
-            let items = item_models
-                .iter()
-                .filter(|i| i.purchase_order_id == o.id)
-                .map(|i| i.to_domain())
-                .collect();
-            let payments = payment_models
-                .iter()
-                .filter(|p| p.purchase_order_id == o.id)
-                .map(|p| p.to_domain())
-                .collect();
+            let items = items_by_order.remove(&o.id).unwrap_or_default();
+            let payments = payments_by_order.remove(&o.id).unwrap_or_default();
             o.to_domain(items, payments)
         })
         .collect()
