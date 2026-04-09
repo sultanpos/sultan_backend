@@ -125,6 +125,11 @@ where
     purchase_order_test_get_all_filter_by_number(&ctx_factory().await, repo).await;
     purchase_order_test_get_all_filter_by_reference_number(&ctx_factory().await, repo).await;
     purchase_order_test_cursor_pagination(&ctx_factory().await, repo).await;
+    purchase_order_test_pagination_asc_ordering_and_last_page(&ctx_factory().await, repo).await;
+    purchase_order_test_pagination_desc_ordering(&ctx_factory().await, repo).await;
+    purchase_order_test_pagination_order_date_nulls_excluded(&ctx_factory().await, repo).await;
+    purchase_order_test_pagination_payment_due_date_nulls_excluded(&ctx_factory().await, repo)
+        .await;
     purchase_order_test_add_item(&ctx_factory().await, repo).await;
     purchase_order_test_update_item(&ctx_factory().await, repo).await;
     purchase_order_test_delete_item(&ctx_factory().await, repo).await;
@@ -1179,4 +1184,337 @@ pub async fn purchase_order_test_delete_payment<C: PurchaseOrderRepository>(
         matches!(result, Err(crate::domain::error::Error::NotFound(_))),
         "Expected NotFound for delete_payment on non-existent payment"
     );
+}
+
+// ── Cursor-pagination quality tests ──────────────────────────────────────────
+
+/// Verifies that Asc ordering by OrderDate is stable across pages and that
+/// next_cursor is None on the final page.
+pub async fn purchase_order_test_pagination_asc_ordering_and_last_page<
+    C: PurchaseOrderRepository,
+>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
+    let branch_id = create_test_branch(ctx).await;
+    let variant_id = create_test_product_variant(ctx).await;
+
+    // Four orders with strictly ascending known dates.
+    let dates = [
+        "2026-01-01T00:00:00.000Z",
+        "2026-01-02T00:00:00.000Z",
+        "2026-01-03T00:00:00.000Z",
+        "2026-01-04T00:00:00.000Z",
+    ];
+    for (i, date) in dates.iter().enumerate() {
+        let id = super::generate_test_id().await;
+        let item_id = super::generate_test_id().await;
+        repo.create(
+            ctx,
+            id,
+            &PurchaseOrderCreate {
+                branch_id,
+                supplier_id: None,
+                number: format!("PO-ASC-{i:04}"),
+                reference_number: None,
+                order_date: Some(date.to_string()),
+                expected_date: None,
+                payment_due_date: None,
+                discount_amount: 0,
+                notes: None,
+                metadata: None,
+            },
+            &[(item_id, one_item(variant_id))],
+        )
+        .await
+        .expect("create failed");
+    }
+
+    let query = |cursor| PurchaseOrderQuery {
+        filter: PurchaseOrderFilter::default(),
+        sort_field: PurchaseOrderSortField::OrderDate,
+        sort_direction: SortDirection::Asc,
+        cursor,
+        limit: 2,
+    };
+
+    let page1 = repo.get_all(ctx, &query(None)).await.expect("page1 failed");
+    assert_eq!(page1.items.len(), 2, "page1 should have 2 items");
+    assert!(page1.next_cursor.is_some(), "page1 must have a next_cursor");
+    // Ordering: first item's date ≤ second item's date
+    assert!(
+        page1.items[0].order_date <= page1.items[1].order_date,
+        "page1 items must be in ascending order"
+    );
+
+    let page2 = repo
+        .get_all(ctx, &query(page1.next_cursor))
+        .await
+        .expect("page2 failed");
+    assert_eq!(page2.items.len(), 2, "page2 should have 2 items");
+    // Last page: no more data after exactly 4 rows with limit 2
+    assert!(
+        page2.next_cursor.is_none(),
+        "page2 must NOT have a next_cursor (last page)"
+    );
+    // Ordering within page2
+    assert!(
+        page2.items[0].order_date <= page2.items[1].order_date,
+        "page2 items must be in ascending order"
+    );
+    // Cross-page ordering: last of page1 ≤ first of page2
+    assert!(
+        page1.items[1].order_date <= page2.items[0].order_date,
+        "last item of page1 must be ≤ first item of page2"
+    );
+}
+
+/// Verifies that Desc ordering by OrderDate is stable across pages.
+pub async fn purchase_order_test_pagination_desc_ordering<C: PurchaseOrderRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
+    let branch_id = create_test_branch(ctx).await;
+    let variant_id = create_test_product_variant(ctx).await;
+
+    let dates = [
+        "2026-02-01T00:00:00.000Z",
+        "2026-02-02T00:00:00.000Z",
+        "2026-02-03T00:00:00.000Z",
+        "2026-02-04T00:00:00.000Z",
+    ];
+    for (i, date) in dates.iter().enumerate() {
+        let id = super::generate_test_id().await;
+        let item_id = super::generate_test_id().await;
+        repo.create(
+            ctx,
+            id,
+            &PurchaseOrderCreate {
+                branch_id,
+                supplier_id: None,
+                number: format!("PO-DESC-{i:04}"),
+                reference_number: None,
+                order_date: Some(date.to_string()),
+                expected_date: None,
+                payment_due_date: None,
+                discount_amount: 0,
+                notes: None,
+                metadata: None,
+            },
+            &[(item_id, one_item(variant_id))],
+        )
+        .await
+        .expect("create failed");
+    }
+
+    let query = |cursor| PurchaseOrderQuery {
+        filter: PurchaseOrderFilter::default(),
+        sort_field: PurchaseOrderSortField::OrderDate,
+        sort_direction: SortDirection::Desc,
+        cursor,
+        limit: 2,
+    };
+
+    let page1 = repo
+        .get_all(ctx, &query(None))
+        .await
+        .expect("page1 desc failed");
+    assert_eq!(page1.items.len(), 2);
+    assert!(page1.next_cursor.is_some());
+    // Desc: first ≥ second
+    assert!(
+        page1.items[0].order_date >= page1.items[1].order_date,
+        "page1 items must be in descending order"
+    );
+
+    let page2 = repo
+        .get_all(ctx, &query(page1.next_cursor))
+        .await
+        .expect("page2 desc failed");
+    assert_eq!(page2.items.len(), 2);
+    assert!(page2.next_cursor.is_none(), "last page must have no cursor");
+    assert!(
+        page2.items[0].order_date >= page2.items[1].order_date,
+        "page2 items must be in descending order"
+    );
+    // Cross-page: last of page1 ≥ first of page2
+    assert!(
+        page1.items[1].order_date >= page2.items[0].order_date,
+        "last item of page1 must be ≥ first item of page2"
+    );
+}
+
+/// Verifies that rows with NULL order_date are excluded when sorting by OrderDate.
+pub async fn purchase_order_test_pagination_order_date_nulls_excluded<
+    C: PurchaseOrderRepository,
+>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
+    let branch_id = create_test_branch(ctx).await;
+    let variant_id = create_test_product_variant(ctx).await;
+
+    // 3 orders with order_date, 2 without.
+    let dated_numbers = ["PO-ODN-001", "PO-ODN-002", "PO-ODN-003"];
+    let null_numbers = ["PO-ODN-NULL-001", "PO-ODN-NULL-002"];
+
+    for number in &dated_numbers {
+        let id = super::generate_test_id().await;
+        let item_id = super::generate_test_id().await;
+        repo.create(
+            ctx,
+            id,
+            &PurchaseOrderCreate {
+                branch_id,
+                supplier_id: None,
+                number: number.to_string(),
+                reference_number: None,
+                order_date: Some("2026-03-01T00:00:00.000Z".to_string()),
+                expected_date: None,
+                payment_due_date: None,
+                discount_amount: 0,
+                notes: None,
+                metadata: None,
+            },
+            &[(item_id, one_item(variant_id))],
+        )
+        .await
+        .expect("create with date failed");
+    }
+    for number in &null_numbers {
+        let id = super::generate_test_id().await;
+        let item_id = super::generate_test_id().await;
+        repo.create(
+            ctx,
+            id,
+            &PurchaseOrderCreate {
+                branch_id,
+                supplier_id: None,
+                number: number.to_string(),
+                reference_number: None,
+                order_date: None, // NULL
+                expected_date: None,
+                payment_due_date: None,
+                discount_amount: 0,
+                notes: None,
+                metadata: None,
+            },
+            &[(item_id, one_item(variant_id))],
+        )
+        .await
+        .expect("create without date failed");
+    }
+
+    let page = repo
+        .get_all(
+            ctx,
+            &PurchaseOrderQuery {
+                filter: PurchaseOrderFilter::default(),
+                sort_field: PurchaseOrderSortField::OrderDate,
+                sort_direction: SortDirection::Asc,
+                cursor: None,
+                limit: 100,
+            },
+        )
+        .await
+        .expect("get_all failed");
+
+    assert_eq!(
+        page.items.len(),
+        3,
+        "only orders with non-NULL order_date should be returned"
+    );
+    for item in &page.items {
+        assert!(
+            item.order_date.is_some(),
+            "all returned items must have order_date set"
+        );
+    }
+}
+
+/// Verifies that rows with NULL payment_due_date are excluded when sorting by PaymentDueDate.
+pub async fn purchase_order_test_pagination_payment_due_date_nulls_excluded<
+    C: PurchaseOrderRepository,
+>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
+    let branch_id = create_test_branch(ctx).await;
+    let variant_id = create_test_product_variant(ctx).await;
+
+    let dated_numbers = ["PO-PDD-001", "PO-PDD-002", "PO-PDD-003"];
+    let null_numbers = ["PO-PDD-NULL-001", "PO-PDD-NULL-002"];
+
+    for number in &dated_numbers {
+        let id = super::generate_test_id().await;
+        let item_id = super::generate_test_id().await;
+        repo.create(
+            ctx,
+            id,
+            &PurchaseOrderCreate {
+                branch_id,
+                supplier_id: None,
+                number: number.to_string(),
+                reference_number: None,
+                order_date: None,
+                expected_date: None,
+                payment_due_date: Some("2026-04-01T00:00:00.000Z".to_string()),
+                discount_amount: 0,
+                notes: None,
+                metadata: None,
+            },
+            &[(item_id, one_item(variant_id))],
+        )
+        .await
+        .expect("create with due_date failed");
+    }
+    for number in &null_numbers {
+        let id = super::generate_test_id().await;
+        let item_id = super::generate_test_id().await;
+        repo.create(
+            ctx,
+            id,
+            &PurchaseOrderCreate {
+                branch_id,
+                supplier_id: None,
+                number: number.to_string(),
+                reference_number: None,
+                order_date: None,
+                expected_date: None,
+                payment_due_date: None, // NULL
+                discount_amount: 0,
+                notes: None,
+                metadata: None,
+            },
+            &[(item_id, one_item(variant_id))],
+        )
+        .await
+        .expect("create without due_date failed");
+    }
+
+    let page = repo
+        .get_all(
+            ctx,
+            &PurchaseOrderQuery {
+                filter: PurchaseOrderFilter::default(),
+                sort_field: PurchaseOrderSortField::PaymentDueDate,
+                sort_direction: SortDirection::Asc,
+                cursor: None,
+                limit: 100,
+            },
+        )
+        .await
+        .expect("get_all failed");
+
+    assert_eq!(
+        page.items.len(),
+        3,
+        "only orders with non-NULL payment_due_date should be returned"
+    );
+    for item in &page.items {
+        assert!(
+            item.payment_due_date.is_some(),
+            "all returned items must have payment_due_date set"
+        );
+    }
 }
