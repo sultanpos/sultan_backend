@@ -402,6 +402,20 @@ impl PurchaseOrderRepository for SqlitePurchaseOrderRepository {
             PurchaseOrderSortField::PaymentDueDate => PurchaseOrderColumn::PaymentDueDate,
         };
 
+        // Exclude rows where the sort column is NULL. Nullable columns produce
+        // unstable ordering (SQLite places NULLs first in ASC, last in DESC),
+        // and an empty-string cursor cannot represent a missing value in
+        // subsequent GT/LT comparisons.
+        match query.sort_field {
+            PurchaseOrderSortField::OrderDate => {
+                select = select.filter(PurchaseOrderColumn::OrderDate.is_not_null());
+            }
+            PurchaseOrderSortField::PaymentDueDate => {
+                select = select.filter(PurchaseOrderColumn::PaymentDueDate.is_not_null());
+            }
+            PurchaseOrderSortField::CreatedAt => {}
+        }
+
         let order = match query.sort_direction {
             SortDirection::Asc => Order::Asc,
             SortDirection::Desc => Order::Desc,
