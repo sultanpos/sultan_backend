@@ -59,7 +59,7 @@ async fn create_test_product_variant(ctx: &RepoCtx<DatabaseConnection>) -> i64 {
         .execute_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Sqlite,
             "INSERT INTO products (id, created_at, updated_at, is_deleted, name, product_type) \
-             VALUES (?, ?, ?, 0, 'Test Product', 'goods')",
+             VALUES (?, ?, ?, 0, 'Test Product', 'product')",
             [product_id.into(), now.clone().into(), now.clone().into()],
         ))
         .await
