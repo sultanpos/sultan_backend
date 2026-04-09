@@ -32,6 +32,13 @@ where
     category_test_create_exceeds_max_depth(&ctx_factory().await, repo).await;
     category_test_move_exceeds_max_depth(&ctx_factory().await, repo).await;
     category_test_move_within_depth_limit(&ctx_factory().await, repo).await;
+    category_test_deleted_not_in_get_all(&ctx_factory().await, repo).await;
+    category_test_deleted_child_not_returned(&ctx_factory().await, repo).await;
+    category_test_cannot_delete_already_deleted(&ctx_factory().await, repo).await;
+    category_test_cannot_update_deleted(&ctx_factory().await, repo).await;
+    category_test_get_child_by_id(&ctx_factory().await, repo).await;
+    category_test_without_children(&ctx_factory().await, repo).await;
+    category_test_deep_nested_tree_retrieval(&ctx_factory().await, repo).await;
 }
 
 // =============================================================================
