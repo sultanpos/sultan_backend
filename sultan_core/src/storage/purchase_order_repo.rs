@@ -14,9 +14,12 @@ use crate::domain::{
 pub trait PurchaseOrderRepository: Send + Sync {
     /// Creates a new purchase order together with its line items.
     ///
-    /// `id` is the Snowflake ID for the purchase_order row. `item_ids` must have
-    /// the same length as `items` — each element is the Snowflake ID for the
-    /// corresponding item.
+    /// `id` is the Snowflake ID for the purchase_order row. Each element of
+    /// `items` is `(snowflake_id, create_data)` for the corresponding line item.
+    ///
+    /// **Transaction responsibility**: this method executes multiple INSERT
+    /// statements (order + items). To guarantee all-or-nothing semantics, pass
+    /// a `RepoCtx` whose `db` is a `&DatabaseTransaction` started by the caller.
     async fn create(
         &self,
         ctx: &super::RepoCtx<impl ConnectionTrait>,
@@ -26,7 +29,13 @@ pub trait PurchaseOrderRepository: Send + Sync {
     ) -> DomainResult<()>;
 
     /// Appends a payment row to an existing purchase order and updates
-    /// `paid_amount` and `payment_status` on the order header atomically.
+    /// `paid_amount` and `payment_status` on the order header.
+    ///
+    /// The header UPDATE uses an atomic SQL expression (`paid_amount + ?`) so no
+    /// read-modify-write race occurs for concurrent payments on the same order.
+    /// The two statements (UPDATE header + INSERT payment) are **not** wrapped in
+    /// an explicit internal transaction; to guarantee both succeed or both are
+    /// rolled back, pass a `RepoCtx` with a `&DatabaseTransaction`.
     ///
     /// Returns `NotFound` if the order is soft-deleted or does not exist.
     async fn add_payment(
@@ -69,7 +78,11 @@ pub trait PurchaseOrderRepository: Send + Sync {
     // ── Item management ───────────────────────────────────────────────────────
 
     /// Appends a new line item to an existing purchase order and recalculates
-    /// `subtotal` and `total_amount` on the order header atomically.
+    /// `subtotal` and `total_amount` on the order header.
+    ///
+    /// **Transaction responsibility**: executes multiple statements (INSERT item
+    /// + UPDATE header). Pass a `RepoCtx` with a `&DatabaseTransaction` to
+    /// guarantee all-or-nothing semantics.
     ///
     /// Returns `NotFound` if the order is soft-deleted or does not exist.
     async fn add_item(
@@ -83,6 +96,10 @@ pub trait PurchaseOrderRepository: Send + Sync {
     /// Partially updates a purchase order line item and recalculates
     /// `subtotal` and `total_amount` on the order header if cost fields change.
     ///
+    /// **Transaction responsibility**: may execute multiple statements (UPDATE
+    /// item + UPDATE header). Pass a `RepoCtx` with a `&DatabaseTransaction`
+    /// when consistency between the item and the header is required.
+    ///
     /// Returns `NotFound` if the item does not exist.
     async fn update_item(
         &self,
@@ -92,7 +109,11 @@ pub trait PurchaseOrderRepository: Send + Sync {
     ) -> DomainResult<()>;
 
     /// Hard-deletes a purchase order line item and recalculates
-    /// `subtotal` and `total_amount` on the order header atomically.
+    /// `subtotal` and `total_amount` on the order header.
+    ///
+    /// **Transaction responsibility**: executes multiple statements (DELETE item
+    /// + UPDATE header). Pass a `RepoCtx` with a `&DatabaseTransaction` to
+    /// guarantee all-or-nothing semantics.
     ///
     /// Returns `NotFound` if the item does not exist.
     async fn delete_item(
@@ -111,7 +132,11 @@ pub trait PurchaseOrderRepository: Send + Sync {
     // ── Payment management ────────────────────────────────────────────────────
 
     /// Partially updates a payment row. If `amount` changes, also recalculates
-    /// `paid_amount` and `payment_status` on the order header atomically.
+    /// `paid_amount` and `payment_status` on the order header.
+    ///
+    /// **Transaction responsibility**: may execute multiple statements (UPDATE
+    /// payment + UPDATE header). Pass a `RepoCtx` with a `&DatabaseTransaction`
+    /// when consistency between the payment and the header is required.
     ///
     /// Returns `NotFound` if the payment does not exist.
     async fn update_payment(
@@ -122,7 +147,11 @@ pub trait PurchaseOrderRepository: Send + Sync {
     ) -> DomainResult<()>;
 
     /// Hard-deletes a payment row and recalculates `paid_amount` and
-    /// `payment_status` on the order header atomically.
+    /// `payment_status` on the order header.
+    ///
+    /// **Transaction responsibility**: executes multiple statements (DELETE
+    /// payment + UPDATE header). Pass a `RepoCtx` with a `&DatabaseTransaction`
+    /// to guarantee all-or-nothing semantics.
     ///
     /// Returns `NotFound` if the payment does not exist.
     async fn delete_payment(
