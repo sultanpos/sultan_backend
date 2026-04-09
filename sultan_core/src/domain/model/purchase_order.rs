@@ -348,10 +348,22 @@ mod tests {
 
     #[test]
     fn test_purchase_order_status_from_str_valid() {
-        assert_eq!(PurchaseOrderStatus::from_str("draft").unwrap(), PurchaseOrderStatus::Draft);
-        assert_eq!(PurchaseOrderStatus::from_str("ordered").unwrap(), PurchaseOrderStatus::Ordered);
-        assert_eq!(PurchaseOrderStatus::from_str("received").unwrap(), PurchaseOrderStatus::Received);
-        assert_eq!(PurchaseOrderStatus::from_str("cancelled").unwrap(), PurchaseOrderStatus::Cancelled);
+        assert_eq!(
+            PurchaseOrderStatus::from_str("draft").unwrap(),
+            PurchaseOrderStatus::Draft
+        );
+        assert_eq!(
+            PurchaseOrderStatus::from_str("ordered").unwrap(),
+            PurchaseOrderStatus::Ordered
+        );
+        assert_eq!(
+            PurchaseOrderStatus::from_str("received").unwrap(),
+            PurchaseOrderStatus::Received
+        );
+        assert_eq!(
+            PurchaseOrderStatus::from_str("cancelled").unwrap(),
+            PurchaseOrderStatus::Cancelled
+        );
     }
 
     #[test]
@@ -403,9 +415,18 @@ mod tests {
 
     #[test]
     fn test_payment_status_from_str_valid() {
-        assert_eq!(PaymentStatus::from_str("unpaid").unwrap(), PaymentStatus::Unpaid);
-        assert_eq!(PaymentStatus::from_str("partial").unwrap(), PaymentStatus::Partial);
-        assert_eq!(PaymentStatus::from_str("paid").unwrap(), PaymentStatus::Paid);
+        assert_eq!(
+            PaymentStatus::from_str("unpaid").unwrap(),
+            PaymentStatus::Unpaid
+        );
+        assert_eq!(
+            PaymentStatus::from_str("partial").unwrap(),
+            PaymentStatus::Partial
+        );
+        assert_eq!(
+            PaymentStatus::from_str("paid").unwrap(),
+            PaymentStatus::Paid
+        );
     }
 
     #[test]
@@ -424,7 +445,11 @@ mod tests {
 
     #[test]
     fn test_payment_status_serde_roundtrip() {
-        let statuses = [PaymentStatus::Unpaid, PaymentStatus::Partial, PaymentStatus::Paid];
+        let statuses = [
+            PaymentStatus::Unpaid,
+            PaymentStatus::Partial,
+            PaymentStatus::Paid,
+        ];
         for s in statuses {
             let json = serde_json::to_string(&s).unwrap();
             let back: PaymentStatus = serde_json::from_str(&json).unwrap();
@@ -439,7 +464,10 @@ mod tests {
     #[test]
     fn test_purchase_payment_channel_as_str() {
         assert_eq!(PurchasePaymentChannel::Cash.as_str(), "cash");
-        assert_eq!(PurchasePaymentChannel::BankTransfer.as_str(), "bank_transfer");
+        assert_eq!(
+            PurchasePaymentChannel::BankTransfer.as_str(),
+            "bank_transfer"
+        );
         assert_eq!(PurchasePaymentChannel::Card.as_str(), "card");
         assert_eq!(PurchasePaymentChannel::Other.as_str(), "other");
     }
@@ -447,17 +475,32 @@ mod tests {
     #[test]
     fn test_purchase_payment_channel_display() {
         assert_eq!(PurchasePaymentChannel::Cash.to_string(), "cash");
-        assert_eq!(PurchasePaymentChannel::BankTransfer.to_string(), "bank_transfer");
+        assert_eq!(
+            PurchasePaymentChannel::BankTransfer.to_string(),
+            "bank_transfer"
+        );
         assert_eq!(PurchasePaymentChannel::Card.to_string(), "card");
         assert_eq!(PurchasePaymentChannel::Other.to_string(), "other");
     }
 
     #[test]
     fn test_purchase_payment_channel_from_str_valid() {
-        assert_eq!(PurchasePaymentChannel::from_str("cash").unwrap(), PurchasePaymentChannel::Cash);
-        assert_eq!(PurchasePaymentChannel::from_str("bank_transfer").unwrap(), PurchasePaymentChannel::BankTransfer);
-        assert_eq!(PurchasePaymentChannel::from_str("card").unwrap(), PurchasePaymentChannel::Card);
-        assert_eq!(PurchasePaymentChannel::from_str("other").unwrap(), PurchasePaymentChannel::Other);
+        assert_eq!(
+            PurchasePaymentChannel::from_str("cash").unwrap(),
+            PurchasePaymentChannel::Cash
+        );
+        assert_eq!(
+            PurchasePaymentChannel::from_str("bank_transfer").unwrap(),
+            PurchasePaymentChannel::BankTransfer
+        );
+        assert_eq!(
+            PurchasePaymentChannel::from_str("card").unwrap(),
+            PurchasePaymentChannel::Card
+        );
+        assert_eq!(
+            PurchasePaymentChannel::from_str("other").unwrap(),
+            PurchasePaymentChannel::Other
+        );
     }
 
     #[test]
@@ -471,7 +514,10 @@ mod tests {
 
     #[test]
     fn test_purchase_payment_channel_default() {
-        assert_eq!(PurchasePaymentChannel::default(), PurchasePaymentChannel::Cash);
+        assert_eq!(
+            PurchasePaymentChannel::default(),
+            PurchasePaymentChannel::Cash
+        );
     }
 
     #[test]
