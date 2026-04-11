@@ -92,50 +92,6 @@ impl std::str::FromStr for PaymentStatus {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum PurchasePaymentChannel {
-    #[default]
-    Cash,
-    BankTransfer,
-    Card,
-    Other,
-}
-
-impl PurchasePaymentChannel {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            PurchasePaymentChannel::Cash => "cash",
-            PurchasePaymentChannel::BankTransfer => "bank_transfer",
-            PurchasePaymentChannel::Card => "card",
-            PurchasePaymentChannel::Other => "other",
-        }
-    }
-}
-
-impl std::fmt::Display for PurchasePaymentChannel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl std::str::FromStr for PurchasePaymentChannel {
-    type Err = crate::domain::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "cash" => Ok(PurchasePaymentChannel::Cash),
-            "bank_transfer" => Ok(PurchasePaymentChannel::BankTransfer),
-            "card" => Ok(PurchasePaymentChannel::Card),
-            "other" => Ok(PurchasePaymentChannel::Other),
-            other => Err(crate::domain::Error::ValidationError(format!(
-                "Invalid payment channel '{}'. Must be one of: cash, bank_transfer, card, other",
-                other
-            ))),
-        }
-    }
-}
-
 // ============================================================================
 // Domain structs
 // ============================================================================
@@ -163,7 +119,7 @@ pub struct PurchasePayment {
     pub created_at: chrono::DateTime<Utc>,
     pub purchase_order_id: i64,
     pub amount: i64,
-    pub channel: PurchasePaymentChannel,
+    pub payment_channel_id: i64,
     pub paid_at: chrono::DateTime<Utc>,
     pub reference: Option<String>,
     pub notes: Option<String>,
@@ -254,7 +210,7 @@ pub struct PurchaseOrderUpdate {
 #[derive(Debug, Clone)]
 pub struct PurchasePaymentCreate {
     pub amount: i64,
-    pub channel: PurchasePaymentChannel,
+    pub payment_channel_id: i64,
     pub paid_at: String,
     pub reference: Option<String>,
     pub notes: Option<String>,
@@ -274,7 +230,7 @@ pub struct PurchaseOrderItemUpdate {
 #[derive(Debug, Clone, Default)]
 pub struct PurchasePaymentUpdate {
     pub amount: Option<i64>,
-    pub channel: Option<PurchasePaymentChannel>,
+    pub payment_channel_id: Option<i64>,
     pub paid_at: Option<String>,
     pub reference: Update<String>,
     pub notes: Update<String>,
@@ -454,84 +410,6 @@ mod tests {
             let json = serde_json::to_string(&s).unwrap();
             let back: PaymentStatus = serde_json::from_str(&json).unwrap();
             assert_eq!(s, back);
-        }
-    }
-
-    // =========================================================================
-    // PurchasePaymentChannel
-    // =========================================================================
-
-    #[test]
-    fn test_purchase_payment_channel_as_str() {
-        assert_eq!(PurchasePaymentChannel::Cash.as_str(), "cash");
-        assert_eq!(
-            PurchasePaymentChannel::BankTransfer.as_str(),
-            "bank_transfer"
-        );
-        assert_eq!(PurchasePaymentChannel::Card.as_str(), "card");
-        assert_eq!(PurchasePaymentChannel::Other.as_str(), "other");
-    }
-
-    #[test]
-    fn test_purchase_payment_channel_display() {
-        assert_eq!(PurchasePaymentChannel::Cash.to_string(), "cash");
-        assert_eq!(
-            PurchasePaymentChannel::BankTransfer.to_string(),
-            "bank_transfer"
-        );
-        assert_eq!(PurchasePaymentChannel::Card.to_string(), "card");
-        assert_eq!(PurchasePaymentChannel::Other.to_string(), "other");
-    }
-
-    #[test]
-    fn test_purchase_payment_channel_from_str_valid() {
-        assert_eq!(
-            PurchasePaymentChannel::from_str("cash").unwrap(),
-            PurchasePaymentChannel::Cash
-        );
-        assert_eq!(
-            PurchasePaymentChannel::from_str("bank_transfer").unwrap(),
-            PurchasePaymentChannel::BankTransfer
-        );
-        assert_eq!(
-            PurchasePaymentChannel::from_str("card").unwrap(),
-            PurchasePaymentChannel::Card
-        );
-        assert_eq!(
-            PurchasePaymentChannel::from_str("other").unwrap(),
-            PurchasePaymentChannel::Other
-        );
-    }
-
-    #[test]
-    fn test_purchase_payment_channel_from_str_invalid() {
-        let err = PurchasePaymentChannel::from_str("crypto").unwrap_err();
-        assert!(matches!(err, crate::domain::Error::ValidationError(_)));
-        let msg = err.to_string();
-        assert!(msg.contains("crypto"));
-        assert!(msg.contains("cash"));
-    }
-
-    #[test]
-    fn test_purchase_payment_channel_default() {
-        assert_eq!(
-            PurchasePaymentChannel::default(),
-            PurchasePaymentChannel::Cash
-        );
-    }
-
-    #[test]
-    fn test_purchase_payment_channel_serde_roundtrip() {
-        let channels = [
-            PurchasePaymentChannel::Cash,
-            PurchasePaymentChannel::BankTransfer,
-            PurchasePaymentChannel::Card,
-            PurchasePaymentChannel::Other,
-        ];
-        for c in channels {
-            let json = serde_json::to_string(&c).unwrap();
-            let back: PurchasePaymentChannel = serde_json::from_str(&json).unwrap();
-            assert_eq!(c, back);
         }
     }
 

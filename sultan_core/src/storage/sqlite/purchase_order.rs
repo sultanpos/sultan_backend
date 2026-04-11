@@ -225,7 +225,7 @@ impl PurchaseOrderRepository for SqlitePurchaseOrderRepository {
             created_at: Set(now),
             purchase_order_id: Set(purchase_order_id),
             amount: Set(data.amount),
-            channel: Set(data.channel.as_str().to_string()),
+            payment_channel_id: Set(data.payment_channel_id),
             paid_at: Set(data.paid_at.clone()),
             reference: Set(data.reference.clone()),
             notes: Set(data.notes.clone()),
@@ -729,10 +729,10 @@ impl PurchaseOrderRepository for SqlitePurchaseOrderRepository {
         if let Some(amount) = data.amount {
             q = q.col_expr(PurchasePaymentColumn::Amount, Expr::value(amount));
         }
-        if let Some(channel) = &data.channel {
+        if let Some(payment_channel_id) = data.payment_channel_id {
             q = q.col_expr(
-                PurchasePaymentColumn::Channel,
-                Expr::value(channel.as_str()),
+                PurchasePaymentColumn::PaymentChannelId,
+                Expr::value(payment_channel_id),
             );
         }
         if let Some(paid_at) = &data.paid_at {

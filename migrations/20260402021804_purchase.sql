@@ -50,12 +50,27 @@ CREATE TABLE purchase_order_items (
 CREATE INDEX idx_po_items_order   ON purchase_order_items (purchase_order_id);
 CREATE INDEX idx_po_items_variant ON purchase_order_items (product_variant_id);
 
+CREATE TABLE payment_channels (
+    id                  INTEGER PRIMARY KEY,
+    created_at          TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at          TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    deleted_at          TEXT,
+    is_deleted          INTEGER NOT NULL DEFAULT 0,
+    branch_id           INTEGER REFERENCES branches(id),
+    name                TEXT NOT NULL,
+    priority            INTEGER NOT NULL DEFAULT 100,  -- lower number = higher priority
+    metadata            TEXT
+);
+
+CREATE INDEX idx_payment_channels_branch  ON payment_channels (branch_id);
+CREATE INDEX idx_payment_channels_deleted ON payment_channels (is_deleted);
+
 CREATE TABLE purchase_payments (
     id                  INTEGER PRIMARY KEY,
     created_at          TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     purchase_order_id   INTEGER NOT NULL REFERENCES purchase_orders(id),
     amount              INTEGER NOT NULL,
-    channel             TEXT NOT NULL,    -- 'cash' | 'bank_transfer' | 'card' | 'other'
+    payment_channel_id  INTEGER NOT NULL REFERENCES payment_channels(id),
     paid_at             TEXT NOT NULL,    -- actual payment date (ISO 8601)
     reference           TEXT,             -- transfer ref, cheque number
     notes               TEXT

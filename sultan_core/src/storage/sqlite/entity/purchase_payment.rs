@@ -9,7 +9,7 @@ pub struct Model {
     pub created_at: String,
     pub purchase_order_id: i64,
     pub amount: i64,
-    pub channel: String,
+    pub payment_channel_id: i64,
     pub paid_at: String,
     pub reference: Option<String>,
     pub notes: Option<String>,
@@ -35,15 +35,12 @@ impl ActiveModelBehavior for ActiveModel {}
 
 impl Model {
     pub fn to_domain(&self) -> crate::domain::model::purchase_order::PurchasePayment {
-        use crate::domain::model::purchase_order::PurchasePaymentChannel;
-        use std::str::FromStr;
-
         crate::domain::model::purchase_order::PurchasePayment {
             id: self.id,
             created_at: super::super::parse_sqlite_date(&self.created_at),
             purchase_order_id: self.purchase_order_id,
             amount: self.amount,
-            channel: PurchasePaymentChannel::from_str(&self.channel).unwrap_or_default(),
+            payment_channel_id: self.payment_channel_id,
             paid_at: super::super::parse_sqlite_date(&self.paid_at),
             reference: self.reference.clone(),
             notes: self.notes.clone(),

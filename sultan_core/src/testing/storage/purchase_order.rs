@@ -6,8 +6,7 @@ use crate::{
         purchase_order::{
             PaymentStatus, PurchaseOrderCreate, PurchaseOrderFilter, PurchaseOrderItemCreate,
             PurchaseOrderItemUpdate, PurchaseOrderQuery, PurchaseOrderSortField,
-            PurchaseOrderStatus, PurchaseOrderUpdate, PurchasePaymentChannel,
-            PurchasePaymentCreate, PurchasePaymentUpdate,
+            PurchaseOrderStatus, PurchaseOrderUpdate, PurchasePaymentCreate, PurchasePaymentUpdate,
         },
     },
     storage::{PurchaseOrderRepository, RepoCtx},
@@ -79,6 +78,23 @@ async fn create_test_product_variant(ctx: &RepoCtx<DatabaseConnection>) -> i64 {
         .await
         .expect("create variant failed");
     variant_id
+}
+
+async fn create_test_payment_channel(ctx: &RepoCtx<DatabaseConnection>) -> i64 {
+    let id = super::generate_test_id().await;
+    let now = chrono::Utc::now()
+        .format("%Y-%m-%dT%H:%M:%S%.fZ")
+        .to_string();
+    ctx.db
+        .execute_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Sqlite,
+            "INSERT INTO payment_channels (id, created_at, updated_at, is_deleted, name, priority) \
+             VALUES (?, ?, ?, 0, 'Test Channel', 100)",
+            [id.into(), now.clone().into(), now.into()],
+        ))
+        .await
+        .expect("create_test_payment_channel failed");
+    id
 }
 
 fn default_query(filter: PurchaseOrderFilter) -> PurchaseOrderQuery {
@@ -287,13 +303,14 @@ pub async fn purchase_order_test_add_payment_updates_paid_amount<C: PurchaseOrde
     .await
     .expect("create failed");
 
+    let channel_id = create_test_payment_channel(ctx).await;
     repo.add_payment(
         ctx,
         id,
         payment_id,
         &PurchasePaymentCreate {
             amount: 10_000,
-            channel: PurchasePaymentChannel::Cash,
+            payment_channel_id: channel_id,
             paid_at: "2026-04-02T10:00:00.000Z".to_string(),
             reference: None,
             notes: None,
@@ -308,7 +325,7 @@ pub async fn purchase_order_test_add_payment_updates_paid_amount<C: PurchaseOrde
     assert_eq!(order.payments.len(), 1);
     assert_eq!(order.payments[0].id, payment_id);
     assert_eq!(order.payments[0].amount, 10_000);
-    assert_eq!(order.payments[0].channel, PurchasePaymentChannel::Cash);
+    assert_eq!(order.payments[0].payment_channel_id, channel_id);
 }
 
 pub async fn purchase_order_test_add_payment_full_status_paid<C: PurchaseOrderRepository>(
@@ -341,13 +358,14 @@ pub async fn purchase_order_test_add_payment_full_status_paid<C: PurchaseOrderRe
     .await
     .expect("create failed");
 
+    let channel_id = create_test_payment_channel(ctx).await;
     repo.add_payment(
         ctx,
         id,
         payment_id,
         &PurchasePaymentCreate {
             amount: 20_000,
-            channel: PurchasePaymentChannel::BankTransfer,
+            payment_channel_id: channel_id,
             paid_at: "2026-04-02T11:00:00.000Z".to_string(),
             reference: Some("TRF-001".to_string()),
             notes: None,
@@ -372,7 +390,7 @@ pub async fn purchase_order_test_add_payment_not_found<C: PurchaseOrderRepositor
             super::generate_test_id().await,
             &PurchasePaymentCreate {
                 amount: 1_000,
-                channel: PurchasePaymentChannel::Cash,
+                payment_channel_id: 1,
                 paid_at: "2026-04-02T10:00:00.000Z".to_string(),
                 reference: None,
                 notes: None,
@@ -1016,13 +1034,14 @@ pub async fn purchase_order_test_get_payments<C: PurchaseOrderRepository>(
     .await
     .expect("create failed");
 
+    let channel_id = create_test_payment_channel(ctx).await;
     repo.add_payment(
         ctx,
         order_id,
         payment_id,
         &PurchasePaymentCreate {
             amount: 5_000,
-            channel: PurchasePaymentChannel::Cash,
+            payment_channel_id: channel_id,
             paid_at: "2026-04-02T10:00:00.000Z".to_string(),
             reference: None,
             notes: None,
@@ -1071,13 +1090,15 @@ pub async fn purchase_order_test_update_payment<C: PurchaseOrderRepository>(
     .await
     .expect("create failed");
 
+    let channel_id_1 = create_test_payment_channel(ctx).await;
+    let channel_id_2 = create_test_payment_channel(ctx).await;
     repo.add_payment(
         ctx,
         order_id,
         payment_id,
         &PurchasePaymentCreate {
             amount: 5_000,
-            channel: PurchasePaymentChannel::Cash,
+            payment_channel_id: channel_id_1,
             paid_at: "2026-04-02T10:00:00.000Z".to_string(),
             reference: None,
             notes: Some("initial".to_string()),
@@ -1092,7 +1113,7 @@ pub async fn purchase_order_test_update_payment<C: PurchaseOrderRepository>(
         payment_id,
         &PurchasePaymentUpdate {
             amount: Some(10_000),
-            channel: Some(PurchasePaymentChannel::BankTransfer),
+            payment_channel_id: Some(channel_id_2),
             notes: crate::domain::model::Update::Set("updated".to_string()),
             ..Default::default()
         },
@@ -1102,7 +1123,7 @@ pub async fn purchase_order_test_update_payment<C: PurchaseOrderRepository>(
 
     let payments = repo.get_payments(ctx, order_id).await.unwrap();
     assert_eq!(payments[0].amount, 10_000);
-    assert_eq!(payments[0].channel, PurchasePaymentChannel::BankTransfer);
+    assert_eq!(payments[0].payment_channel_id, channel_id_2);
     assert_eq!(payments[0].notes, Some("updated".to_string()));
 
     let order = repo.get_by_id(ctx, order_id).await.unwrap().unwrap();
@@ -1149,13 +1170,14 @@ pub async fn purchase_order_test_delete_payment<C: PurchaseOrderRepository>(
     .await
     .expect("create failed");
 
+    let channel_id = create_test_payment_channel(ctx).await;
     repo.add_payment(
         ctx,
         order_id,
         payment_id,
         &PurchasePaymentCreate {
             amount: 20_000,
-            channel: PurchasePaymentChannel::Cash,
+            payment_channel_id: channel_id,
             paid_at: "2026-04-02T10:00:00.000Z".to_string(),
             reference: None,
             notes: None,
