@@ -6,10 +6,11 @@ use axum::middleware::from_fn;
 use serde_json::json;
 use std::sync::Arc;
 
-use common::{MockAppStateBuilder, make_request, mock_payment_channel_service::MockPaymentChannelService};
+use common::{
+    MockAppStateBuilder, make_request, mock_payment_channel_service::MockPaymentChannelService,
+};
 use sultan_web::{
-    handler::payment_channel_router::payment_channel_router,
-    middleware::context_middleware,
+    handler::payment_channel_router::payment_channel_router, middleware::context_middleware,
 };
 
 fn build_test_router(app_state: MockAppStateBuilder) -> Router {
@@ -25,8 +26,8 @@ fn build_test_router(app_state: MockAppStateBuilder) -> Router {
 
 #[tokio::test]
 async fn test_create_success() {
-    let app_state =
-        MockAppStateBuilder::new().with_payment_channel_service(Arc::new(MockPaymentChannelService::new_success()));
+    let app_state = MockAppStateBuilder::new()
+        .with_payment_channel_service(Arc::new(MockPaymentChannelService::new_success()));
     let app = build_test_router(app_state);
 
     let body = json!({ "name": "Cash", "priority": 1 });
@@ -40,8 +41,8 @@ async fn test_create_success() {
 
 #[tokio::test]
 async fn test_create_validation_error_empty_name() {
-    let app_state =
-        MockAppStateBuilder::new().with_payment_channel_service(Arc::new(MockPaymentChannelService::new_success()));
+    let app_state = MockAppStateBuilder::new()
+        .with_payment_channel_service(Arc::new(MockPaymentChannelService::new_success()));
     let app = build_test_router(app_state);
 
     let body = json!({ "name": "", "priority": 1 });
@@ -58,8 +59,8 @@ async fn test_create_validation_error_empty_name() {
 
 #[tokio::test]
 async fn test_get_all_success() {
-    let app_state =
-        MockAppStateBuilder::new().with_payment_channel_service(Arc::new(MockPaymentChannelService::new_success()));
+    let app_state = MockAppStateBuilder::new()
+        .with_payment_channel_service(Arc::new(MockPaymentChannelService::new_success()));
     let app = build_test_router(app_state);
 
     let (status, response) = make_request(app, "GET", "/api/payment-channel", None)
@@ -77,8 +78,8 @@ async fn test_get_all_success() {
 
 #[tokio::test]
 async fn test_get_by_id_found() {
-    let app_state =
-        MockAppStateBuilder::new().with_payment_channel_service(Arc::new(MockPaymentChannelService::new_success()));
+    let app_state = MockAppStateBuilder::new()
+        .with_payment_channel_service(Arc::new(MockPaymentChannelService::new_success()));
     let app = build_test_router(app_state);
 
     let (status, response) = make_request(app, "GET", "/api/payment-channel/1", None)
@@ -92,8 +93,8 @@ async fn test_get_by_id_found() {
 
 #[tokio::test]
 async fn test_get_by_id_not_found() {
-    let app_state =
-        MockAppStateBuilder::new().with_payment_channel_service(Arc::new(MockPaymentChannelService::new_success()));
+    let app_state = MockAppStateBuilder::new()
+        .with_payment_channel_service(Arc::new(MockPaymentChannelService::new_success()));
     let app = build_test_router(app_state);
 
     let (status, _) = make_request(app, "GET", "/api/payment-channel/999", None)
@@ -109,8 +110,8 @@ async fn test_get_by_id_not_found() {
 
 #[tokio::test]
 async fn test_update_success() {
-    let app_state =
-        MockAppStateBuilder::new().with_payment_channel_service(Arc::new(MockPaymentChannelService::new_success()));
+    let app_state = MockAppStateBuilder::new()
+        .with_payment_channel_service(Arc::new(MockPaymentChannelService::new_success()));
     let app = build_test_router(app_state);
 
     let body = json!({ "name": "QRIS", "priority": 2 });
@@ -123,8 +124,8 @@ async fn test_update_success() {
 
 #[tokio::test]
 async fn test_update_not_found() {
-    let app_state =
-        MockAppStateBuilder::new().with_payment_channel_service(Arc::new(MockPaymentChannelService::new_success()));
+    let app_state = MockAppStateBuilder::new()
+        .with_payment_channel_service(Arc::new(MockPaymentChannelService::new_success()));
     let app = build_test_router(app_state);
 
     let body = json!({ "name": "QRIS" });
@@ -141,8 +142,8 @@ async fn test_update_not_found() {
 
 #[tokio::test]
 async fn test_delete_success() {
-    let app_state =
-        MockAppStateBuilder::new().with_payment_channel_service(Arc::new(MockPaymentChannelService::new_success()));
+    let app_state = MockAppStateBuilder::new()
+        .with_payment_channel_service(Arc::new(MockPaymentChannelService::new_success()));
     let app = build_test_router(app_state);
 
     let (status, _) = make_request(app, "DELETE", "/api/payment-channel/1", None)
@@ -154,8 +155,8 @@ async fn test_delete_success() {
 
 #[tokio::test]
 async fn test_delete_not_found() {
-    let app_state =
-        MockAppStateBuilder::new().with_payment_channel_service(Arc::new(MockPaymentChannelService::new_success()));
+    let app_state = MockAppStateBuilder::new()
+        .with_payment_channel_service(Arc::new(MockPaymentChannelService::new_success()));
     let app = build_test_router(app_state);
 
     let (status, _) = make_request(app, "DELETE", "/api/payment-channel/999", None)
@@ -171,8 +172,8 @@ async fn test_delete_not_found() {
 
 #[tokio::test]
 async fn test_update_priorities_success() {
-    let app_state =
-        MockAppStateBuilder::new().with_payment_channel_service(Arc::new(MockPaymentChannelService::new_success()));
+    let app_state = MockAppStateBuilder::new()
+        .with_payment_channel_service(Arc::new(MockPaymentChannelService::new_success()));
     let app = build_test_router(app_state);
 
     let body = json!({
@@ -181,10 +182,9 @@ async fn test_update_priorities_success() {
             { "id": "2", "priority": 1 }
         ]
     });
-    let (status, _) =
-        make_request(app, "PUT", "/api/payment-channel/priorities", Some(body))
-            .await
-            .expect("Request failed");
+    let (status, _) = make_request(app, "PUT", "/api/payment-channel/priorities", Some(body))
+        .await
+        .expect("Request failed");
 
     assert_eq!(status, StatusCode::NO_CONTENT);
 }
