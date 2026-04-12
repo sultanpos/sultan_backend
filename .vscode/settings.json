@@ -14,5 +14,12 @@
     },
     "files.watcherExclude": {
         "**/target/**": true
+    },
+    "chat.tools.terminal.autoApprove": {
+        "cargo llvm-cov": true,
+        "cargo test": true,
+        "cargo clippy": true,
+        "cargo fmt": true,
+        "cargo install": true
     }
 }
