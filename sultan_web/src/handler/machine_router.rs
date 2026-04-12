@@ -55,6 +55,7 @@ pub struct MachineApiDoc;
 /// Registers a new POS machine for a branch. The `key` is unique per branch and immutable.
 #[utoipa::path(
     post,
+    operation_id = "create_machine",
     path = "/api/machine",
     tag = "machine",
     request_body = MachineCreateRequest,
@@ -99,6 +100,7 @@ async fn create(
 /// Updates a machine's name, description, or metadata. The `key` field cannot be changed.
 #[utoipa::path(
     put,
+    operation_id = "update_machine",
     path = "/api/machine/{id}",
     tag = "machine",
     params(
@@ -173,6 +175,7 @@ async fn delete_machine(
 /// Retrieves a single machine by its ID.
 #[utoipa::path(
     get,
+    operation_id = "get_machine",
     path = "/api/machine/{id}",
     tag = "machine",
     params(
@@ -205,6 +208,7 @@ async fn get_one(
 /// Retrieves a paginated list of machines using cursor-based pagination.
 #[utoipa::path(
     get,
+    operation_id = "list_machines",
     path = "/api/machine",
     tag = "machine",
     params(MachineQueryParams),

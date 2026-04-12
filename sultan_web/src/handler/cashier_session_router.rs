@@ -175,6 +175,7 @@ async fn delete_session(
 /// Get a cashier session by ID
 #[utoipa::path(
     get,
+    operation_id = "get_cashier_session",
     path = "/api/cashier-session/{id}",
     tag = "cashier_session",
     params(
@@ -253,6 +254,7 @@ struct CurrentSessionParams {
 /// Retrieves a paginated list of cashier sessions using cursor-based pagination.
 #[utoipa::path(
     get,
+    operation_id = "list_cashier_sessions",
     path = "/api/cashier-session",
     tag = "cashier_session",
     params(CashierSessionQueryParams),

@@ -344,7 +344,7 @@ pub fn build_router(app_state: AppState) -> anyhow::Result<Router> {
 
     let router = Router::new()
         .nest("/api/auth", auth_router())
-        .nest("/api/", protected_router)
+        .nest("/api", protected_router)
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", openapi))
         .fallback(handle_404)
         .layer(from_fn(context_middleware))

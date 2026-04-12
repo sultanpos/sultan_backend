@@ -91,6 +91,7 @@ pub struct ProductApiDoc;
 /// Creates a new product with optional variants, sell prices, and stocks. Requires authentication.
 #[utoipa::path(
     post,
+    operation_id = "create_product",
     path = "/api/product",
     tag = "product",
     request_body = ProductFullCreateRequest,
@@ -195,6 +196,7 @@ async fn delete_product(
 /// Retrieves a single product by its ID. Requires authentication.
 #[utoipa::path(
     get,
+    operation_id = "get_product",
     path = "/api/product/{id}",
     tag = "product",
     params(
@@ -230,6 +232,7 @@ async fn get_by_id(
 /// Pass `next_cursor` from the previous response as `cursor` to fetch the next page.
 #[utoipa::path(
     get,
+    operation_id = "list_products",
     path = "/api/product",
     tag = "product",
     params(ProductQueryParams),
