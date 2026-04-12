@@ -103,8 +103,14 @@ pub async fn payment_channel_test_crud<C: PaymentChannelRepository>(
     // delete
     repo.delete(ctx, id).await.expect("Failed to delete");
 
-    let after_delete = repo.get_by_id(ctx, id).await.expect("get_by_id after delete failed");
-    assert!(after_delete.is_none(), "Deleted channel should not be found");
+    let after_delete = repo
+        .get_by_id(ctx, id)
+        .await
+        .expect("get_by_id after delete failed");
+    assert!(
+        after_delete.is_none(),
+        "Deleted channel should not be found"
+    );
 }
 
 pub async fn payment_channel_test_create_with_metadata<C: PaymentChannelRepository>(
@@ -327,7 +333,10 @@ pub async fn payment_channel_test_soft_delete_excludes_from_get_all<C: PaymentCh
 
     let ids: Vec<i64> = all.iter().map(|c| c.id).collect();
     assert!(ids.contains(&id_active), "Active channel should appear");
-    assert!(!ids.contains(&id_deleted), "Deleted channel should not appear");
+    assert!(
+        !ids.contains(&id_deleted),
+        "Deleted channel should not appear"
+    );
 }
 
 pub async fn payment_channel_test_update_after_delete_fails<C: PaymentChannelRepository>(
@@ -585,9 +594,18 @@ pub async fn payment_channel_test_update_priorities<C: PaymentChannelRepository>
 
     // Reverse the order
     let updates = vec![
-        PaymentChannelPriorityUpdate { id: id1, priority: 30 },
-        PaymentChannelPriorityUpdate { id: id2, priority: 20 },
-        PaymentChannelPriorityUpdate { id: id3, priority: 10 },
+        PaymentChannelPriorityUpdate {
+            id: id1,
+            priority: 30,
+        },
+        PaymentChannelPriorityUpdate {
+            id: id2,
+            priority: 20,
+        },
+        PaymentChannelPriorityUpdate {
+            id: id3,
+            priority: 10,
+        },
     ];
 
     repo.update_priorities(ctx, &updates)
@@ -653,8 +671,14 @@ pub async fn payment_channel_test_update_priorities_skips_deleted<C: PaymentChan
 
     // update_priorities on both — deleted one should be silently skipped (no error)
     let updates = vec![
-        PaymentChannelPriorityUpdate { id: id_live, priority: 50 },
-        PaymentChannelPriorityUpdate { id: id_dead, priority: 99 },
+        PaymentChannelPriorityUpdate {
+            id: id_live,
+            priority: 50,
+        },
+        PaymentChannelPriorityUpdate {
+            id: id_dead,
+            priority: 99,
+        },
     ];
 
     repo.update_priorities(ctx, &updates)
