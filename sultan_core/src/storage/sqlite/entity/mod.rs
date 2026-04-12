@@ -4,6 +4,7 @@ pub mod category;
 pub mod customer;
 pub mod machine;
 pub mod number_sequence;
+pub mod payment_channel;
 pub mod permission;
 pub mod product;
 pub mod product_category;
@@ -42,6 +43,11 @@ pub use machine::ActiveModel as MachineActiveModel;
 pub use machine::Column as MachineColumn;
 pub use machine::Entity as MachineEntity;
 pub use machine::Model as MachineModel;
+
+pub use payment_channel::ActiveModel as PaymentChannelActiveModel;
+pub use payment_channel::Column as PaymentChannelColumn;
+pub use payment_channel::Entity as PaymentChannelEntity;
+pub use payment_channel::Model as PaymentChannelModel;
 
 pub use permission::ActiveModel as PermissionActiveModel;
 pub use permission::Column as PermissionColumn;
