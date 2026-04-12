@@ -5,6 +5,7 @@ pub mod category_router;
 pub mod customer_router;
 pub mod machine_router;
 pub mod middleware;
+pub mod payment_channel_router;
 pub mod product_router;
 pub mod supplier_routes;
 pub mod user_routes;
