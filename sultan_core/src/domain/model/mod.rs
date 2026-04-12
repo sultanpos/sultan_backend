@@ -5,6 +5,7 @@ pub mod customer;
 pub mod machine;
 pub mod number;
 pub mod pagination;
+pub mod payment_channel;
 pub mod permission;
 pub mod product;
 pub mod purchase_order;
