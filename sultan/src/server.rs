@@ -11,8 +11,8 @@ use std::{fs::File, sync::Arc};
 use sultan_core::{
     application::{
         AuthService, AuthServiceTrait, BranchService, CashierSessionService, CategoryService,
-        CustomerService, InMemoryCache, MachineService, NumberService, ProductService,
-        SupplierService, UserService, UserServiceTrait,
+        CustomerService, InMemoryCache, MachineService, NumberService, PaymentChannelService,
+        ProductService, SupplierService, UserService, UserServiceTrait,
     },
     crypto::{Argon2PasswordHasher, DefaultJwtManager, JwtConfig, JwtManager},
     domain::{
@@ -29,7 +29,8 @@ use sultan_core::{
         sqlite::{
             SqliteBranchRepository, SqliteCashierSessionRepository, SqliteCategoryRepository,
             SqliteCustomerRepository, SqliteMachineRepository, SqliteNumberRepository,
-            SqliteProductRepository, SqliteSupplierRepository, SqliteTokenRepository,
+            SqlitePaymentChannelRepository, SqliteProductRepository, SqliteSupplierRepository,
+            SqliteTokenRepository,
         },
     },
 };
@@ -55,6 +56,7 @@ use sultan_web::{
         customer_router::{CustomerApiDoc, customer_router},
         machine_router::{MachineApiDoc, machine_router},
         middleware::{context_middleware, verify_jwt},
+        payment_channel_router::{PaymentChannelApiDoc, payment_channel_router},
         product_router::{ProductApiDoc, product_router},
     },
     supplier_routes::SupplierApiDoc,
@@ -102,6 +104,7 @@ pub async fn create_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
     let number_repository = SqliteNumberRepository::new();
     let machine_repository = SqliteMachineRepository::new();
     let cashier_session_repository = SqliteCashierSessionRepository::new();
+    let payment_channel_repository = SqlitePaymentChannelRepository::new();
     let product_repository = SqliteProductRepository::new();
     let stock_repository = SqliteStockRepository::new();
 
@@ -159,6 +162,11 @@ pub async fn create_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
     );
     let cashier_session_service = CashierSessionService::new(
         cashier_session_repository,
+        SnowflakeGenerator::new(1)?,
+        db_connection.clone(),
+    );
+    let payment_channel_service = PaymentChannelService::new(
+        payment_channel_repository,
         SnowflakeGenerator::new(1)?,
         db_connection.clone(),
     );
@@ -226,6 +234,7 @@ pub async fn create_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
         product_service: Arc::new(product_service),
         machine_service: Arc::new(machine_service),
         cashier_session_service: Arc::new(cashier_session_service),
+        payment_channel_service: Arc::new(payment_channel_service),
         extensions: Arc::new(std::collections::HashMap::new()),
     })
 }
@@ -301,6 +310,7 @@ pub fn build_router(app_state: AppState) -> anyhow::Result<Router> {
         .nest("/supplier", supplier_router())
         .nest("/machine", machine_router())
         .nest("/cashier-session", cashier_session_router())
+        .nest("/payment-channel", payment_channel_router())
         .nest("/product", product_router())
         .nest("/user", user_router())
         .route_layer(axum::middleware::from_fn_with_state(
@@ -317,6 +327,7 @@ pub fn build_router(app_state: AppState) -> anyhow::Result<Router> {
     openapi.merge(UserApiDoc::openapi());
     openapi.merge(MachineApiDoc::openapi());
     openapi.merge(CashierSessionApiDoc::openapi());
+    openapi.merge(PaymentChannelApiDoc::openapi());
     openapi.merge(ProductApiDoc::openapi());
     // Add Bearer token security scheme
     if let Some(components) = openapi.components.as_mut() {

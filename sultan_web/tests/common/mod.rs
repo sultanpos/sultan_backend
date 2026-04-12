@@ -4,6 +4,7 @@ pub mod mock_cashier_session_service;
 pub mod mock_category_service;
 pub mod mock_customer_service;
 pub mod mock_machine_service;
+pub mod mock_payment_channel_service;
 pub mod mock_product_service;
 pub mod mock_supplier_service;
 pub mod mock_user_service;
@@ -14,6 +15,7 @@ pub use mock_cashier_session_service::MockCashierSessionService;
 pub use mock_category_service::MockCategoryService;
 pub use mock_customer_service::MockCustomerService;
 pub use mock_machine_service::MockMachineService;
+pub use mock_payment_channel_service::MockPaymentChannelService;
 pub use mock_product_service::MockProductService;
 pub use mock_supplier_service::MockSupplierService;
 pub use mock_user_service::MockUserService;
@@ -28,8 +30,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use sultan_core::application::{
     AuthServiceTrait, BranchServiceTrait, CashierSessionServiceTrait, CategoryServiceTrait,
-    CustomerServiceTrait, MachineServiceTrait, ProductServiceTrait, SupplierServiceTrait,
-    UserServiceTrait,
+    CustomerServiceTrait, MachineServiceTrait, PaymentChannelServiceTrait, ProductServiceTrait,
+    SupplierServiceTrait, UserServiceTrait,
 };
 use sultan_core::crypto::{DefaultJwtManager, JwtConfig};
 use sultan_web::AppState;
@@ -46,6 +48,7 @@ pub struct MockAppStateBuilder {
     product_service: Option<Arc<dyn ProductServiceTrait>>,
     machine_service: Option<Arc<dyn MachineServiceTrait>>,
     cashier_session_service: Option<Arc<dyn CashierSessionServiceTrait>>,
+    payment_channel_service: Option<Arc<dyn PaymentChannelServiceTrait>>,
     extensions: HashMap<TypeId, Arc<dyn Any + Send + Sync>>,
 }
 
@@ -62,6 +65,7 @@ impl MockAppStateBuilder {
             product_service: None,
             machine_service: None,
             cashier_session_service: None,
+            payment_channel_service: None,
             extensions: HashMap::new(),
         }
     }
@@ -132,6 +136,16 @@ impl MockAppStateBuilder {
         self
     }
 
+    /// Override the payment channel service
+    #[allow(dead_code)]
+    pub fn with_payment_channel_service(
+        mut self,
+        service: Arc<dyn PaymentChannelServiceTrait>,
+    ) -> Self {
+        self.payment_channel_service = Some(service);
+        self
+    }
+
     /// Add an extension to the AppState
     #[allow(dead_code)]
     pub fn add_extension<T: Send + Sync + 'static>(mut self, value: Arc<T>) -> Self {
@@ -175,6 +189,9 @@ impl MockAppStateBuilder {
             cashier_session_service: self
                 .cashier_session_service
                 .unwrap_or_else(|| Arc::new(MockCashierSessionService::new_success())),
+            payment_channel_service: self
+                .payment_channel_service
+                .unwrap_or_else(|| Arc::new(MockPaymentChannelService::new_success())),
 
             extensions: Arc::new(self.extensions),
         }

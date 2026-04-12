@@ -5,6 +5,7 @@ pub mod category;
 pub mod customer;
 pub mod login;
 pub mod machine;
+pub mod payment_channel;
 pub mod product;
 pub mod supplier;
 pub mod user;
