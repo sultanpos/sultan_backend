@@ -42,6 +42,17 @@ where
     customer_test_deleted_not_in_get_all(&ctx_factory().await, repo).await;
     customer_test_get_by_number_success(&ctx_factory().await, repo).await;
     customer_test_get_by_number_not_found(&ctx_factory().await, repo).await;
+    customer_test_get_by_number_deleted(&ctx_factory().await, repo).await;
+    customer_test_get_by_number_case_sensitive(&ctx_factory().await, repo).await;
+    customer_test_get_by_id_not_found(&ctx_factory().await, repo).await;
+    customer_test_get_all(&ctx_factory().await, repo).await;
+    customer_test_filter_by_name(&ctx_factory().await, repo).await;
+    customer_test_filter_by_number(&ctx_factory().await, repo).await;
+    customer_test_filter_by_email(&ctx_factory().await, repo).await;
+    customer_test_filter_by_phone(&ctx_factory().await, repo).await;
+    customer_test_filter_by_level(&ctx_factory().await, repo).await;
+    customer_test_filter_multiple_criteria(&ctx_factory().await, repo).await;
+    customer_test_pagination(&ctx_factory().await, repo).await;
 }
 
 // =============================================================================
