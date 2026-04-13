@@ -263,15 +263,9 @@ async fn get_all(
     Extension(ctx): Extension<Context>,
     Query(query): Query<UserQueryParams>,
 ) -> DomainResult<impl IntoResponse> {
-    let filter = query.to_filter();
-    let pagination = query.to_pagination();
-    let users = user_service.get_all(&ctx, &filter, &pagination).await?;
-    Ok((
-        StatusCode::OK,
-        Json(UserListResponse {
-            data: users.into_iter().map(UserResponse::from).collect(),
-        }),
-    ))
+    let query = query.to_query()?;
+    let page = user_service.get_all(&ctx, &query).await?;
+    Ok((StatusCode::OK, Json(UserListResponse::from_page(page))))
 }
 
 /// Get user permissions

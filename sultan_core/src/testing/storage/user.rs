@@ -4,12 +4,22 @@ use uuid::Uuid;
 use crate::{
     domain::model::{
         Update,
-        pagination::PaginationOptions,
         permission::PermissionCreate,
-        user::{UserCreate, UserFilter, UserUpdate},
+        product::SortDirection,
+        user::{UserCreate, UserFilter, UserQuery, UserSortField, UserUpdate},
     },
     storage::{RepoCtx, UserRepository},
 };
+
+pub fn default_query() -> UserQuery {
+    UserQuery {
+        filter: UserFilter::default(),
+        sort_field: UserSortField::Id,
+        sort_direction: SortDirection::Asc,
+        cursor: None,
+        limit: 100,
+    }
+}
 
 /// Runs all user repository tests with the given repository and context factory.
 ///
@@ -40,7 +50,9 @@ where
     user_test_update_password_not_found(&ctx_factory().await, repo).await;
 
     // Pagination tests
-    user_test_get_all_pagination(&ctx_factory().await, repo).await;
+    user_test_cursor_pagination_asc(&ctx_factory().await, repo).await;
+    user_test_cursor_pagination_desc(&ctx_factory().await, repo).await;
+    user_test_cursor_pagination_no_next(&ctx_factory().await, repo).await;
 
     // Filter tests
     user_test_filter_by_username(&ctx_factory().await, repo).await;
@@ -277,14 +289,15 @@ pub async fn user_test_update_password_not_found<U: UserRepository>(
 // Pagination Tests
 // =============================================================================
 
-pub async fn user_test_get_all_pagination<U: UserRepository>(
+pub async fn user_test_cursor_pagination_asc<U: UserRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &U,
 ) {
-    for i in 0..15 {
+    // Create 5 users
+    for i in 0..5 {
         let user = UserCreate {
-            username: format!("user_{}", Uuid::new_v4()),
-            name: format!("User {}", i),
+            username: format!("pag_asc_user_{}_{}", i, Uuid::new_v4()),
+            name: format!("Paginated User {}", i),
             email: None,
             password: "pass".to_string(),
             photo: None,
@@ -297,19 +310,130 @@ pub async fn user_test_get_all_pagination<U: UserRepository>(
             .expect("Failed to create user");
     }
 
-    let pagination = PaginationOptions::new(1, 10, None);
-    let users = repo
-        .get_all(ctx, &UserFilter::new(), &pagination)
+    // Get first page (2 items), sorted by id asc
+    let query_page1 = UserQuery {
+        sort_field: UserSortField::Id,
+        sort_direction: SortDirection::Asc,
+        cursor: None,
+        limit: 2,
+        ..default_query()
+    };
+    let page1 = repo
+        .get_all(ctx, &query_page1)
         .await
-        .expect("Failed to get users");
-    assert_eq!(users.len(), 10);
+        .expect("Failed to get page 1");
+    assert_eq!(page1.items.len(), 2);
+    assert!(page1.next_cursor.is_some());
 
-    let pagination = PaginationOptions::new(2, 10, None);
-    let users = repo
-        .get_all(ctx, &UserFilter::new(), &pagination)
+    // Get second page using the cursor
+    let query_page2 = UserQuery {
+        sort_field: UserSortField::Id,
+        sort_direction: SortDirection::Asc,
+        cursor: page1.next_cursor.clone(),
+        limit: 2,
+        ..default_query()
+    };
+    let page2 = repo
+        .get_all(ctx, &query_page2)
         .await
-        .expect("Failed to get users");
-    assert!(!users.is_empty());
+        .expect("Failed to get page 2");
+    assert_eq!(page2.items.len(), 2);
+
+    // Verify pages don't overlap
+    for u1 in &page1.items {
+        assert!(!page2.items.iter().any(|u2| u2.id == u1.id));
+    }
+}
+
+pub async fn user_test_cursor_pagination_desc<U: UserRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &U,
+) {
+    // Create 3 users
+    for i in 0..3 {
+        let user = UserCreate {
+            username: format!("pag_desc_user_{}_{}", i, Uuid::new_v4()),
+            name: format!("Desc User {}", i),
+            email: None,
+            password: "pass".to_string(),
+            photo: None,
+            pin: None,
+            address: None,
+            phone: None,
+        };
+        repo.create(ctx, super::generate_test_id().await, &user)
+            .await
+            .expect("Failed to create user");
+    }
+
+    // Get first page in descending order by name
+    let query_page1 = UserQuery {
+        sort_field: UserSortField::Name,
+        sort_direction: SortDirection::Desc,
+        cursor: None,
+        limit: 2,
+        ..default_query()
+    };
+    let page1 = repo
+        .get_all(ctx, &query_page1)
+        .await
+        .expect("Failed to get page 1 desc");
+    assert_eq!(page1.items.len(), 2);
+    assert!(page1.next_cursor.is_some());
+
+    // Get second page using the cursor
+    let query_page2 = UserQuery {
+        sort_field: UserSortField::Name,
+        sort_direction: SortDirection::Desc,
+        cursor: page1.next_cursor.clone(),
+        limit: 2,
+        ..default_query()
+    };
+    let page2 = repo
+        .get_all(ctx, &query_page2)
+        .await
+        .expect("Failed to get page 2 desc");
+    assert_eq!(page2.items.len(), 1);
+    assert!(page2.next_cursor.is_none());
+
+    // Verify pages don't overlap
+    for u1 in &page1.items {
+        assert!(!page2.items.iter().any(|u2| u2.id == u1.id));
+    }
+}
+
+pub async fn user_test_cursor_pagination_no_next<U: UserRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &U,
+) {
+    // Create exactly 2 users
+    for i in 0..2 {
+        let user = UserCreate {
+            username: format!("pag_nonext_user_{}_{}", i, Uuid::new_v4()),
+            name: format!("No Next User {}", i),
+            email: None,
+            password: "pass".to_string(),
+            photo: None,
+            pin: None,
+            address: None,
+            phone: None,
+        };
+        repo.create(ctx, super::generate_test_id().await, &user)
+            .await
+            .expect("Failed to create user");
+    }
+
+    // Get page of 5, only 2 exist — no next cursor
+    let query = UserQuery {
+        sort_field: UserSortField::UpdatedAt,
+        sort_direction: SortDirection::Asc,
+        cursor: None,
+        limit: 5,
+        ..default_query()
+    };
+    let page = repo.get_all(ctx, &query).await.expect("Failed to get page");
+    assert_eq!(page.items.len(), 2);
+    assert!(page.next_cursor.is_none());
 }
 
 // =============================================================================
@@ -352,10 +476,18 @@ pub async fn user_test_filter_by_username<U: UserRepository>(
     }
 
     let filter = UserFilter::new().with_username(users_data[0].0.as_str());
-    let pagination = PaginationOptions::new(1, 10, None);
-    let users = repo.get_all(ctx, &filter, &pagination).await.unwrap();
+    let users = repo
+        .get_all(
+            ctx,
+            &UserQuery {
+                filter,
+                ..default_query()
+            },
+        )
+        .await
+        .unwrap();
 
-    assert_eq!(users.len(), 1);
+    assert_eq!(users.items.len(), 1);
 }
 
 pub async fn user_test_filter_by_name<U: UserRepository>(
@@ -394,11 +526,19 @@ pub async fn user_test_filter_by_name<U: UserRepository>(
     }
 
     let filter = UserFilter::new().with_name("FilterSmith");
-    let pagination = PaginationOptions::new(1, 10, None);
-    let users = repo.get_all(ctx, &filter, &pagination).await.unwrap();
+    let users = repo
+        .get_all(
+            ctx,
+            &UserQuery {
+                filter,
+                ..default_query()
+            },
+        )
+        .await
+        .unwrap();
 
-    assert_eq!(users.len(), 2);
-    assert!(users.iter().all(|u| u.name.contains("FilterSmith")));
+    assert_eq!(users.items.len(), 2);
+    assert!(users.items.iter().all(|u| u.name.contains("FilterSmith")));
 }
 
 pub async fn user_test_filter_combined<U: UserRepository>(
@@ -439,12 +579,20 @@ pub async fn user_test_filter_combined<U: UserRepository>(
     let filter = UserFilter::new()
         .with_username(users_data[0].0.as_str())
         .with_name("CombinedTest");
-    let pagination = PaginationOptions::new(1, 10, None);
-    let users = repo.get_all(ctx, &filter, &pagination).await.unwrap();
+    let users = repo
+        .get_all(
+            ctx,
+            &UserQuery {
+                filter,
+                ..default_query()
+            },
+        )
+        .await
+        .unwrap();
 
-    assert_eq!(users.len(), 1);
-    assert_eq!(users[0].username, users_data[0].0);
-    assert_eq!(users[0].name, "John CombinedTest");
+    assert_eq!(users.items.len(), 1);
+    assert_eq!(users.items[0].username, users_data[0].0);
+    assert_eq!(users.items[0].name, "John CombinedTest");
 }
 
 pub async fn user_test_filter_by_email<U: UserRepository>(
@@ -487,12 +635,20 @@ pub async fn user_test_filter_by_email<U: UserRepository>(
     }
 
     let filter = UserFilter::new().with_email("user1@company.com");
-    let pagination = PaginationOptions::new(1, 10, None);
-    let users = repo.get_all(ctx, &filter, &pagination).await.unwrap();
+    let users = repo
+        .get_all(
+            ctx,
+            &UserQuery {
+                filter,
+                ..default_query()
+            },
+        )
+        .await
+        .unwrap();
 
-    assert_eq!(users.len(), 1);
-    assert_eq!(users[0].email, Some("user1@company.com".to_string()));
-    assert_eq!(users[0].username, users_data[0].0);
+    assert_eq!(users.items.len(), 1);
+    assert_eq!(users.items[0].email, Some("user1@company.com".to_string()));
+    assert_eq!(users.items[0].username, users_data[0].0);
 }
 
 // =============================================================================

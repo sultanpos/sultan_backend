@@ -1,15 +1,15 @@
 use async_trait::async_trait;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait, Order,
+    QueryFilter, QueryOrder, QuerySelect, Set, sea_query::Expr,
 };
 
 use crate::{
     domain::{
         DomainResult, Error,
         model::{
-            pagination::PaginationOptions,
             permission::{Permission, PermissionCreate},
-            user::{User, UserCreate, UserFilter, UserUpdate},
+            user::{User, UserCreate, UserCursor, UserPage, UserQuery, UserSortField, UserUpdate},
         },
     },
     storage::{
@@ -216,35 +216,113 @@ impl UserRepository for SqliteUserRepository {
     async fn get_all(
         &self,
         ctx: &RepoCtx<impl ConnectionTrait>,
-        filter: &UserFilter,
-        pagination: &PaginationOptions,
-    ) -> DomainResult<Vec<User>> {
-        let mut query = UserEntity::find().filter(UserColumn::IsDeleted.eq(false));
+        query: &UserQuery,
+    ) -> DomainResult<UserPage> {
+        use crate::domain::model::product::SortDirection;
 
-        // Apply filters
-        if let Some(username) = &filter.username {
-            query = query.filter(UserColumn::Username.eq(username));
+        let mut select = UserEntity::find().filter(UserColumn::IsDeleted.eq(false));
+
+        // ── Filters ──────────────────────────────────────────────────────────
+        let mut condition = Condition::all();
+
+        if let Some(username) = &query.filter.username {
+            condition = condition.add(UserColumn::Username.eq(username));
         }
 
-        if let Some(name) = &filter.name {
-            query = query.filter(UserColumn::Name.contains(name));
+        if let Some(name) = &query.filter.name {
+            condition = condition.add(UserColumn::Name.contains(name));
         }
 
-        if let Some(email) = &filter.email {
-            query = query.filter(UserColumn::Email.eq(email));
+        if let Some(email) = &query.filter.email {
+            condition = condition.add(UserColumn::Email.eq(email));
         }
 
-        // Apply pagination
-        let limit = pagination.limit();
-        let offset = pagination.offset();
+        select = select.filter(condition);
 
-        let users = query
-            .limit(limit as u64)
-            .offset(offset as u64)
-            .all(&ctx.db)
-            .await?;
+        // ── Map sort direction ────────────────────────────────────────────────
+        let order = match query.sort_direction {
+            SortDirection::Asc => Order::Asc,
+            SortDirection::Desc => Order::Desc,
+        };
 
-        Ok(users.into_iter().map(|u| u.to_domain()).collect())
+        // ── Cursor condition ──────────────────────────────────────────────────
+        if let Some(cursor) = &query.cursor {
+            let cond = match query.sort_field {
+                // For Id sort, id IS the sort column — no tiebreaker needed
+                UserSortField::Id => match query.sort_direction {
+                    SortDirection::Asc => {
+                        Condition::all().add(Expr::col(UserColumn::Id).gt(cursor.id))
+                    }
+                    SortDirection::Desc => {
+                        Condition::all().add(Expr::col(UserColumn::Id).lt(cursor.id))
+                    }
+                },
+                // For string/date fields: (field > val) OR (field = val AND id > cursor_id)
+                UserSortField::UpdatedAt | UserSortField::Name => {
+                    let sort_col = match query.sort_field {
+                        UserSortField::UpdatedAt => UserColumn::UpdatedAt,
+                        UserSortField::Name => UserColumn::Name,
+                        UserSortField::Id => unreachable!(),
+                    };
+                    match query.sort_direction {
+                        SortDirection::Asc => Condition::any()
+                            .add(Expr::col(sort_col).gt(cursor.field_value.clone()))
+                            .add(
+                                Condition::all()
+                                    .add(Expr::col(sort_col).eq(cursor.field_value.clone()))
+                                    .add(Expr::col(UserColumn::Id).gt(cursor.id)),
+                            ),
+                        SortDirection::Desc => Condition::any()
+                            .add(Expr::col(sort_col).lt(cursor.field_value.clone()))
+                            .add(
+                                Condition::all()
+                                    .add(Expr::col(sort_col).eq(cursor.field_value.clone()))
+                                    .add(Expr::col(UserColumn::Id).lt(cursor.id)),
+                            ),
+                    }
+                }
+            };
+            select = select.filter(cond);
+        }
+
+        // ── Ordering: (sort_field, id) ────────────────────────────────────────
+        select = match query.sort_field {
+            UserSortField::Id => select.order_by(UserColumn::Id, order),
+            UserSortField::UpdatedAt => select
+                .order_by(UserColumn::UpdatedAt, order.clone())
+                .order_by(UserColumn::Id, order),
+            UserSortField::Name => select
+                .order_by(UserColumn::Name, order.clone())
+                .order_by(UserColumn::Id, order),
+        };
+
+        // Fetch limit + 1 to detect whether there is a next page
+        let fetch_limit = query.limit + 1;
+        let rows = select.limit(fetch_limit).all(&ctx.db).await?;
+
+        let has_next = rows.len() as u64 > query.limit;
+        let models: Vec<_> = rows.into_iter().take(query.limit as usize).collect();
+
+        // ── Build next_cursor from the last item ──────────────────────────────
+        let next_cursor = if has_next {
+            models.last().map(|last| {
+                let field_value = match query.sort_field {
+                    UserSortField::Id => last.id.to_string(),
+                    UserSortField::UpdatedAt => last.updated_at.clone(),
+                    UserSortField::Name => last.name.clone(),
+                };
+                UserCursor {
+                    field_value,
+                    id: last.id,
+                }
+            })
+        } else {
+            None
+        };
+
+        let items: Vec<User> = models.into_iter().map(|m| m.to_domain()).collect();
+
+        Ok(UserPage { items, next_cursor })
     }
 
     async fn get_by_id(

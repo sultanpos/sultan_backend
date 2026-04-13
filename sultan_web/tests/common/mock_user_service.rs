@@ -1,9 +1,8 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use sultan_core::application::UserServiceTrait;
-use sultan_core::domain::model::pagination::PaginationOptions;
 use sultan_core::domain::model::permission::{Permission, PermissionCreate, action, resource};
-use sultan_core::domain::model::user::{UserCreate, UserFilter, UserUpdate};
+use sultan_core::domain::model::user::{UserCreate, UserPage, UserQuery, UserUpdate};
 use sultan_core::domain::{Context, DomainResult, Error, User};
 
 pub struct MockUserService {
@@ -127,12 +126,7 @@ impl UserServiceTrait for MockUserService {
         }
     }
 
-    async fn get_all(
-        &self,
-        _ctx: &Context,
-        _filter: &UserFilter,
-        _pagination: &PaginationOptions,
-    ) -> DomainResult<Vec<User>> {
+    async fn get_all(&self, _ctx: &Context, _query: &UserQuery) -> DomainResult<UserPage> {
         Err(Error::Database("Mock get all users error".to_string()))
     }
 
