@@ -3,9 +3,7 @@ use sultan_core::application::SupplierServiceTrait;
 use sultan_core::domain::{
     DomainResult, Error,
     context::Context,
-    model::supplier::{
-        Supplier, SupplierCreate, SupplierFilter, SupplierPage, SupplierQuery, SupplierUpdate,
-    },
+    model::supplier::{Supplier, SupplierCreate, SupplierPage, SupplierQuery, SupplierUpdate},
 };
 
 pub struct MockSupplierService {
