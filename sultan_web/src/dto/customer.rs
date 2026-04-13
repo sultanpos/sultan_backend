@@ -3,10 +3,10 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sultan_core::domain::model::Update;
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
 
-use super::{default_page, default_page_size};
+use super::default_page_size;
 
 #[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct CustomerCreateRequest {
@@ -81,60 +81,138 @@ impl From<sultan_core::domain::model::customer::Customer> for CustomerResponse {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CustomerListResponse {
+    pub items: Vec<CustomerResponse>,
+    /// Opaque cursor to fetch the next page. `null` when there are no more pages.
+    #[schema(example = "eyJmaWVsZF92YWx1ZSI6IjEyMzQ1NiIsImlkIjoxMjM0NX0")]
+    pub next_cursor: Option<String>,
+}
+
+impl CustomerListResponse {
+    pub fn from_page(page: sultan_core::domain::model::customer::CustomerPage) -> Self {
+        use base64::Engine;
+
+        let next_cursor = page.next_cursor.map(|c| {
+            let json = serde_json::to_vec(&c).expect("cursor is always serializable");
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(json)
+        });
+
+        Self {
+            items: page.items.into_iter().map(CustomerResponse::from).collect(),
+            next_cursor,
+        }
+    }
+}
+
+// ── Query Params ──────────────────────────────────────────────────────────────
+
+/// Query parameters for listing customers with cursor-based pagination.
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct CustomerQueryParams {
-    /// Customer number filter
+    /// Customer number filter (partial match)
     pub number: Option<String>,
     /// Customer name filter (partial match)
     pub name: Option<String>,
-    /// Phone number filter
+    /// Phone number filter (partial match)
     pub phone: Option<String>,
-    /// Email filter
+    /// Email filter (partial match)
     pub email: Option<String>,
-    /// Customer level filter
+    /// Customer level filter (exact match)
     pub level: Option<i32>,
-    /// Page number (default: 1)
-    #[serde(default = "default_page")]
-    pub page: u32,
-    /// Page size (default: 20, max: 100)
+
+    /// Sort field: "id", "updated_at", or "name" (default: "id")
+    #[serde(default = "default_customer_sort_field")]
+    #[schema(example = "id")]
+    pub sort_field: String,
+
+    /// Sort direction: "asc" or "desc" (default: "asc")
+    #[serde(default = "default_sort_direction")]
+    #[schema(example = "asc")]
+    pub sort_direction: String,
+
+    /// Opaque cursor from the previous page's `next_cursor` (omit for the first page)
+    #[schema(example = "eyJmaWVsZF92YWx1ZSI6IjEyMzQ1NiIsImlkIjoxMjM0NX0")]
+    pub cursor: Option<String>,
+
+    /// Maximum number of items per page (default: 20, max: 100)
     #[serde(default = "default_page_size")]
-    pub page_size: u32,
-    /// Order by field
-    pub order_by: Option<String>,
-    /// Order direction (asc/desc)
-    pub order_direction: Option<String>,
+    #[schema(example = 20)]
+    pub limit: u32,
+}
+
+fn default_customer_sort_field() -> String {
+    "id".to_string()
+}
+
+fn default_sort_direction() -> String {
+    "asc".to_string()
 }
 
 impl CustomerQueryParams {
-    /// Convert to CustomerFilter
-    pub fn to_filter(&self) -> sultan_core::domain::model::customer::CustomerFilter {
-        sultan_core::domain::model::customer::CustomerFilter {
-            number: self.number.clone(),
-            name: self.name.clone(),
-            phone: self.phone.clone(),
-            email: self.email.clone(),
-            level: self.level,
-        }
-    }
+    /// Convert to CustomerQuery for cursor-based pagination.
+    pub fn to_query(
+        &self,
+    ) -> Result<sultan_core::domain::model::customer::CustomerQuery, sultan_core::domain::Error>
+    {
+        use sultan_core::domain::model::customer::{
+            CustomerCursor, CustomerFilter, CustomerQuery, CustomerSortField,
+        };
+        use sultan_core::domain::model::product::SortDirection;
 
-    /// Convert to PaginationOptions
-    pub fn to_pagination(&self) -> sultan_core::domain::model::pagination::PaginationOptions {
-        use sultan_core::domain::model::pagination::{PaginationOptions, PaginationOrder};
-
-        let page_size = self.page_size.min(100); // Cap at 100
-        let order = match (self.order_by.as_ref(), self.order_direction.as_ref()) {
-            (Some(field), direction) => Some(PaginationOrder {
-                field: field.clone(),
-                direction: direction.cloned().unwrap_or_else(|| "asc".to_string()),
-            }),
-            _ => None,
+        let sort_field = match self.sort_field.as_str() {
+            "id" => CustomerSortField::Id,
+            "updated_at" => CustomerSortField::UpdatedAt,
+            "name" => CustomerSortField::Name,
+            other => {
+                return Err(sultan_core::domain::Error::ValidationError(format!(
+                    "Invalid sort_field '{}'. Must be one of: id, updated_at, name",
+                    other
+                )));
+            }
         };
 
-        PaginationOptions::new(self.page, page_size, order)
-    }
-}
+        let sort_direction = match self.sort_direction.as_str() {
+            "asc" => SortDirection::Asc,
+            "desc" => SortDirection::Desc,
+            other => {
+                return Err(sultan_core::domain::Error::ValidationError(format!(
+                    "Invalid sort_direction '{}'. Must be 'asc' or 'desc'",
+                    other
+                )));
+            }
+        };
 
-#[derive(Debug, Serialize, ToSchema)]
-pub struct CustomerListResponse {
-    pub customers: Vec<CustomerResponse>,
+        let cursor = self
+            .cursor
+            .as_deref()
+            .map(|encoded| {
+                use base64::Engine;
+                let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(encoded)
+                    .map_err(|_| {
+                        sultan_core::domain::Error::ValidationError(
+                            "Invalid cursor encoding".to_string(),
+                        )
+                    })?;
+                serde_json::from_slice::<CustomerCursor>(&bytes).map_err(|_| {
+                    sultan_core::domain::Error::ValidationError("Invalid cursor format".to_string())
+                })
+            })
+            .transpose()?;
+
+        Ok(CustomerQuery {
+            filter: CustomerFilter {
+                number: self.number.clone(),
+                name: self.name.clone(),
+                phone: self.phone.clone(),
+                email: self.email.clone(),
+                level: self.level,
+            },
+            sort_field,
+            sort_direction,
+            cursor,
+            limit: self.limit.clamp(1, 100) as u64,
+        })
+    }
 }

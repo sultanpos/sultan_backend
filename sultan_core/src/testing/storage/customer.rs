@@ -3,8 +3,8 @@ use crate::{
         error::Error::NotFound,
         model::{
             Update,
-            customer::{CustomerCreate, CustomerFilter, CustomerUpdate},
-            pagination::PaginationOptions,
+            customer::{CustomerCreate, CustomerFilter, CustomerQuery, CustomerUpdate},
+            product::SortDirection,
         },
     },
     storage::{CustomerRepository, RepoCtx},
@@ -12,13 +12,19 @@ use crate::{
 use sea_orm::DatabaseConnection;
 use serde_json::json;
 
-pub fn default_filter() -> CustomerFilter {
-    CustomerFilter {
-        number: None,
-        name: None,
-        phone: None,
-        email: None,
-        level: None,
+pub fn default_query() -> CustomerQuery {
+    CustomerQuery {
+        filter: CustomerFilter {
+            number: None,
+            name: None,
+            phone: None,
+            email: None,
+            level: None,
+        },
+        sort_field: crate::domain::model::customer::CustomerSortField::Id,
+        sort_direction: SortDirection::Asc,
+        cursor: None,
+        limit: 100,
     }
 }
 
@@ -52,7 +58,9 @@ where
     customer_test_filter_by_phone(&ctx_factory().await, repo).await;
     customer_test_filter_by_level(&ctx_factory().await, repo).await;
     customer_test_filter_multiple_criteria(&ctx_factory().await, repo).await;
-    customer_test_pagination(&ctx_factory().await, repo).await;
+    customer_test_cursor_pagination_asc(&ctx_factory().await, repo).await;
+    customer_test_cursor_pagination_desc(&ctx_factory().await, repo).await;
+    customer_test_cursor_pagination_no_next(&ctx_factory().await, repo).await;
 }
 
 // =============================================================================
@@ -106,11 +114,11 @@ pub async fn customer_test_repo_integration<C: CustomerRepository>(
     assert_eq!(fetched_updated.name, "Updated Customer");
 
     // Test Get All
-    let customers = repo
-        .get_all(ctx, &default_filter(), &super::default_pagination())
+    let page = repo
+        .get_all(ctx, &default_query())
         .await
         .expect("Failed to get all customers");
-    assert!(customers.iter().any(|c| c.id == id));
+    assert!(page.items.iter().any(|c| c.id == id));
 
     // Test Delete
     repo.delete(ctx, id)
@@ -587,11 +595,11 @@ pub async fn customer_test_deleted_not_in_get_all<C: CustomerRepository>(
         .expect("Failed to create customer");
 
     // Verify it appears in get_all
-    let customers_before = repo
-        .get_all(ctx, &default_filter(), &super::default_pagination())
+    let page_before = repo
+        .get_all(ctx, &default_query())
         .await
         .expect("Failed to get all customers");
-    assert!(customers_before.iter().any(|c| c.id == id));
+    assert!(page_before.items.iter().any(|c| c.id == id));
 
     // Delete it
     repo.delete(ctx, id)
@@ -599,11 +607,11 @@ pub async fn customer_test_deleted_not_in_get_all<C: CustomerRepository>(
         .expect("Failed to delete customer");
 
     // Verify it no longer appears in get_all
-    let customers_after = repo
-        .get_all(ctx, &default_filter(), &super::default_pagination())
+    let page_after = repo
+        .get_all(ctx, &default_query())
         .await
         .expect("Failed to get all customers");
-    assert!(!customers_after.iter().any(|c| c.id == id));
+    assert!(!page_after.items.iter().any(|c| c.id == id));
 }
 
 // =============================================================================
@@ -754,14 +762,14 @@ pub async fn customer_test_get_all<C: CustomerRepository>(
             .expect("Failed to create customer");
     }
 
-    let customers = repo
-        .get_all(ctx, &default_filter(), &super::default_pagination())
+    let page = repo
+        .get_all(ctx, &default_query())
         .await
         .expect("Failed to get all customers");
 
     // Verify all created customers are returned
     for id in created_ids {
-        assert!(customers.iter().any(|c| c.id == id));
+        assert!(page.items.iter().any(|c| c.id == id));
     }
 }
 
@@ -808,21 +816,24 @@ pub async fn customer_test_filter_by_name<C: CustomerRepository>(
     .await
     .expect("Failed to create customer");
 
-    let filter = CustomerFilter {
-        name: Some("Alpha".to_string()),
-        number: None,
-        email: None,
-        phone: None,
-        level: None,
+    let query = CustomerQuery {
+        filter: CustomerFilter {
+            name: Some("Alpha".to_string()),
+            number: None,
+            email: None,
+            phone: None,
+            level: None,
+        },
+        ..default_query()
     };
 
-    let customers = repo
-        .get_all(ctx, &filter, &super::default_pagination())
+    let page = repo
+        .get_all(ctx, &query)
         .await
         .expect("Failed to get customers");
 
-    assert!(customers.iter().any(|c| c.id == id1));
-    assert!(!customers.iter().any(|c| c.id == id2));
+    assert!(page.items.iter().any(|c| c.id == id1));
+    assert!(!page.items.iter().any(|c| c.id == id2));
 }
 
 pub async fn customer_test_filter_by_number<C: CustomerRepository>(
@@ -864,21 +875,24 @@ pub async fn customer_test_filter_by_number<C: CustomerRepository>(
     .await
     .expect("Failed to create customer");
 
-    let filter = CustomerFilter {
-        name: None,
-        number: Some("ABC".to_string()),
-        email: None,
-        phone: None,
-        level: None,
+    let query = CustomerQuery {
+        filter: CustomerFilter {
+            name: None,
+            number: Some("ABC".to_string()),
+            email: None,
+            phone: None,
+            level: None,
+        },
+        ..default_query()
     };
 
-    let customers = repo
-        .get_all(ctx, &filter, &super::default_pagination())
+    let page = repo
+        .get_all(ctx, &query)
         .await
         .expect("Failed to get customers");
 
-    assert!(customers.iter().any(|c| c.id == id1));
-    assert!(!customers.iter().any(|c| c.id == id2));
+    assert!(page.items.iter().any(|c| c.id == id1));
+    assert!(!page.items.iter().any(|c| c.id == id2));
 }
 
 pub async fn customer_test_filter_by_email<C: CustomerRepository>(
@@ -920,21 +934,24 @@ pub async fn customer_test_filter_by_email<C: CustomerRepository>(
     .await
     .expect("Failed to create customer");
 
-    let filter = CustomerFilter {
-        name: None,
-        number: None,
-        email: Some("alpha".to_string()),
-        phone: None,
-        level: None,
+    let query = CustomerQuery {
+        filter: CustomerFilter {
+            name: None,
+            number: None,
+            email: Some("alpha".to_string()),
+            phone: None,
+            level: None,
+        },
+        ..default_query()
     };
 
-    let customers = repo
-        .get_all(ctx, &filter, &super::default_pagination())
+    let page = repo
+        .get_all(ctx, &query)
         .await
         .expect("Failed to get customers");
 
-    assert!(customers.iter().any(|c| c.id == id1));
-    assert!(!customers.iter().any(|c| c.id == id2));
+    assert!(page.items.iter().any(|c| c.id == id1));
+    assert!(!page.items.iter().any(|c| c.id == id2));
 }
 
 pub async fn customer_test_filter_by_phone<C: CustomerRepository>(
@@ -976,21 +993,24 @@ pub async fn customer_test_filter_by_phone<C: CustomerRepository>(
     .await
     .expect("Failed to create customer");
 
-    let filter = CustomerFilter {
-        name: None,
-        number: None,
-        email: None,
-        phone: Some("555".to_string()),
-        level: None,
+    let query = CustomerQuery {
+        filter: CustomerFilter {
+            name: None,
+            number: None,
+            email: None,
+            phone: Some("555".to_string()),
+            level: None,
+        },
+        ..default_query()
     };
 
-    let customers = repo
-        .get_all(ctx, &filter, &super::default_pagination())
+    let page = repo
+        .get_all(ctx, &query)
         .await
         .expect("Failed to get customers");
 
-    assert!(customers.iter().any(|c| c.id == id1));
-    assert!(!customers.iter().any(|c| c.id == id2));
+    assert!(page.items.iter().any(|c| c.id == id1));
+    assert!(!page.items.iter().any(|c| c.id == id2));
 }
 
 pub async fn customer_test_filter_by_level<C: CustomerRepository>(
@@ -1032,21 +1052,24 @@ pub async fn customer_test_filter_by_level<C: CustomerRepository>(
     .await
     .expect("Failed to create customer");
 
-    let filter = CustomerFilter {
-        name: None,
-        number: None,
-        email: None,
-        phone: None,
-        level: Some(1),
+    let query = CustomerQuery {
+        filter: CustomerFilter {
+            name: None,
+            number: None,
+            email: None,
+            phone: None,
+            level: Some(1),
+        },
+        ..default_query()
     };
 
-    let customers = repo
-        .get_all(ctx, &filter, &super::default_pagination())
+    let page = repo
+        .get_all(ctx, &query)
         .await
         .expect("Failed to get customers");
 
-    assert!(customers.iter().any(|c| c.id == id1));
-    assert!(!customers.iter().any(|c| c.id == id2));
+    assert!(page.items.iter().any(|c| c.id == id1));
+    assert!(!page.items.iter().any(|c| c.id == id2));
 }
 
 pub async fn customer_test_filter_multiple_criteria<C: CustomerRepository>(
@@ -1106,30 +1129,33 @@ pub async fn customer_test_filter_multiple_criteria<C: CustomerRepository>(
     .unwrap();
 
     // Filter by name, number, and level
-    let filter = CustomerFilter {
-        name: Some("Alpha".to_string()),
-        number: Some("ALP".to_string()),
-        email: None,
-        phone: None,
-        level: Some(1),
+    let query = CustomerQuery {
+        filter: CustomerFilter {
+            name: Some("Alpha".to_string()),
+            number: Some("ALP".to_string()),
+            email: None,
+            phone: None,
+            level: Some(1),
+        },
+        ..default_query()
     };
 
-    let customers = repo
-        .get_all(ctx, &filter, &super::default_pagination())
+    let page = repo
+        .get_all(ctx, &query)
         .await
         .expect("Failed to get customers");
 
     // Only id1 matches all criteria
-    assert!(customers.iter().any(|c| c.id == id1));
-    assert!(!customers.iter().any(|c| c.id == id2)); // Has Alpha name but BET number and level 2
-    assert!(!customers.iter().any(|c| c.id == id3)); // Has ALP number and level 1 but Beta name
+    assert!(page.items.iter().any(|c| c.id == id1));
+    assert!(!page.items.iter().any(|c| c.id == id2)); // Has Alpha name but BET number and level 2
+    assert!(!page.items.iter().any(|c| c.id == id3)); // Has ALP number and level 1 but Beta name
 }
 
 // =============================================================================
-// Pagination Tests
+// Cursor Pagination Tests
 // =============================================================================
 
-pub async fn customer_test_pagination<C: CustomerRepository>(
+pub async fn customer_test_cursor_pagination_asc<C: CustomerRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &C,
 ) {
@@ -1150,22 +1176,128 @@ pub async fn customer_test_pagination<C: CustomerRepository>(
             .expect("Failed to create customer");
     }
 
-    // Get first page (2 items)
+    // Get first page (2 items), sorted by id asc
+    let query_page1 = CustomerQuery {
+        sort_field: crate::domain::model::customer::CustomerSortField::Id,
+        sort_direction: SortDirection::Asc,
+        cursor: None,
+        limit: 2,
+        ..default_query()
+    };
     let page1 = repo
-        .get_all(ctx, &default_filter(), &PaginationOptions::new(1, 2, None))
+        .get_all(ctx, &query_page1)
         .await
         .expect("Failed to get page 1");
-    assert_eq!(page1.len(), 2);
+    assert_eq!(page1.items.len(), 2);
+    assert!(page1.next_cursor.is_some());
 
-    // Get second page (2 items)
+    // Get second page using the cursor
+    let query_page2 = CustomerQuery {
+        sort_field: crate::domain::model::customer::CustomerSortField::Id,
+        sort_direction: SortDirection::Asc,
+        cursor: page1.next_cursor.clone(),
+        limit: 2,
+        ..default_query()
+    };
     let page2 = repo
-        .get_all(ctx, &default_filter(), &PaginationOptions::new(2, 2, None))
+        .get_all(ctx, &query_page2)
         .await
         .expect("Failed to get page 2");
-    assert_eq!(page2.len(), 2);
+    assert_eq!(page2.items.len(), 2);
 
     // Verify pages don't overlap
-    for c1 in &page1 {
-        assert!(!page2.iter().any(|c2| c2.id == c1.id));
+    for c1 in &page1.items {
+        assert!(!page2.items.iter().any(|c2| c2.id == c1.id));
     }
+}
+
+pub async fn customer_test_cursor_pagination_desc<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
+    // Create 3 customers
+    for i in 0..3 {
+        let id = super::generate_test_id().await;
+        let customer = CustomerCreate {
+            number: format!("DESC{:03}", i),
+            name: format!("Desc Customer {}", i),
+            address: None,
+            email: None,
+            phone: None,
+            level: 0,
+            metadata: None,
+        };
+        repo.create(ctx, id, &customer)
+            .await
+            .expect("Failed to create customer");
+    }
+
+    // Get first page in descending order by name
+    let query_page1 = CustomerQuery {
+        sort_field: crate::domain::model::customer::CustomerSortField::Name,
+        sort_direction: SortDirection::Desc,
+        cursor: None,
+        limit: 2,
+        ..default_query()
+    };
+    let page1 = repo
+        .get_all(ctx, &query_page1)
+        .await
+        .expect("Failed to get page 1 desc");
+    assert_eq!(page1.items.len(), 2);
+    assert!(page1.next_cursor.is_some());
+
+    // Get second page using the cursor
+    let query_page2 = CustomerQuery {
+        sort_field: crate::domain::model::customer::CustomerSortField::Name,
+        sort_direction: SortDirection::Desc,
+        cursor: page1.next_cursor.clone(),
+        limit: 2,
+        ..default_query()
+    };
+    let page2 = repo
+        .get_all(ctx, &query_page2)
+        .await
+        .expect("Failed to get page 2 desc");
+    assert_eq!(page2.items.len(), 1);
+    assert!(page2.next_cursor.is_none());
+
+    // Verify pages don't overlap
+    for c1 in &page1.items {
+        assert!(!page2.items.iter().any(|c2| c2.id == c1.id));
+    }
+}
+
+pub async fn customer_test_cursor_pagination_no_next<C: CustomerRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &C,
+) {
+    // Create exactly 2 customers
+    for i in 0..2 {
+        let id = super::generate_test_id().await;
+        let customer = CustomerCreate {
+            number: format!("NONEXT{:03}", i),
+            name: format!("No Next Customer {}", i),
+            address: None,
+            email: None,
+            phone: None,
+            level: 0,
+            metadata: None,
+        };
+        repo.create(ctx, id, &customer)
+            .await
+            .expect("Failed to create customer");
+    }
+
+    // Get page of 5, only 2 exist — no next cursor
+    let query = CustomerQuery {
+        sort_field: crate::domain::model::customer::CustomerSortField::UpdatedAt,
+        sort_direction: SortDirection::Asc,
+        cursor: None,
+        limit: 5,
+        ..default_query()
+    };
+    let page = repo.get_all(ctx, &query).await.expect("Failed to get page");
+    assert_eq!(page.items.len(), 2);
+    assert!(page.next_cursor.is_none());
 }

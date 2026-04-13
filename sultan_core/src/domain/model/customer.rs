@@ -1,7 +1,42 @@
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::Update;
+use super::{Update, product::SortDirection};
+
+/// Sort fields available for customer listing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CustomerSortField {
+    Id,
+    UpdatedAt,
+    Name,
+}
+
+/// Cursor for keyset (cursor-based) pagination over customers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomerCursor {
+    /// Value of the primary sort field from the last item of the previous page.
+    pub field_value: String,
+    /// ID of the last item of the previous page (tiebreaker).
+    pub id: i64,
+}
+
+/// Options for querying a list of customers with cursor-based pagination.
+#[derive(Debug, Clone)]
+pub struct CustomerQuery {
+    pub filter: CustomerFilter,
+    pub sort_field: CustomerSortField,
+    pub sort_direction: SortDirection,
+    pub cursor: Option<CustomerCursor>,
+    pub limit: u64,
+}
+
+/// A page of customers with an optional cursor pointing to the next page.
+#[derive(Debug, Clone)]
+pub struct CustomerPage {
+    pub items: Vec<Customer>,
+    pub next_cursor: Option<CustomerCursor>,
+}
 
 #[derive(Debug, Clone)]
 pub struct Customer {
