@@ -56,6 +56,7 @@ pub struct PaymentChannelApiDoc;
 /// Create a new payment channel
 #[utoipa::path(
     post,
+    operation_id = "create_payment_channel",
     path = "/api/payment-channel",
     tag = "payment-channel",
     request_body = PaymentChannelCreateRequest,
@@ -97,6 +98,7 @@ async fn create(
 /// Update an existing payment channel
 #[utoipa::path(
     put,
+    operation_id = "update_payment_channel",
     path = "/api/payment-channel/{id}",
     tag = "payment-channel",
     request_body = PaymentChannelUpdateRequest,
@@ -161,6 +163,7 @@ async fn delete_channel(
 /// Get a payment channel by ID
 #[utoipa::path(
     get,
+    operation_id = "get_payment_channel",
     path = "/api/payment-channel/{id}",
     tag = "payment-channel",
     params(("id" = i64, Path, description = "Payment channel ID")),
@@ -189,6 +192,7 @@ async fn get_by_id(
 /// List all payment channels
 #[utoipa::path(
     get,
+    operation_id = "list_payment_channels",
     path = "/api/payment-channel",
     tag = "payment-channel",
     params(PaymentChannelQueryParams),

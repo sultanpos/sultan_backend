@@ -46,6 +46,7 @@ pub struct BranchApiDoc;
 
 #[utoipa::path(
     post,
+    operation_id = "create_branch",
     path = "/api/branch",
     tag = "branch",
     request_body = BranchCreateRequest,
@@ -88,6 +89,7 @@ async fn create(
 
 #[utoipa::path(
     put,
+    operation_id = "update_branch",
     path = "/api/branch/{id}",
     tag = "branch",
     request_body = BranchUpdateRequest,
@@ -162,6 +164,7 @@ async fn delete_branch(
 
 #[utoipa::path(
     get,
+    operation_id = "get_branch",
     path = "/api/branch/{id}",
     tag = "branch",
     params(
@@ -191,6 +194,7 @@ async fn get_by_id(
 
 #[utoipa::path(
     get,
+    operation_id = "list_branches",
     path = "/api/branch",
     tag = "branch",
     responses(

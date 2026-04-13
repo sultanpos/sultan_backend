@@ -58,6 +58,7 @@ pub struct UserApiDoc;
 /// Creates a new user with the provided information. Requires authentication.
 #[utoipa::path(
     post,
+    operation_id = "create_user",
     path = "/api/user",
     tag = "user",
     request_body = UserCreateRequest,
@@ -116,6 +117,7 @@ async fn create(
 /// Requires authentication.
 #[utoipa::path(
     put,
+    operation_id = "update_user",
     path = "/api/user/{id}",
     tag = "user",
     request_body = UserUpdateRequest,
@@ -207,6 +209,7 @@ async fn delete_user(
 /// Retrieves a single user by their ID. Requires authentication.
 #[utoipa::path(
     get,
+    operation_id = "get_user",
     path = "/api/user/{id}",
     tag = "user",
     params(
@@ -240,6 +243,7 @@ async fn get_by_id(
 /// Retrieves a list of all users with optional filtering and pagination. Requires authentication.
 #[utoipa::path(
     get,
+    operation_id = "list_users",
     path = "/api/user",
     tag = "user",
     params(

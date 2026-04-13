@@ -51,6 +51,7 @@ pub struct CategoryApiDoc;
 /// Creates a new category with the provided information. Requires authentication.
 #[utoipa::path(
     post,
+    operation_id = "create_category",
     path = "/api/category",
     tag = "category",
     request_body = CategoryCreateRequest,
@@ -94,6 +95,7 @@ async fn create(
 /// Requires authentication.
 #[utoipa::path(
     put,
+    operation_id = "update_category",
     path = "/api/category/{id}",
     tag = "category",
     request_body = CategoryUpdateRequest,
@@ -172,6 +174,7 @@ async fn delete_category(
 /// Requires authentication.
 #[utoipa::path(
     get,
+    operation_id = "get_category",
     path = "/api/category/{id}",
     tag = "category",
     params(
@@ -222,6 +225,7 @@ async fn get_by_id(
 /// Each category includes its immediate children. Requires authentication.
 #[utoipa::path(
     get,
+    operation_id = "list_categories",
     path = "/api/category",
     tag = "category",
     responses(

@@ -46,6 +46,7 @@ pub struct CustomerApiDoc;
 
 #[utoipa::path(
     post,
+    operation_id = "create_customer",
     path = "/api/customer",
     tag = "customer",
     request_body = CustomerCreateRequest,
@@ -89,6 +90,7 @@ async fn create(
 
 #[utoipa::path(
     put,
+    operation_id = "update_customer",
     path = "/api/customer/{id}",
     tag = "customer",
     request_body = CustomerUpdateRequest,
@@ -164,6 +166,7 @@ async fn delete_customer(
 
 #[utoipa::path(
     get,
+    operation_id = "get_customer",
     path = "/api/customer/{id}",
     tag = "customer",
     params(
@@ -196,6 +199,7 @@ async fn get_by_id(
 
 #[utoipa::path(
     get,
+    operation_id = "list_customers",
     path = "/api/customer",
     tag = "customer",
     params(

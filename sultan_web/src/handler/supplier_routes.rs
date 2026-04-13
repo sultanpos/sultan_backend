@@ -52,6 +52,7 @@ pub struct SupplierApiDoc;
 /// Creates a new supplier with the provided information. Requires authentication.
 #[utoipa::path(
     post,
+    operation_id = "create_supplier",
     path = "/api/supplier",
     tag = "supplier",
     request_body = SupplierCreateRequest,
@@ -99,6 +100,7 @@ async fn create(
 /// Updates a supplier's information by ID. Requires authentication.
 #[utoipa::path(
     put,
+    operation_id = "update_supplier",
     path = "/api/supplier/{id}",
     tag = "supplier",
     params(
@@ -179,6 +181,7 @@ async fn delete_supplier(
 /// Retrieves a single supplier by its ID. Requires authentication.
 #[utoipa::path(
     get,
+    operation_id = "get_supplier",
     path = "/api/supplier/{id}",
     tag = "supplier",
     params(
@@ -214,6 +217,7 @@ async fn get_one(
 /// Retrieves a list of suppliers with optional filtering and pagination. Requires authentication.
 #[utoipa::path(
     get,
+    operation_id = "list_suppliers",
     path = "/api/supplier",
     tag = "supplier",
     params(SupplierQueryParams),
