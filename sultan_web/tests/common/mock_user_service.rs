@@ -7,12 +7,14 @@ use sultan_core::domain::{Context, DomainResult, Error, User};
 
 pub struct MockUserService {
     pub should_succeed: bool,
+    pub get_all_succeeds: bool,
 }
 
 impl MockUserService {
     pub fn new_success() -> Self {
         Self {
             should_succeed: true,
+            get_all_succeeds: false,
         }
     }
 
@@ -20,6 +22,15 @@ impl MockUserService {
     pub fn new_failure() -> Self {
         Self {
             should_succeed: false,
+            get_all_succeeds: false,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn new_get_all_success() -> Self {
+        Self {
+            should_succeed: true,
+            get_all_succeeds: true,
         }
     }
 }
@@ -127,6 +138,27 @@ impl UserServiceTrait for MockUserService {
     }
 
     async fn get_all(&self, _ctx: &Context, _query: &UserQuery) -> DomainResult<UserPage> {
+        if self.get_all_succeeds {
+            return Ok(UserPage {
+                items: vec![User {
+                    id: 1,
+                    created_at: Utc::now(),
+                    updated_at: Utc::now(),
+                    deleted_at: None,
+                    is_deleted: false,
+                    username: "sultan".to_string(),
+                    password: "hashed".to_string(),
+                    name: "Sultan User".to_string(),
+                    email: None,
+                    photo: None,
+                    pin: None,
+                    address: None,
+                    phone: None,
+                    permissions: None,
+                }],
+                next_cursor: None,
+            });
+        }
         Err(Error::Database("Mock get all users error".to_string()))
     }
 

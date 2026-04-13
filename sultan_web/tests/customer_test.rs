@@ -370,3 +370,104 @@ async fn test_get_all_customers_with_phone_filter() {
     assert!(response["items"].is_array());
     assert_eq!(response["items"].as_array().unwrap().len(), 2);
 }
+
+#[tokio::test]
+async fn test_get_all_customers_with_number_filter() {
+    let app = build_test_router(MockAppStateBuilder::new());
+
+    let (status, response) = make_request(app, "GET", "/api/customer?number=CUST", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(response["items"].is_array());
+}
+
+#[tokio::test]
+async fn test_get_all_customers_sort_by_name_asc() {
+    let app = build_test_router(MockAppStateBuilder::new());
+
+    let (status, response) = make_request(
+        app,
+        "GET",
+        "/api/customer?sort_field=name&sort_direction=asc",
+        None,
+    )
+    .await
+    .expect("Request failed");
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(response["items"].is_array());
+}
+
+#[tokio::test]
+async fn test_get_all_customers_sort_by_updated_at_desc() {
+    let app = build_test_router(MockAppStateBuilder::new());
+
+    let (status, response) = make_request(
+        app,
+        "GET",
+        "/api/customer?sort_field=updated_at&sort_direction=desc",
+        None,
+    )
+    .await
+    .expect("Request failed");
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(response["items"].is_array());
+}
+
+#[tokio::test]
+async fn test_get_all_customers_invalid_sort_field() {
+    let app = build_test_router(MockAppStateBuilder::new());
+
+    let (status, response) = make_request(app, "GET", "/api/customer?sort_field=invalid", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(response["error"].as_str().unwrap().contains("sort_field"));
+}
+
+#[tokio::test]
+async fn test_get_all_customers_invalid_sort_direction() {
+    let app = build_test_router(MockAppStateBuilder::new());
+
+    let (status, response) = make_request(app, "GET", "/api/customer?sort_direction=invalid", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        response["error"]
+            .as_str()
+            .unwrap()
+            .contains("sort_direction")
+    );
+}
+
+#[tokio::test]
+async fn test_get_all_customers_invalid_cursor() {
+    let app = build_test_router(MockAppStateBuilder::new());
+
+    let (status, response) =
+        make_request(app, "GET", "/api/customer?cursor=not_valid_base64!!!", None)
+            .await
+            .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(response["error"].as_str().unwrap().contains("cursor"));
+}
+
+#[tokio::test]
+async fn test_get_all_customers_response_has_next_cursor_field() {
+    let app = build_test_router(MockAppStateBuilder::new());
+
+    let (status, response) = make_request(app, "GET", "/api/customer", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(response.get("next_cursor").is_some());
+    assert!(response["next_cursor"].is_null());
+}

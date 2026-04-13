@@ -526,3 +526,104 @@ async fn test_get_all_suppliers_service_error() {
         error_msg
     );
 }
+
+#[tokio::test]
+async fn test_get_all_suppliers_sort_by_name_asc() {
+    let app_state = MockAppStateBuilder::new()
+        .with_supplier_service(Arc::new(MockSupplierService::new_success()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(
+        app,
+        "GET",
+        "/api/supplier?sort_field=name&sort_direction=asc",
+        None,
+    )
+    .await
+    .expect("Request failed");
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(response["items"].is_array());
+}
+
+#[tokio::test]
+async fn test_get_all_suppliers_sort_by_updated_at_desc() {
+    let app_state = MockAppStateBuilder::new()
+        .with_supplier_service(Arc::new(MockSupplierService::new_success()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(
+        app,
+        "GET",
+        "/api/supplier?sort_field=updated_at&sort_direction=desc",
+        None,
+    )
+    .await
+    .expect("Request failed");
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(response["items"].is_array());
+}
+
+#[tokio::test]
+async fn test_get_all_suppliers_invalid_sort_field() {
+    let app_state = MockAppStateBuilder::new()
+        .with_supplier_service(Arc::new(MockSupplierService::new_success()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/supplier?sort_field=invalid", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(response["error"].as_str().unwrap().contains("sort_field"));
+}
+
+#[tokio::test]
+async fn test_get_all_suppliers_invalid_sort_direction() {
+    let app_state = MockAppStateBuilder::new()
+        .with_supplier_service(Arc::new(MockSupplierService::new_success()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/supplier?sort_direction=invalid", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        response["error"]
+            .as_str()
+            .unwrap()
+            .contains("sort_direction")
+    );
+}
+
+#[tokio::test]
+async fn test_get_all_suppliers_invalid_cursor() {
+    let app_state = MockAppStateBuilder::new()
+        .with_supplier_service(Arc::new(MockSupplierService::new_success()));
+    let app = build_test_router(app_state);
+
+    let (status, response) =
+        make_request(app, "GET", "/api/supplier?cursor=not_valid_base64!!!", None)
+            .await
+            .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(response["error"].as_str().unwrap().contains("cursor"));
+}
+
+#[tokio::test]
+async fn test_get_all_suppliers_response_has_next_cursor_field() {
+    let app_state = MockAppStateBuilder::new()
+        .with_supplier_service(Arc::new(MockSupplierService::new_success()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/supplier", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(response.get("next_cursor").is_some());
+    assert!(response["next_cursor"].is_null());
+}
