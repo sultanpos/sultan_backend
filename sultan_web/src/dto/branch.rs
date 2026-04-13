@@ -155,7 +155,6 @@ impl BranchQueryParams {
         use sultan_core::domain::model::branch::{
             BranchCursor, BranchFilter, BranchQuery, BranchSortField,
         };
-        use sultan_core::domain::model::product::SortDirection;
 
         let sort_field = match self.sort_field.as_str() {
             "name" => BranchSortField::Name,
@@ -168,33 +167,11 @@ impl BranchQueryParams {
             }
         };
 
-        let sort_direction = match self.sort_direction.as_str() {
-            "asc" => SortDirection::Asc,
-            "desc" => SortDirection::Desc,
-            other => {
-                return Err(sultan_core::domain::Error::ValidationError(format!(
-                    "Invalid sort_direction '{}'. Must be 'asc' or 'desc'",
-                    other
-                )));
-            }
-        };
-
+        let sort_direction = super::parse_sort_direction(&self.sort_direction)?;
         let cursor = self
             .cursor
             .as_deref()
-            .map(|encoded| {
-                use base64::Engine;
-                let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
-                    .decode(encoded)
-                    .map_err(|_| {
-                        sultan_core::domain::Error::ValidationError(
-                            "Invalid cursor encoding".to_string(),
-                        )
-                    })?;
-                serde_json::from_slice::<BranchCursor>(&bytes).map_err(|_| {
-                    sultan_core::domain::Error::ValidationError("Invalid cursor format".to_string())
-                })
-            })
+            .map(super::decode_cursor::<BranchCursor>)
             .transpose()?;
 
         Ok(BranchQuery {

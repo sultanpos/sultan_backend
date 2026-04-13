@@ -299,45 +299,20 @@ fn parse_sort_field(
     }
 }
 
-fn parse_sort_direction(
-    s: &str,
-) -> Result<sultan_core::domain::model::product::SortDirection, sultan_core::domain::Error> {
-    use sultan_core::domain::model::product::SortDirection;
-    match s {
-        "asc" => Ok(SortDirection::Asc),
-        "desc" => Ok(SortDirection::Desc),
-        other => Err(sultan_core::domain::Error::ValidationError(format!(
-            "Invalid sort_direction '{}'. Must be 'asc' or 'desc'",
-            other
-        ))),
-    }
-}
-
-fn decode_cursor(
-    encoded: &str,
-) -> Result<sultan_core::domain::model::product::ProductCursor, sultan_core::domain::Error> {
-    use base64::Engine;
-    use sultan_core::domain::model::product::ProductCursor;
-    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .decode(encoded)
-        .map_err(|_| {
-            sultan_core::domain::Error::ValidationError("Invalid cursor encoding".to_string())
-        })?;
-    serde_json::from_slice::<ProductCursor>(&bytes).map_err(|_| {
-        sultan_core::domain::Error::ValidationError("Invalid cursor format".to_string())
-    })
-}
-
 impl ProductQueryParams {
     /// Convert query params into the domain `ProductQuery`.
     pub fn to_query(
         &self,
     ) -> Result<sultan_core::domain::model::product::ProductQuery, sultan_core::domain::Error> {
-        use sultan_core::domain::model::product::{ProductFilter, ProductQuery};
+        use sultan_core::domain::model::product::{ProductCursor, ProductFilter, ProductQuery};
 
         let sort_field = parse_sort_field(&self.sort_field)?;
-        let sort_direction = parse_sort_direction(&self.sort_direction)?;
-        let cursor = self.cursor.as_deref().map(decode_cursor).transpose()?;
+        let sort_direction = super::parse_sort_direction(&self.sort_direction)?;
+        let cursor = self
+            .cursor
+            .as_deref()
+            .map(super::decode_cursor::<ProductCursor>)
+            .transpose()?;
         let limit = self.limit.clamp(1, 100) as u64;
 
         Ok(ProductQuery {
@@ -960,11 +935,17 @@ impl VariantSearchQueryParams {
         &self,
     ) -> Result<sultan_core::domain::model::product::VariantSearchQuery, sultan_core::domain::Error>
     {
-        use sultan_core::domain::model::product::{VariantSearchFilter, VariantSearchQuery};
+        use sultan_core::domain::model::product::{
+            ProductCursor, VariantSearchFilter, VariantSearchQuery,
+        };
 
         let sort_field = parse_sort_field(&self.sort_field)?;
-        let sort_direction = parse_sort_direction(&self.sort_direction)?;
-        let cursor = self.cursor.as_deref().map(decode_cursor).transpose()?;
+        let sort_direction = super::parse_sort_direction(&self.sort_direction)?;
+        let cursor = self
+            .cursor
+            .as_deref()
+            .map(super::decode_cursor::<ProductCursor>)
+            .transpose()?;
         let limit = self.limit.clamp(1, 100) as u64;
 
         Ok(VariantSearchQuery {

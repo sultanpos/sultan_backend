@@ -24,6 +24,38 @@ pub use user::{PermissionCreateRequest, UserCreateRequest, UserResponse, UserUpd
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use utoipa::ToSchema;
 
+/// Parses a sort direction string into the domain `SortDirection` type.
+/// Returns a validation error for any value other than `"asc"` or `"desc"`.
+pub(crate) fn parse_sort_direction(
+    s: &str,
+) -> Result<sultan_core::domain::model::product::SortDirection, sultan_core::domain::Error> {
+    use sultan_core::domain::model::product::SortDirection;
+    match s {
+        "asc" => Ok(SortDirection::Asc),
+        "desc" => Ok(SortDirection::Desc),
+        other => Err(sultan_core::domain::Error::ValidationError(format!(
+            "Invalid sort_direction '{}'. Must be 'asc' or 'desc'",
+            other
+        ))),
+    }
+}
+
+/// Decodes a base64url-encoded cursor string into the given cursor type.
+/// Returns a validation error if decoding or deserialization fails.
+pub(crate) fn decode_cursor<C: serde::de::DeserializeOwned>(
+    encoded: &str,
+) -> Result<C, sultan_core::domain::Error> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(encoded)
+        .map_err(|_| {
+            sultan_core::domain::Error::ValidationError("Invalid cursor encoding".to_string())
+        })?;
+    serde_json::from_slice::<C>(&bytes).map_err(|_| {
+        sultan_core::domain::Error::ValidationError("Invalid cursor format".to_string())
+    })
+}
+
 /// Standard error response
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ErrorResponse {
