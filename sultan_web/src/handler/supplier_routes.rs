@@ -15,8 +15,10 @@ use utoipa::OpenApi;
 use validator::Validate;
 
 use crate::AppState;
-use crate::dto::supplier::{SupplierQueryParams, SupplierResponse, SupplierUpdateRequest};
-use crate::dto::{ErrorResponse, ListResponse, SupplierCreateRequest, SupplierCreateResponse};
+use crate::dto::supplier::{
+    SupplierListResponse, SupplierQueryParams, SupplierResponse, SupplierUpdateRequest,
+};
+use crate::dto::{ErrorResponse, SupplierCreateRequest, SupplierCreateResponse};
 
 // ============================================================================
 // OpenAPI Documentation
@@ -31,7 +33,7 @@ use crate::dto::{ErrorResponse, ListResponse, SupplierCreateRequest, SupplierCre
         SupplierUpdateRequest,
         SupplierResponse,
         SupplierQueryParams,
-        ListResponse<SupplierResponse>,
+        SupplierListResponse,
         ErrorResponse,
     )),
     tags(
@@ -214,7 +216,7 @@ async fn get_one(
 
 /// Get all suppliers
 ///
-/// Retrieves a list of suppliers with optional filtering and pagination. Requires authentication.
+/// Retrieves a list of suppliers with optional filtering and cursor-based pagination. Requires authentication.
 #[utoipa::path(
     get,
     operation_id = "list_suppliers",
@@ -222,7 +224,7 @@ async fn get_one(
     tag = "supplier",
     params(SupplierQueryParams),
     responses(
-        (status = 200, description = "Suppliers retrieved successfully", body = ListResponse<SupplierResponse>),
+        (status = 200, description = "Suppliers retrieved successfully", body = SupplierListResponse),
         (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse)
     ),
     security(
@@ -234,16 +236,10 @@ async fn get_many(
     Extension(ctx): Extension<Context>,
     Query(params): Query<SupplierQueryParams>,
 ) -> DomainResult<impl IntoResponse> {
-    let supplier = supplier_service
-        .get_all(&ctx, &params.to_filter(), &params.to_pagination())
-        .await?;
+    let query = params.to_query()?;
+    let page = supplier_service.get_all(&ctx, &query).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(ListResponse {
-            data: supplier.into_iter().map(SupplierResponse::from).collect(),
-        }),
-    ))
+    Ok((StatusCode::OK, Json(SupplierListResponse::from_page(page))))
 }
 
 // ============================================================================

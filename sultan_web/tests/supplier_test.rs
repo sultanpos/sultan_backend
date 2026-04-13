@@ -353,7 +353,7 @@ async fn test_get_all_suppliers_success() {
 
     // Assert
     assert_eq!(status, StatusCode::OK);
-    let data = response["data"].as_array().unwrap();
+    let data = response["items"].as_array().unwrap();
     assert_eq!(data.len(), 2);
 
     // Check first supplier
@@ -380,7 +380,7 @@ async fn test_get_all_suppliers_empty() {
 
     // Assert
     assert_eq!(status, StatusCode::OK);
-    let data = response["data"].as_array().unwrap();
+    let data = response["items"].as_array().unwrap();
     assert_eq!(data.len(), 0);
 }
 
@@ -399,7 +399,7 @@ async fn test_get_all_suppliers_with_name_filter() {
 
     // Assert
     assert_eq!(status, StatusCode::OK);
-    let data = response["data"].as_array().unwrap();
+    let data = response["items"].as_array().unwrap();
     assert_eq!(data.len(), 1);
     assert_eq!(data[0]["name"].as_str().unwrap(), "PT. Test Supplier");
 }
@@ -419,7 +419,7 @@ async fn test_get_all_suppliers_with_code_filter() {
 
     // Assert
     assert_eq!(status, StatusCode::OK);
-    let data = response["data"].as_array().unwrap();
+    let data = response["items"].as_array().unwrap();
     assert_eq!(data.len(), 1);
     assert_eq!(data[0]["code"].as_str().unwrap(), "SUP001");
 }
@@ -439,7 +439,7 @@ async fn test_get_all_suppliers_with_phone_filter() {
 
     // Assert
     assert_eq!(status, StatusCode::OK);
-    let data = response["data"].as_array().unwrap();
+    let data = response["items"].as_array().unwrap();
     assert_eq!(data.len(), 1);
     assert_eq!(data[0]["phone"].as_str().unwrap(), "08123456789");
 }
@@ -460,7 +460,7 @@ async fn test_get_all_suppliers_with_email_filter() {
 
     // Assert
     assert_eq!(status, StatusCode::OK);
-    let data = response["data"].as_array().unwrap();
+    let data = response["items"].as_array().unwrap();
     assert_eq!(data.len(), 1);
     assert_eq!(data[0]["email"].as_str().unwrap(), "supplier@test.com");
 }
@@ -480,7 +480,7 @@ async fn test_get_all_suppliers_with_npwp_filter() {
 
     // Assert
     assert_eq!(status, StatusCode::OK);
-    let data = response["data"].as_array().unwrap();
+    let data = response["items"].as_array().unwrap();
     assert_eq!(data.len(), 1);
     assert_eq!(data[0]["npwp"].as_str().unwrap(), "12.345.678.9-012.000");
 }
@@ -494,14 +494,14 @@ async fn test_get_all_suppliers_with_pagination() {
     let app = build_test_router(app_state);
 
     // Make get all request with pagination
-    let (status, response) = make_request(app, "GET", "/api/supplier?page=1&page_size=10", None)
+    let (status, response) = make_request(app, "GET", "/api/supplier?limit=10", None)
         .await
         .expect("Request failed");
 
     // Assert
     assert_eq!(status, StatusCode::OK);
-    let data = response["data"].as_array().unwrap();
-    assert!(data.len() <= 10); // Should respect page_size
+    let data = response["items"].as_array().unwrap();
+    assert!(data.len() <= 10); // Should respect limit
 }
 
 #[tokio::test]
