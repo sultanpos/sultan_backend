@@ -1,7 +1,6 @@
 mod common;
 
 use axum::Router;
-use axum::extract::Extension;
 use axum::http::StatusCode;
 use axum::middleware::from_fn;
 use axum::response::IntoResponse;

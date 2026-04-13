@@ -252,9 +252,8 @@ where
 mod tests {
     use super::*;
     use crate::crypto::password::PasswordHash;
-    use crate::domain::model::pagination::PaginationOptions;
     use crate::domain::model::permission::{Permission, PermissionCreate};
-    use crate::domain::model::user::{User, UserCreate, UserFilter, UserUpdate};
+    use crate::domain::model::user::{User, UserCreate, UserPage, UserQuery, UserUpdate};
     use sea_orm::ConnectionTrait;
     use std::sync::Mutex;
 
@@ -315,10 +314,12 @@ mod tests {
         async fn get_all(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
-            _filter: &UserFilter,
-            _pagination: &PaginationOptions,
-        ) -> DomainResult<Vec<User>> {
-            Ok(vec![])
+            _query: &UserQuery,
+        ) -> DomainResult<UserPage> {
+            Ok(UserPage {
+                items: vec![],
+                next_cursor: None,
+            })
         }
 
         async fn get_by_id(

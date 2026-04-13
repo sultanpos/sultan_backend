@@ -3,10 +3,21 @@ use sea_orm::DatabaseConnection;
 use crate::{
     domain::model::{
         Update,
-        branch::{BranchCreate, BranchUpdate},
+        branch::{BranchCreate, BranchFilter, BranchQuery, BranchSortField, BranchUpdate},
+        product::SortDirection,
     },
     storage::{BranchRepository, RepoCtx},
 };
+
+fn default_query() -> BranchQuery {
+    BranchQuery {
+        filter: BranchFilter::default(),
+        sort_field: BranchSortField::CreatedAt,
+        sort_direction: SortDirection::Desc,
+        cursor: None,
+        limit: 20,
+    }
+}
 
 pub async fn branch_test_all<C, F, Fut>(repo: &C, ctx_factory: F)
 where
@@ -25,6 +36,9 @@ where
     branch_test_create_branch_with_all_fields(&ctx_factory().await, repo).await;
     branch_test_update_address_scenarios(&ctx_factory().await, repo).await;
     branch_test_set_all_is_main_false(&ctx_factory().await, repo).await;
+    branch_test_cursor_pagination_asc(&ctx_factory().await, repo).await;
+    branch_test_cursor_pagination_desc(&ctx_factory().await, repo).await;
+    branch_test_cursor_pagination_no_next_on_last_page(&ctx_factory().await, repo).await;
 }
 
 pub async fn branch_test_repo_integration<B: BranchRepository>(
@@ -73,9 +87,12 @@ pub async fn branch_test_repo_integration<B: BranchRepository>(
     assert_eq!(fetched_updated.name, "Updated Branch");
 
     // Test Get All
-    let branches = repo.get_all(ctx).await.expect("Failed to get all branches");
+    let page = repo
+        .get_all(ctx, &default_query())
+        .await
+        .expect("Failed to get all branches");
     // Note: Other tests might have added branches, so we check if it contains at least our branch
-    assert!(branches.iter().any(|b| b.id == id));
+    assert!(page.items.iter().any(|b| b.id == id));
 
     // Test Delete
     repo.delete(ctx, id).await.expect("Failed to delete branch");
@@ -232,8 +249,11 @@ pub async fn branch_test_get_all_branches<B: BranchRepository>(
             .expect("Failed to create branch");
     }
 
-    let branches = repo.get_all(ctx).await.expect("Failed to get all branches");
-    assert!(branches.len() >= 3);
+    let page = repo
+        .get_all(ctx, &default_query())
+        .await
+        .expect("Failed to get all branches");
+    assert!(page.items.len() >= 3);
 }
 
 pub async fn branch_test_update_branch_not_found<B: BranchRepository>(
@@ -565,4 +585,172 @@ pub async fn branch_test_set_all_is_main_false<B: BranchRepository>(
     repo.delete(ctx, id1).await.ok();
     repo.delete(ctx, id2).await.ok();
     repo.delete(ctx, id3).await.ok();
+}
+
+// =============================================================================
+// Cursor pagination
+// =============================================================================
+
+/// Test: cursor pagination works in ascending order (by name)
+pub async fn branch_test_cursor_pagination_asc<B: BranchRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &B,
+) {
+    let names = [
+        "AAA Branch",
+        "BBB Branch",
+        "CCC Branch",
+        "DDD Branch",
+        "EEE Branch",
+    ];
+    for (i, name) in names.iter().enumerate() {
+        let id = super::generate_test_id().await;
+        repo.create(
+            ctx,
+            id,
+            &BranchCreate {
+                is_main: i == 0,
+                name: name.to_string(),
+                code: format!("C{}", i),
+                address: None,
+                phone: None,
+                npwp: None,
+                image: None,
+            },
+        )
+        .await
+        .expect("Failed to create branch");
+    }
+
+    let mut query = BranchQuery {
+        filter: BranchFilter::default(),
+        sort_field: BranchSortField::Name,
+        sort_direction: SortDirection::Asc,
+        cursor: None,
+        limit: 2,
+    };
+
+    // Page 1
+    let page1 = repo.get_all(ctx, &query).await.expect("page 1 failed");
+    assert_eq!(page1.items.len(), 2);
+    assert_eq!(page1.items[0].name, "AAA Branch");
+    assert_eq!(page1.items[1].name, "BBB Branch");
+    assert!(page1.next_cursor.is_some(), "Should have next page");
+
+    // Page 2
+    query.cursor = page1.next_cursor;
+    let page2 = repo.get_all(ctx, &query).await.expect("page 2 failed");
+    assert_eq!(page2.items.len(), 2);
+    assert_eq!(page2.items[0].name, "CCC Branch");
+    assert_eq!(page2.items[1].name, "DDD Branch");
+    assert!(page2.next_cursor.is_some(), "Should have next page");
+
+    // Page 3
+    query.cursor = page2.next_cursor;
+    let page3 = repo.get_all(ctx, &query).await.expect("page 3 failed");
+    assert_eq!(page3.items.len(), 1);
+    assert_eq!(page3.items[0].name, "EEE Branch");
+    assert!(page3.next_cursor.is_none(), "Should not have next page");
+
+    // No overlap between pages
+    let all_names: Vec<&str> = page1
+        .items
+        .iter()
+        .chain(page2.items.iter())
+        .chain(page3.items.iter())
+        .map(|b| b.name.as_str())
+        .collect();
+    let unique: std::collections::HashSet<&&str> = all_names.iter().collect();
+    assert_eq!(all_names.len(), unique.len(), "No duplicates across pages");
+}
+
+/// Test: cursor pagination works in descending order (by name)
+pub async fn branch_test_cursor_pagination_desc<B: BranchRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &B,
+) {
+    let names = ["AAA Branch", "BBB Branch", "CCC Branch"];
+    for (i, name) in names.iter().enumerate() {
+        let id = super::generate_test_id().await;
+        repo.create(
+            ctx,
+            id,
+            &BranchCreate {
+                is_main: i == 0,
+                name: name.to_string(),
+                code: format!("D{}", i),
+                address: None,
+                phone: None,
+                npwp: None,
+                image: None,
+            },
+        )
+        .await
+        .expect("Failed to create branch");
+    }
+
+    let mut query = BranchQuery {
+        filter: BranchFilter::default(),
+        sort_field: BranchSortField::Name,
+        sort_direction: SortDirection::Desc,
+        cursor: None,
+        limit: 2,
+    };
+
+    // Page 1 — descending means CCC first
+    let page1 = repo.get_all(ctx, &query).await.expect("page 1 failed");
+    assert!(page1.items.len() >= 2);
+    assert!(page1.next_cursor.is_some(), "Should have next page");
+
+    // Page 2
+    query.cursor = page1.next_cursor;
+    let page2 = repo.get_all(ctx, &query).await.expect("page 2 failed");
+    assert!(!page2.items.is_empty());
+
+    // No overlap between pages
+    let ids1: std::collections::HashSet<i64> = page1.items.iter().map(|b| b.id).collect();
+    let ids2: std::collections::HashSet<i64> = page2.items.iter().map(|b| b.id).collect();
+    assert!(ids1.is_disjoint(&ids2), "Pages should not overlap");
+}
+
+/// Test: when all results fit in one page, next_cursor is None
+pub async fn branch_test_cursor_pagination_no_next_on_last_page<B: BranchRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &B,
+) {
+    let id1 = super::generate_test_id().await;
+    let id2 = super::generate_test_id().await;
+
+    for (i, id) in [id1, id2].iter().enumerate() {
+        repo.create(
+            ctx,
+            *id,
+            &BranchCreate {
+                is_main: i == 0,
+                name: format!("Solo Branch {}", i),
+                code: format!("S{}", i),
+                address: None,
+                phone: None,
+                npwp: None,
+                image: None,
+            },
+        )
+        .await
+        .expect("Failed to create branch");
+    }
+
+    let query = BranchQuery {
+        filter: BranchFilter::default(),
+        sort_field: BranchSortField::CreatedAt,
+        sort_direction: SortDirection::Asc,
+        cursor: None,
+        limit: 100,
+    };
+
+    let page = repo.get_all(ctx, &query).await.expect("get_all failed");
+    assert!(page.items.len() >= 2);
+    assert!(
+        page.next_cursor.is_none(),
+        "Should not have next cursor when all results fit in one page"
+    );
 }

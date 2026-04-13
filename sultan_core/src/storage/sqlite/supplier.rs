@@ -1,17 +1,17 @@
 use async_trait::async_trait;
+use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter,
-    QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait, Order,
+    QueryFilter, QueryOrder, QuerySelect, Set,
 };
 
-use super::entity::{SupplierActiveModel, SupplierColumn, SupplierEntity};
+use super::entity::{SupplierActiveModel, SupplierColumn, SupplierEntity, SupplierModel};
 use crate::{
     domain::{
         DomainResult,
         error::Error,
-        model::{
-            pagination::PaginationOptions,
-            supplier::{Supplier, SupplierCreate, SupplierFilter, SupplierUpdate},
+        model::supplier::{
+            Supplier, SupplierCreate, SupplierCursor, SupplierPage, SupplierQuery, SupplierUpdate,
         },
     },
     storage::{RepoCtx, SupplierRepository},
@@ -188,45 +188,122 @@ impl SupplierRepository for SqliteSupplierRepository {
     async fn get_all(
         &self,
         ctx: &RepoCtx<impl ConnectionTrait>,
-        filter: &SupplierFilter,
-        pagination: &PaginationOptions,
-    ) -> DomainResult<Vec<Supplier>> {
-        let mut query = SupplierEntity::find();
+        query: &SupplierQuery,
+    ) -> DomainResult<SupplierPage> {
+        use crate::domain::model::product::SortDirection;
+        use crate::domain::model::supplier::SupplierSortField;
 
-        // Build filter conditions
+        let mut select = SupplierEntity::find().filter(SupplierColumn::IsDeleted.eq(false));
+
+        // ── Filters ──────────────────────────────────────────────────────────
         let mut condition = Condition::all();
 
-        if let Some(name) = &filter.name {
+        if let Some(name) = &query.filter.name {
             condition = condition.add(SupplierColumn::Name.contains(name));
         }
 
-        if let Some(code) = &filter.code {
+        if let Some(code) = &query.filter.code {
             condition = condition.add(SupplierColumn::Code.contains(code));
         }
 
-        if let Some(email) = &filter.email {
+        if let Some(email) = &query.filter.email {
             condition = condition.add(SupplierColumn::Email.contains(email));
         }
 
-        if let Some(phone) = &filter.phone {
+        if let Some(phone) = &query.filter.phone {
             condition = condition.add(SupplierColumn::Phone.contains(phone));
         }
 
-        if let Some(npwp) = &filter.npwp {
+        if let Some(npwp) = &query.filter.npwp {
             condition = condition.add(SupplierColumn::Npwp.contains(npwp));
         }
 
-        query = query.filter(condition);
+        select = select.filter(condition);
 
-        // Apply pagination
-        let suppliers = query
-            .filter(SupplierColumn::IsDeleted.eq(false))
-            .limit(pagination.limit() as u64)
-            .offset(pagination.offset() as u64)
-            .all(&ctx.db)
-            .await?;
+        // ── Sort direction ────────────────────────────────────────────────────
+        let order = match query.sort_direction {
+            SortDirection::Asc => Order::Asc,
+            SortDirection::Desc => Order::Desc,
+        };
 
-        Ok(suppliers.into_iter().map(|s| s.to_domain()).collect())
+        // ── Cursor condition ──────────────────────────────────────────────────
+        if let Some(cursor) = &query.cursor {
+            let cond = match query.sort_field {
+                // For Id sort, id IS the sort column — no tiebreaker needed
+                SupplierSortField::Id => match query.sort_direction {
+                    SortDirection::Asc => {
+                        Condition::all().add(Expr::col(SupplierColumn::Id).gt(cursor.id))
+                    }
+                    SortDirection::Desc => {
+                        Condition::all().add(Expr::col(SupplierColumn::Id).lt(cursor.id))
+                    }
+                },
+                // For string/date fields: (field > val) OR (field = val AND id > cursor_id)
+                SupplierSortField::UpdatedAt | SupplierSortField::Name => {
+                    let sort_col = match query.sort_field {
+                        SupplierSortField::UpdatedAt => SupplierColumn::UpdatedAt,
+                        SupplierSortField::Name => SupplierColumn::Name,
+                        SupplierSortField::Id => unreachable!(),
+                    };
+                    match query.sort_direction {
+                        SortDirection::Asc => Condition::any()
+                            .add(Expr::col(sort_col).gt(cursor.field_value.clone()))
+                            .add(
+                                Condition::all()
+                                    .add(Expr::col(sort_col).eq(cursor.field_value.clone()))
+                                    .add(Expr::col(SupplierColumn::Id).gt(cursor.id)),
+                            ),
+                        SortDirection::Desc => Condition::any()
+                            .add(Expr::col(sort_col).lt(cursor.field_value.clone()))
+                            .add(
+                                Condition::all()
+                                    .add(Expr::col(sort_col).eq(cursor.field_value.clone()))
+                                    .add(Expr::col(SupplierColumn::Id).lt(cursor.id)),
+                            ),
+                    }
+                }
+            };
+            select = select.filter(cond);
+        }
+
+        // ── Ordering: (sort_field, id) ────────────────────────────────────────
+        select = match query.sort_field {
+            SupplierSortField::Id => select.order_by(SupplierColumn::Id, order),
+            SupplierSortField::UpdatedAt => select
+                .order_by(SupplierColumn::UpdatedAt, order.clone())
+                .order_by(SupplierColumn::Id, order),
+            SupplierSortField::Name => select
+                .order_by(SupplierColumn::Name, order.clone())
+                .order_by(SupplierColumn::Id, order),
+        };
+
+        // Fetch limit + 1 to detect whether there is a next page
+        let fetch_limit = query.limit + 1;
+        let rows: Vec<SupplierModel> = select.limit(fetch_limit).all(&ctx.db).await?;
+
+        let has_next = rows.len() as u64 > query.limit;
+        let models: Vec<_> = rows.into_iter().take(query.limit as usize).collect();
+
+        // ── Build next_cursor from the last item ──────────────────────────────
+        let next_cursor = if has_next {
+            models.last().map(|last| {
+                let field_value = match query.sort_field {
+                    SupplierSortField::Id => last.id.to_string(),
+                    SupplierSortField::UpdatedAt => last.updated_at.clone(),
+                    SupplierSortField::Name => last.name.clone(),
+                };
+                SupplierCursor {
+                    field_value,
+                    id: last.id,
+                }
+            })
+        } else {
+            None
+        };
+
+        let items: Vec<Supplier> = models.into_iter().map(|m| m.to_domain()).collect();
+
+        Ok(SupplierPage { items, next_cursor })
     }
 
     async fn get_by_id(

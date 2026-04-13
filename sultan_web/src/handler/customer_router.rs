@@ -202,17 +202,7 @@ async fn get_by_id(
     operation_id = "list_customers",
     path = "/api/customer",
     tag = "customer",
-    params(
-        ("number" = Option<String>, Query, description = "Filter by customer number"),
-        ("name" = Option<String>, Query, description = "Filter by customer name (partial match)"),
-        ("phone" = Option<String>, Query, description = "Filter by phone number"),
-        ("email" = Option<String>, Query, description = "Filter by email"),
-        ("level" = Option<i32>, Query, description = "Filter by customer level"),
-        ("page" = u32, Query, description = "Page number (default: 1)"),
-        ("page_size" = u32, Query, description = "Page size (default: 20, max: 100)"),
-        ("order_by" = Option<String>, Query, description = "Order by field"),
-        ("order_direction" = Option<String>, Query, description = "Order direction (asc/desc)")
-    ),
+    params(CustomerQueryParams),
     responses(
         (status = 200, description = "Customers retrieved successfully", body = CustomerListResponse),
         (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse)
@@ -225,17 +215,11 @@ async fn get_by_id(
 async fn get_all(
     State(customer_service): State<Arc<dyn CustomerServiceTrait>>,
     Extension(ctx): Extension<Context>,
-    Query(query): Query<CustomerQueryParams>,
+    Query(params): Query<CustomerQueryParams>,
 ) -> DomainResult<impl IntoResponse> {
-    let filter = query.to_filter();
-    let pagination = query.to_pagination();
-    let customer = customer_service.get_all(&ctx, &filter, &pagination).await?;
-    Ok((
-        StatusCode::OK,
-        Json(CustomerListResponse {
-            customers: customer.into_iter().map(CustomerResponse::from).collect(),
-        }),
-    ))
+    let query = params.to_query()?;
+    let page = customer_service.get_all(&ctx, &query).await?;
+    Ok((StatusCode::OK, Json(CustomerListResponse::from_page(page))))
 }
 
 // ============================================================================

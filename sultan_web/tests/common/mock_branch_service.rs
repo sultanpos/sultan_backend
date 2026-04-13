@@ -3,7 +3,7 @@ use sultan_core::application::BranchServiceTrait;
 use sultan_core::domain::{
     DomainResult, Error,
     context::Context,
-    model::branch::{Branch, BranchCreate, BranchUpdate},
+    model::branch::{Branch, BranchCreate, BranchPage, BranchQuery, BranchUpdate},
 };
 
 pub struct MockBranchService {
@@ -82,24 +82,27 @@ impl BranchServiceTrait for MockBranchService {
         }
     }
 
-    async fn get_all(&self, _ctx: &Context) -> DomainResult<Vec<Branch>> {
+    async fn get_all(&self, _ctx: &Context, _query: &BranchQuery) -> DomainResult<BranchPage> {
         if !self.should_succeed {
             return Err(Error::Internal("Failed to get branches".to_string()));
         }
 
-        Ok(vec![Branch {
-            id: 1,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-            deleted_at: None,
-            is_deleted: false,
-            is_main: true,
-            name: "Sultan".to_string(),
-            code: "SULTAN".to_string(),
-            address: None,
-            phone: None,
-            npwp: None,
-            image: None,
-        }])
+        Ok(BranchPage {
+            items: vec![Branch {
+                id: 1,
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+                deleted_at: None,
+                is_deleted: false,
+                is_main: true,
+                name: "Sultan".to_string(),
+                code: "SULTAN".to_string(),
+                address: None,
+                phone: None,
+                npwp: None,
+                image: None,
+            }],
+            next_cursor: None,
+        })
     }
 }

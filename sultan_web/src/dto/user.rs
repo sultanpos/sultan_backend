@@ -5,8 +5,6 @@ use sultan_core::domain::model::Update;
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
 
-use super::{default_page, default_page_size};
-
 #[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct PermissionCreateRequest {
     #[schema(example = "1234567890", value_type = Option<String>)]
@@ -124,49 +122,110 @@ impl From<sultan_core::domain::model::user::User> for UserResponse {
     }
 }
 
-#[derive(Debug, Deserialize, IntoParams)]
+fn default_user_sort_field() -> String {
+    "id".to_string()
+}
+
+fn default_sort_direction() -> String {
+    "asc".to_string()
+}
+
+fn default_limit() -> u32 {
+    20
+}
+
+/// Query parameters for listing users with cursor-based pagination.
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct UserQueryParams {
+    /// Username filter (exact match)
     pub username: Option<String>,
+    /// Name filter (partial match)
     pub name: Option<String>,
+    /// Email filter (exact match)
     pub email: Option<String>,
-    #[serde(default = "default_page")]
-    pub page: u32,
-    #[serde(default = "default_page_size")]
-    pub page_size: u32,
-    pub order_by: Option<String>,
-    pub order_direction: Option<String>,
+
+    /// Sort field: "id", "updated_at", or "name" (default: "id")
+    #[serde(default = "default_user_sort_field")]
+    #[schema(example = "id")]
+    pub sort_field: String,
+
+    /// Sort direction: "asc" or "desc" (default: "asc")
+    #[serde(default = "default_sort_direction")]
+    #[schema(example = "asc")]
+    pub sort_direction: String,
+
+    /// Opaque cursor from the previous page's `next_cursor` (omit for the first page)
+    #[schema(example = "eyJmaWVsZF92YWx1ZSI6IjEyMzQ1NiIsImlkIjoxMjM0NX0")]
+    pub cursor: Option<String>,
+
+    /// Maximum number of items per page (default: 20, max: 100)
+    #[serde(default = "default_limit")]
+    #[schema(example = 20)]
+    pub limit: u32,
 }
 
 impl UserQueryParams {
-    /// Convert to CustomerFilter
-    pub fn to_filter(&self) -> sultan_core::domain::model::user::UserFilter {
-        sultan_core::domain::model::user::UserFilter {
-            username: self.username.clone(),
-            name: self.name.clone(),
-            email: self.email.clone(),
-        }
-    }
+    /// Convert to UserQuery for cursor-based pagination.
+    pub fn to_query(
+        &self,
+    ) -> Result<sultan_core::domain::model::user::UserQuery, sultan_core::domain::Error> {
+        use sultan_core::domain::model::user::{UserCursor, UserFilter, UserQuery, UserSortField};
 
-    /// Convert to PaginationOptions
-    pub fn to_pagination(&self) -> sultan_core::domain::model::pagination::PaginationOptions {
-        use sultan_core::domain::model::pagination::{PaginationOptions, PaginationOrder};
-
-        let page_size = self.page_size.min(100); // Cap at 100
-        let order = match (self.order_by.as_ref(), self.order_direction.as_ref()) {
-            (Some(field), direction) => Some(PaginationOrder {
-                field: field.clone(),
-                direction: direction.cloned().unwrap_or_else(|| "asc".to_string()),
-            }),
-            _ => None,
+        let sort_field = match self.sort_field.as_str() {
+            "id" => UserSortField::Id,
+            "updated_at" => UserSortField::UpdatedAt,
+            "name" => UserSortField::Name,
+            other => {
+                return Err(sultan_core::domain::Error::ValidationError(format!(
+                    "Invalid sort_field '{}'. Must be one of: id, updated_at, name",
+                    other
+                )));
+            }
         };
 
-        PaginationOptions::new(self.page, page_size, order)
+        let sort_direction = super::parse_sort_direction(&self.sort_direction)?;
+        let cursor = self
+            .cursor
+            .as_deref()
+            .map(super::decode_cursor::<UserCursor>)
+            .transpose()?;
+
+        Ok(UserQuery {
+            filter: UserFilter {
+                username: self.username.clone(),
+                name: self.name.clone(),
+                email: self.email.clone(),
+            },
+            sort_field,
+            sort_direction,
+            cursor,
+            limit: self.limit.clamp(1, 100) as u64,
+        })
     }
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct UserListResponse {
-    pub data: Vec<UserResponse>,
+    pub items: Vec<UserResponse>,
+    /// Opaque cursor to fetch the next page. `null` when there are no more pages.
+    #[schema(example = "eyJmaWVsZF92YWx1ZSI6IjEyMzQ1NiIsImlkIjoxMjM0NX0")]
+    pub next_cursor: Option<String>,
+}
+
+impl UserListResponse {
+    pub fn from_page(page: sultan_core::domain::model::user::UserPage) -> Self {
+        use base64::Engine;
+
+        let next_cursor = page.next_cursor.map(|c| {
+            let json = serde_json::to_vec(&c).expect("cursor is always serializable");
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(json)
+        });
+
+        Self {
+            items: page.items.into_iter().map(UserResponse::from).collect(),
+            next_cursor,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, ToSchema)]

@@ -183,8 +183,19 @@ pub async fn create_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
         ctx: ctx.clone(),
         db: db_connection.clone(),
     };
-    let branches = branch_repository.get_all(&repo_ctx).await?;
-    if branches.is_empty() {
+    let branches = branch_repository
+        .get_all(
+            &repo_ctx,
+            &sultan_core::domain::model::branch::BranchQuery {
+                filter: sultan_core::domain::model::branch::BranchFilter::default(),
+                sort_field: sultan_core::domain::model::branch::BranchSortField::CreatedAt,
+                sort_direction: sultan_core::domain::model::product::SortDirection::Desc,
+                cursor: None,
+                limit: 1,
+            },
+        )
+        .await?;
+    if branches.items.is_empty() {
         let id_generator = SnowflakeGenerator::new(1)?;
         let id = id_generator.generate()?;
         let default_branch = BranchCreate {

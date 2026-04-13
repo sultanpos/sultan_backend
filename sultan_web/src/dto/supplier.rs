@@ -1,4 +1,4 @@
-use super::{default_page, default_page_size, i64_to_string};
+use super::{default_page_size, i64_to_string};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -85,6 +85,33 @@ impl From<Supplier> for SupplierResponse {
     }
 }
 
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SupplierListResponse {
+    pub items: Vec<SupplierResponse>,
+    /// Opaque cursor to fetch the next page. `null` when there are no more pages.
+    #[schema(example = "eyJmaWVsZF92YWx1ZSI6IjEyMzQ1NiIsImlkIjoxMjM0NX0")]
+    pub next_cursor: Option<String>,
+}
+
+impl SupplierListResponse {
+    pub fn from_page(page: sultan_core::domain::model::supplier::SupplierPage) -> Self {
+        use base64::Engine;
+
+        let next_cursor = page.next_cursor.map(|c| {
+            let json = serde_json::to_vec(&c).expect("cursor is always serializable");
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(json)
+        });
+
+        Self {
+            items: page.items.into_iter().map(SupplierResponse::from).collect(),
+            next_cursor,
+        }
+    }
+}
+
+// ── Query Params ──────────────────────────────────────────────────────────────
+
+/// Query parameters for listing suppliers with cursor-based pagination.
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct SupplierQueryParams {
     #[schema(example = "CV. Sultan")]
@@ -97,47 +124,76 @@ pub struct SupplierQueryParams {
     pub npwp: Option<String>,
     #[schema(example = "supplier@example.com")]
     pub email: Option<String>,
-    /// Page number (default: 1)
-    #[serde(default = "default_page")]
-    #[schema(example = 1, default = 1)]
-    pub page: u32,
-    /// Page size (default: 20, max: 100)
-    #[serde(default = "default_page_size")]
-    #[schema(example = 20, default = 20)]
-    pub page_size: u32,
-    /// Order by field
-    #[schema(example = "name")]
-    pub order_by: Option<String>,
-    /// Order direction (asc/desc)
+
+    /// Sort field: "id", "updated_at", or "name" (default: "id")
+    #[serde(default = "default_supplier_sort_field")]
+    #[schema(example = "id")]
+    pub sort_field: String,
+
+    /// Sort direction: "asc" or "desc" (default: "asc")
+    #[serde(default = "default_sort_direction")]
     #[schema(example = "asc")]
-    pub order_direction: Option<String>,
+    pub sort_direction: String,
+
+    /// Opaque cursor from the previous page's `next_cursor` (omit for the first page)
+    #[schema(example = "eyJmaWVsZF92YWx1ZSI6IjEyMzQ1NiIsImlkIjoxMjM0NX0")]
+    pub cursor: Option<String>,
+
+    /// Maximum number of items per page (default: 20, max: 100)
+    #[serde(default = "default_page_size")]
+    #[schema(example = 20)]
+    pub limit: u32,
+}
+
+fn default_supplier_sort_field() -> String {
+    "id".to_string()
+}
+
+fn default_sort_direction() -> String {
+    "asc".to_string()
 }
 
 impl SupplierQueryParams {
-    /// Convert to SupplierFilter
-    pub fn to_filter(&self) -> sultan_core::domain::model::supplier::SupplierFilter {
-        sultan_core::domain::model::supplier::SupplierFilter {
-            code: self.code.clone(),
-            name: self.name.clone(),
-            phone: self.phone.clone(),
-            email: self.email.clone(),
-            npwp: self.npwp.clone(),
-        }
-    }
-
-    /// Convert to PaginationOptions
-    pub fn to_pagination(&self) -> sultan_core::domain::model::pagination::PaginationOptions {
-        use sultan_core::domain::model::pagination::{PaginationOptions, PaginationOrder};
-
-        let page_size = self.page_size.min(100); // Cap at 100
-        let order = match (self.order_by.as_ref(), self.order_direction.as_ref()) {
-            (Some(field), direction) => Some(PaginationOrder {
-                field: field.clone(),
-                direction: direction.cloned().unwrap_or_else(|| "asc".to_string()),
-            }),
-            _ => None,
+    /// Convert to SupplierQuery for cursor-based pagination.
+    pub fn to_query(
+        &self,
+    ) -> Result<sultan_core::domain::model::supplier::SupplierQuery, sultan_core::domain::Error>
+    {
+        use sultan_core::domain::model::supplier::{
+            SupplierCursor, SupplierFilter, SupplierQuery, SupplierSortField,
         };
 
-        PaginationOptions::new(self.page, page_size, order)
+        let sort_field = match self.sort_field.as_str() {
+            "id" => SupplierSortField::Id,
+            "updated_at" => SupplierSortField::UpdatedAt,
+            "name" => SupplierSortField::Name,
+            other => {
+                return Err(sultan_core::domain::Error::ValidationError(format!(
+                    "Invalid sort_field '{}'. Must be one of: id, updated_at, name",
+                    other
+                )));
+            }
+        };
+
+        let sort_direction = super::parse_sort_direction(&self.sort_direction)?;
+        let cursor = self
+            .cursor
+            .as_deref()
+            .map(super::decode_cursor::<SupplierCursor>)
+            .transpose()?;
+
+        Ok(SupplierQuery {
+            filter: SupplierFilter {
+                code: self.code.clone(),
+                name: self.name.clone(),
+                phone: self.phone.clone(),
+                email: self.email.clone(),
+                npwp: self.npwp.clone(),
+            },
+            sort_field,
+            sort_direction,
+            cursor,
+            limit: self.limit.clamp(1, 100) as u64,
+        })
     }
 }

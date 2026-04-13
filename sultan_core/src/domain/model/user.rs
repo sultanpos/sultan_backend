@@ -1,6 +1,42 @@
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 
+use super::product::SortDirection;
 use crate::domain::model::permission::Permission;
+
+/// Sort fields available for user listing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UserSortField {
+    Id,
+    UpdatedAt,
+    Name,
+}
+
+/// Cursor for keyset (cursor-based) pagination over users.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserCursor {
+    /// Value of the primary sort field from the last item of the previous page.
+    pub field_value: String,
+    /// ID of the last item of the previous page (tiebreaker).
+    pub id: i64,
+}
+
+/// Options for querying a list of users with cursor-based pagination.
+#[derive(Debug, Clone)]
+pub struct UserQuery {
+    pub filter: UserFilter,
+    pub sort_field: UserSortField,
+    pub sort_direction: SortDirection,
+    pub cursor: Option<UserCursor>,
+    pub limit: u64,
+}
+
+/// A page of users with an optional cursor pointing to the next page.
+#[derive(Debug, Clone)]
+pub struct UserPage {
+    pub items: Vec<User>,
+    pub next_cursor: Option<UserCursor>,
+}
 
 #[derive(Debug, Clone)]
 pub struct User {

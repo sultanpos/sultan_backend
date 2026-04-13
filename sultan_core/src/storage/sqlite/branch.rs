@@ -1,15 +1,21 @@
 use async_trait::async_trait;
-use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set};
+use sea_orm::sea_query::Expr;
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait, Order,
+    QueryFilter, QueryOrder, QuerySelect, Set, UpdateMany,
+};
 
 use crate::{
     domain::{
         DomainResult, Error,
-        model::branch::{Branch, BranchCreate, BranchUpdate},
+        model::branch::{
+            Branch, BranchCreate, BranchCursor, BranchPage, BranchQuery, BranchUpdate,
+        },
     },
     storage::{
         RepoCtx,
         branch_repo::BranchRepository,
-        sqlite::entity::{BranchActiveModel, BranchColumn, BranchEntity},
+        sqlite::entity::{BranchActiveModel, BranchColumn, BranchEntity, BranchModel},
     },
 };
 
@@ -90,8 +96,6 @@ impl BranchRepository for SqliteBranchRepository {
         id: i64,
         branch: &BranchUpdate,
     ) -> DomainResult<()> {
-        use sea_orm::{UpdateMany, sea_query::Expr};
-
         // Build update query with filters
         let mut update_query: UpdateMany<BranchEntity> = BranchEntity::update_many()
             .filter(BranchColumn::Id.eq(id))
@@ -158,8 +162,6 @@ impl BranchRepository for SqliteBranchRepository {
     }
 
     async fn delete(&self, ctx: &RepoCtx<impl ConnectionTrait>, id: i64) -> DomainResult<()> {
-        use sea_orm::sea_query::Expr;
-
         let now = chrono::Utc::now()
             .format("%Y-%m-%dT%H:%M:%S%.fZ")
             .to_string();
@@ -182,13 +184,86 @@ impl BranchRepository for SqliteBranchRepository {
         Ok(())
     }
 
-    async fn get_all(&self, ctx: &RepoCtx<impl ConnectionTrait>) -> DomainResult<Vec<Branch>> {
-        let branches = BranchEntity::find()
-            .filter(BranchColumn::IsDeleted.eq(false))
-            .all(&ctx.db)
-            .await?;
+    async fn get_all(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        query: &BranchQuery,
+    ) -> DomainResult<BranchPage> {
+        use crate::domain::model::branch::BranchSortField;
+        use crate::domain::model::product::SortDirection;
 
-        Ok(branches.into_iter().map(|b| b.to_domain()).collect())
+        let mut select = BranchEntity::find().filter(BranchColumn::IsDeleted.eq(false));
+
+        // ── Filters ──────────────────────────────────────────────────────────
+        if let Some(name) = &query.filter.name {
+            select = select.filter(BranchColumn::Name.contains(name));
+        }
+
+        // ── Map sort field to column ──────────────────────────────────────────
+        let sort_col = match query.sort_field {
+            BranchSortField::CreatedAt => BranchColumn::CreatedAt,
+            BranchSortField::Name => BranchColumn::Name,
+        };
+
+        let order = match query.sort_direction {
+            SortDirection::Asc => Order::Asc,
+            SortDirection::Desc => Order::Desc,
+        };
+
+        // ── Cursor condition ──────────────────────────────────────────────────
+        // WHERE (field > val) OR (field = val AND id > cursor_id)  [Asc]
+        // WHERE (field < val) OR (field = val AND id < cursor_id)  [Desc]
+        if let Some(cursor) = &query.cursor {
+            let cond = match query.sort_direction {
+                SortDirection::Asc => Condition::any()
+                    .add(Expr::col(sort_col).gt(cursor.field_value.clone()))
+                    .add(
+                        Condition::all()
+                            .add(Expr::col(sort_col).eq(cursor.field_value.clone()))
+                            .add(Expr::col(BranchColumn::Id).gt(cursor.id)),
+                    ),
+                SortDirection::Desc => Condition::any()
+                    .add(Expr::col(sort_col).lt(cursor.field_value.clone()))
+                    .add(
+                        Condition::all()
+                            .add(Expr::col(sort_col).eq(cursor.field_value.clone()))
+                            .add(Expr::col(BranchColumn::Id).lt(cursor.id)),
+                    ),
+            };
+            select = select.filter(cond);
+        }
+
+        // ── Ordering: (sort_field, id) ────────────────────────────────────────
+        select = select
+            .order_by(sort_col, order.clone())
+            .order_by(BranchColumn::Id, order);
+
+        // Fetch limit + 1 to detect whether there is a next page
+        let fetch_limit = query.limit + 1;
+        let rows: Vec<BranchModel> = select.limit(fetch_limit).all(&ctx.db).await?;
+
+        let has_next = rows.len() as u64 > query.limit;
+        let models: Vec<_> = rows.into_iter().take(query.limit as usize).collect();
+
+        // ── Build next_cursor from the last item ──────────────────────────────
+        let next_cursor = if has_next {
+            models.last().map(|last| {
+                let field_value = match query.sort_field {
+                    BranchSortField::CreatedAt => last.created_at.clone(),
+                    BranchSortField::Name => last.name.clone(),
+                };
+                BranchCursor {
+                    field_value,
+                    id: last.id,
+                }
+            })
+        } else {
+            None
+        };
+
+        let items: Vec<Branch> = models.into_iter().map(|m| m.to_domain()).collect();
+
+        Ok(BranchPage { items, next_cursor })
     }
 
     async fn set_all_is_main_false(
@@ -196,8 +271,6 @@ impl BranchRepository for SqliteBranchRepository {
         ctx: &RepoCtx<impl ConnectionTrait>,
         except_id: Option<i64>,
     ) -> DomainResult<()> {
-        use sea_orm::sea_query::Expr;
-
         let mut update_query = BranchEntity::update_many()
             .filter(BranchColumn::IsDeleted.eq(false))
             .col_expr(BranchColumn::IsMain, Expr::value(false))

@@ -3,10 +3,7 @@ use sea_orm::ConnectionTrait;
 
 use crate::domain::{
     DomainResult,
-    model::{
-        customer::{Customer, CustomerCreate, CustomerFilter, CustomerUpdate},
-        pagination::PaginationOptions,
-    },
+    model::customer::{Customer, CustomerCreate, CustomerPage, CustomerQuery, CustomerUpdate},
 };
 
 /// Repository trait for Customer operations.
@@ -160,7 +157,7 @@ pub trait CustomerRepository: Send + Sync {
         id: i64,
     ) -> DomainResult<Option<Customer>>;
 
-    /// Retrieves all customers with filtering and pagination.
+    /// Retrieves all customers with filtering and cursor-based pagination.
     ///
     /// Supports filtering by name, number, email, phone, and level.
     /// All filters use partial matching (LIKE) except for level which uses exact matching.
@@ -169,17 +166,15 @@ pub trait CustomerRepository: Send + Sync {
     /// # Arguments
     ///
     /// * `ctx` - Repository context with database connection
-    /// * `filter` - Filter criteria (all fields are optional)
-    /// * `pagination` - Pagination options (page, page_size, order)
+    /// * `query` - Query options including filter, sort field, sort direction, cursor, and limit
     ///
     /// # Returns
     ///
-    /// * `Ok(Vec<Customer>)` - List of customers matching the criteria
+    /// * `Ok(CustomerPage)` - Page of customers with optional next cursor
     /// * `Err(Error)` - Database error
     async fn get_all(
         &self,
         ctx: &super::RepoCtx<impl ConnectionTrait>,
-        filter: &CustomerFilter,
-        pagination: &PaginationOptions,
-    ) -> DomainResult<Vec<Customer>>;
+        query: &CustomerQuery,
+    ) -> DomainResult<CustomerPage>;
 }

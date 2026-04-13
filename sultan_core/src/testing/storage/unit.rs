@@ -3,10 +3,21 @@ use sea_orm::DatabaseConnection;
 use crate::{
     domain::model::{
         Update,
-        product::{UnitOfMeasureCreate, UnitOfMeasureUpdate},
+        product::{
+            SortDirection, UnitOfMeasureCreate, UnitOfMeasureUpdate, UnitQuery, UnitSortField,
+        },
     },
     storage::{RepoCtx, unit_repo::UnitOfMeasureRepository},
 };
+
+pub fn default_query() -> UnitQuery {
+    UnitQuery {
+        sort_field: UnitSortField::Id,
+        sort_direction: SortDirection::Asc,
+        cursor: None,
+        limit: 100,
+    }
+}
 
 pub async fn test_unit_all<C, F, Fut>(repo: &C, ctx_factory: F)
 where
@@ -24,6 +35,9 @@ where
     unit_test_delete_non_existent(&ctx_factory().await, repo).await;
     unit_test_get_all(&ctx_factory().await, repo).await;
     unit_test_get_all_excludes_deleted(&ctx_factory().await, repo).await;
+    unit_test_get_all_cursor_pagination_asc(&ctx_factory().await, repo).await;
+    unit_test_get_all_cursor_pagination_desc(&ctx_factory().await, repo).await;
+    unit_test_get_all_cursor_pagination_no_next(&ctx_factory().await, repo).await;
     unit_test_get_by_id_non_existent(&ctx_factory().await, repo).await;
 }
 
@@ -255,13 +269,20 @@ pub async fn unit_test_get_all<U: UnitOfMeasureRepository>(
     .await
     .unwrap();
 
-    let units = repo.get_all(ctx).await.expect("Failed to get all units");
+    let page = repo
+        .get_all(ctx, &default_query())
+        .await
+        .expect("Failed to get all units");
 
     // Should have at least our 3 units (may have more from other tests)
-    assert!(units.len() >= 3);
-    assert!(units.iter().any(|u| u.id == id1 && u.name == "Kilogram"));
-    assert!(units.iter().any(|u| u.id == id2 && u.name == "Liter"));
-    assert!(units.iter().any(|u| u.id == id3 && u.name == "Piece"));
+    assert!(page.items.len() >= 3);
+    assert!(
+        page.items
+            .iter()
+            .any(|u| u.id == id1 && u.name == "Kilogram")
+    );
+    assert!(page.items.iter().any(|u| u.id == id2 && u.name == "Liter"));
+    assert!(page.items.iter().any(|u| u.id == id3 && u.name == "Piece"));
 }
 
 pub async fn unit_test_get_all_excludes_deleted<U: UnitOfMeasureRepository>(
@@ -296,11 +317,14 @@ pub async fn unit_test_get_all_excludes_deleted<U: UnitOfMeasureRepository>(
     // Delete the second unit
     repo.delete(ctx, id2).await.unwrap();
 
-    let units = repo.get_all(ctx).await.expect("Failed to get all units");
+    let page = repo
+        .get_all(ctx, &default_query())
+        .await
+        .expect("Failed to get all units");
 
     // Should contain the active unit but not the deleted one
-    assert!(units.iter().any(|u| u.id == id1));
-    assert!(!units.iter().any(|u| u.id == id2));
+    assert!(page.items.iter().any(|u| u.id == id1));
+    assert!(!page.items.iter().any(|u| u.id == id2));
 }
 
 pub async fn unit_test_get_by_id_non_existent<U: UnitOfMeasureRepository>(
@@ -313,4 +337,140 @@ pub async fn unit_test_get_by_id_non_existent<U: UnitOfMeasureRepository>(
         .await
         .expect("Query failed");
     assert!(result.is_none());
+}
+
+pub async fn unit_test_get_all_cursor_pagination_asc<U: UnitOfMeasureRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &U,
+) {
+    // Create 5 units
+    for i in 0..5 {
+        let id = super::generate_test_id().await;
+        repo.create(
+            ctx,
+            id,
+            &UnitOfMeasureCreate {
+                name: format!("Pag Unit {}", i),
+                description: None,
+            },
+        )
+        .await
+        .expect("Failed to create unit");
+    }
+
+    // Get first page (2 items), sorted by id asc
+    let query_page1 = UnitQuery {
+        sort_field: UnitSortField::Id,
+        sort_direction: SortDirection::Asc,
+        cursor: None,
+        limit: 2,
+    };
+    let page1 = repo
+        .get_all(ctx, &query_page1)
+        .await
+        .expect("Failed to get page 1");
+    assert_eq!(page1.items.len(), 2);
+    assert!(page1.next_cursor.is_some());
+
+    // Get second page using the cursor
+    let query_page2 = UnitQuery {
+        sort_field: UnitSortField::Id,
+        sort_direction: SortDirection::Asc,
+        cursor: page1.next_cursor.clone(),
+        limit: 2,
+    };
+    let page2 = repo
+        .get_all(ctx, &query_page2)
+        .await
+        .expect("Failed to get page 2");
+    assert_eq!(page2.items.len(), 2);
+
+    // Verify pages don't overlap
+    for u1 in &page1.items {
+        assert!(!page2.items.iter().any(|u2| u2.id == u1.id));
+    }
+}
+
+pub async fn unit_test_get_all_cursor_pagination_desc<U: UnitOfMeasureRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &U,
+) {
+    // Create 3 units
+    for i in 0..3 {
+        let id = super::generate_test_id().await;
+        repo.create(
+            ctx,
+            id,
+            &UnitOfMeasureCreate {
+                name: format!("Desc Unit {}", i),
+                description: None,
+            },
+        )
+        .await
+        .expect("Failed to create unit");
+    }
+
+    // Get first page in descending order by name
+    let query_page1 = UnitQuery {
+        sort_field: UnitSortField::Name,
+        sort_direction: SortDirection::Desc,
+        cursor: None,
+        limit: 2,
+    };
+    let page1 = repo
+        .get_all(ctx, &query_page1)
+        .await
+        .expect("Failed to get page 1 desc");
+    assert_eq!(page1.items.len(), 2);
+    assert!(page1.next_cursor.is_some());
+
+    // Get second page using the cursor
+    let query_page2 = UnitQuery {
+        sort_field: UnitSortField::Name,
+        sort_direction: SortDirection::Desc,
+        cursor: page1.next_cursor.clone(),
+        limit: 2,
+    };
+    let page2 = repo
+        .get_all(ctx, &query_page2)
+        .await
+        .expect("Failed to get page 2 desc");
+    assert_eq!(page2.items.len(), 1);
+    assert!(page2.next_cursor.is_none());
+
+    // Verify pages don't overlap
+    for u1 in &page1.items {
+        assert!(!page2.items.iter().any(|u2| u2.id == u1.id));
+    }
+}
+
+pub async fn unit_test_get_all_cursor_pagination_no_next<U: UnitOfMeasureRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &U,
+) {
+    // Create exactly 2 units
+    for i in 0..2 {
+        let id = super::generate_test_id().await;
+        repo.create(
+            ctx,
+            id,
+            &UnitOfMeasureCreate {
+                name: format!("No Next Unit {}", i),
+                description: None,
+            },
+        )
+        .await
+        .expect("Failed to create unit");
+    }
+
+    // Get page of 5, only 2 exist — no next cursor
+    let query = UnitQuery {
+        sort_field: UnitSortField::UpdatedAt,
+        sort_direction: SortDirection::Asc,
+        cursor: None,
+        limit: 5,
+    };
+    let page = repo.get_all(ctx, &query).await.expect("Failed to get page");
+    assert_eq!(page.items.len(), 2);
+    assert!(page.next_cursor.is_none());
 }

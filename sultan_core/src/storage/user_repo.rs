@@ -2,9 +2,8 @@ use async_trait::async_trait;
 use sea_orm::ConnectionTrait;
 
 use crate::domain::DomainResult;
-use crate::domain::model::pagination::PaginationOptions;
 use crate::domain::model::permission::{Permission, PermissionCreate};
-use crate::domain::model::user::{User, UserCreate, UserFilter, UserUpdate};
+use crate::domain::model::user::{User, UserCreate, UserPage, UserQuery, UserUpdate};
 
 /// Repository trait for User operations.
 ///
@@ -45,10 +44,15 @@ use crate::domain::model::user::{User, UserCreate, UserFilter, UserUpdate};
 ///     // Get the user by username
 ///     let user = repo.get_by_username(&ctx, "johndoe").await?;
 ///     
-///     // List all users with filtering
-///     let filter = UserFilter::default();
-///     let pagination = PaginationOptions::new(1, 20, None);
-///     let users = repo.get_all(&ctx, &filter, &pagination).await?;
+///     // List all users with cursor-based pagination
+///     let query = UserQuery {
+///         filter: UserFilter::default(),
+///         sort_field: UserSortField::Id,
+///         sort_direction: SortDirection::Asc,
+///         cursor: None,
+///         limit: 20,
+///     };
+///     let page = repo.get_all(&ctx, &query).await?;
 ///     
 ///     Ok(())
 /// }
@@ -153,7 +157,7 @@ pub trait UserRepository: Send + Sync {
     async fn delete(&self, ctx: &super::RepoCtx<impl ConnectionTrait>, id: i64)
     -> DomainResult<()>;
 
-    /// Retrieves all users with filtering and pagination.
+    /// Retrieves a page of users with cursor-based pagination and filtering.
     ///
     /// Supports filtering by username, name, and email.
     /// Username and email use exact matching, name uses partial matching (LIKE).
@@ -162,19 +166,17 @@ pub trait UserRepository: Send + Sync {
     /// # Arguments
     ///
     /// * `ctx` - Repository context with database connection
-    /// * `filter` - Filter criteria (all fields are optional)
-    /// * `pagination` - Pagination options (page, page_size, order)
+    /// * `query` - Query options including filter, sort field/direction, cursor, and limit
     ///
     /// # Returns
     ///
-    /// * `Ok(Vec<User>)` - List of users matching the criteria
+    /// * `Ok(UserPage)` - Page of users with optional next cursor
     /// * `Err(Error)` - Database error
     async fn get_all(
         &self,
         ctx: &super::RepoCtx<impl ConnectionTrait>,
-        filter: &UserFilter,
-        pagination: &PaginationOptions,
-    ) -> DomainResult<Vec<User>>;
+        query: &UserQuery,
+    ) -> DomainResult<UserPage>;
 
     /// Retrieves a user by ID (excluding soft-deleted records).
     ///

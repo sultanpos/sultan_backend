@@ -264,7 +264,11 @@ mod tests {
             }
         }
 
-        async fn get_all(&self, _ctx: &RepoCtx<impl ConnectionTrait>) -> DomainResult<Vec<Branch>> {
+        async fn get_all(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            _query: &crate::domain::model::branch::BranchQuery,
+        ) -> DomainResult<crate::domain::model::branch::BranchPage> {
             panic!("get_all not mocked");
         }
 

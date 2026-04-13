@@ -3,8 +3,10 @@ use crate::{
         error::Error::NotFound,
         model::{
             Update,
-            pagination::PaginationOptions,
-            supplier::{SupplierCreate, SupplierFilter, SupplierUpdate},
+            product::SortDirection,
+            supplier::{
+                SupplierCreate, SupplierFilter, SupplierQuery, SupplierSortField, SupplierUpdate,
+            },
         },
     },
     storage::{RepoCtx, SupplierRepository},
@@ -12,13 +14,13 @@ use crate::{
 use sea_orm::DatabaseConnection;
 use serde_json::json;
 
-pub fn default_filter() -> SupplierFilter {
-    SupplierFilter {
-        name: None,
-        code: None,
-        phone: None,
-        npwp: None,
-        email: None,
+pub fn default_query() -> SupplierQuery {
+    SupplierQuery {
+        filter: SupplierFilter::default(),
+        sort_field: SupplierSortField::Id,
+        sort_direction: SortDirection::Asc,
+        cursor: None,
+        limit: 100,
     }
 }
 
@@ -48,7 +50,9 @@ where
     supplier_test_filter_by_phone(&ctx_factory().await, repo).await;
     supplier_test_filter_by_npwp(&ctx_factory().await, repo).await;
     supplier_test_filter_multiple_criteria(&ctx_factory().await, repo).await;
-    supplier_test_pagination(&ctx_factory().await, repo).await;
+    supplier_test_cursor_pagination_asc(&ctx_factory().await, repo).await;
+    supplier_test_cursor_pagination_desc(&ctx_factory().await, repo).await;
+    supplier_test_cursor_pagination_no_next(&ctx_factory().await, repo).await;
 }
 
 // =============================================================================
@@ -103,10 +107,10 @@ pub async fn supplier_test_repo_integration<S: SupplierRepository>(
 
     // Test Get All
     let suppliers = repo
-        .get_all(ctx, &default_filter(), &super::default_pagination())
+        .get_all(ctx, &default_query())
         .await
         .expect("Failed to get all suppliers");
-    assert!(suppliers.iter().any(|s| s.id == id));
+    assert!(suppliers.items.iter().any(|s| s.id == id));
 
     // Test Delete
     repo.delete(ctx, id)
@@ -558,10 +562,10 @@ pub async fn supplier_test_deleted_not_in_get_all<S: SupplierRepository>(
 
     // Verify it appears in get_all
     let suppliers_before = repo
-        .get_all(ctx, &default_filter(), &super::default_pagination())
+        .get_all(ctx, &default_query())
         .await
         .expect("Failed to get all suppliers");
-    assert!(suppliers_before.iter().any(|s| s.id == id));
+    assert!(suppliers_before.items.iter().any(|s| s.id == id));
 
     // Delete it
     repo.delete(ctx, id)
@@ -570,10 +574,10 @@ pub async fn supplier_test_deleted_not_in_get_all<S: SupplierRepository>(
 
     // Verify it no longer appears in get_all
     let suppliers_after = repo
-        .get_all(ctx, &default_filter(), &super::default_pagination())
+        .get_all(ctx, &default_query())
         .await
         .expect("Failed to get all suppliers");
-    assert!(!suppliers_after.iter().any(|s| s.id == id));
+    assert!(!suppliers_after.items.iter().any(|s| s.id == id));
 }
 
 // =============================================================================
@@ -616,13 +620,13 @@ pub async fn supplier_test_get_all<S: SupplierRepository>(
     }
 
     let suppliers = repo
-        .get_all(ctx, &default_filter(), &super::default_pagination())
+        .get_all(ctx, &default_query())
         .await
         .expect("Failed to get all suppliers");
 
     // Verify all created suppliers are returned
     for id in created_ids {
-        assert!(suppliers.iter().any(|s| s.id == id));
+        assert!(suppliers.items.iter().any(|s| s.id == id));
     }
 }
 
@@ -671,21 +675,21 @@ pub async fn supplier_test_filter_by_name<S: SupplierRepository>(
     .await
     .expect("Failed to create supplier");
 
-    let filter = SupplierFilter {
-        name: Some("Alpha".to_string()),
-        code: None,
-        email: None,
-        phone: None,
-        npwp: None,
+    let query = SupplierQuery {
+        filter: SupplierFilter {
+            name: Some("Alpha".to_string()),
+            ..SupplierFilter::default()
+        },
+        ..default_query()
     };
 
     let suppliers = repo
-        .get_all(ctx, &filter, &super::default_pagination())
+        .get_all(ctx, &query)
         .await
         .expect("Failed to get suppliers");
 
-    assert!(suppliers.iter().any(|s| s.id == id1));
-    assert!(!suppliers.iter().any(|s| s.id == id2));
+    assert!(suppliers.items.iter().any(|s| s.id == id1));
+    assert!(!suppliers.items.iter().any(|s| s.id == id2));
 }
 
 pub async fn supplier_test_filter_by_code<S: SupplierRepository>(
@@ -729,21 +733,21 @@ pub async fn supplier_test_filter_by_code<S: SupplierRepository>(
     .await
     .expect("Failed to create supplier");
 
-    let filter = SupplierFilter {
-        name: None,
-        code: Some("ABC".to_string()),
-        email: None,
-        phone: None,
-        npwp: None,
+    let query = SupplierQuery {
+        filter: SupplierFilter {
+            code: Some("ABC".to_string()),
+            ..SupplierFilter::default()
+        },
+        ..default_query()
     };
 
     let suppliers = repo
-        .get_all(ctx, &filter, &super::default_pagination())
+        .get_all(ctx, &query)
         .await
         .expect("Failed to get suppliers");
 
-    assert!(suppliers.iter().any(|s| s.id == id1));
-    assert!(!suppliers.iter().any(|s| s.id == id2));
+    assert!(suppliers.items.iter().any(|s| s.id == id1));
+    assert!(!suppliers.items.iter().any(|s| s.id == id2));
 }
 
 pub async fn supplier_test_filter_by_email<S: SupplierRepository>(
@@ -787,21 +791,21 @@ pub async fn supplier_test_filter_by_email<S: SupplierRepository>(
     .await
     .expect("Failed to create supplier");
 
-    let filter = SupplierFilter {
-        name: None,
-        code: None,
-        email: Some("alpha".to_string()),
-        phone: None,
-        npwp: None,
+    let query = SupplierQuery {
+        filter: SupplierFilter {
+            email: Some("alpha".to_string()),
+            ..SupplierFilter::default()
+        },
+        ..default_query()
     };
 
     let suppliers = repo
-        .get_all(ctx, &filter, &super::default_pagination())
+        .get_all(ctx, &query)
         .await
         .expect("Failed to get suppliers");
 
-    assert!(suppliers.iter().any(|s| s.id == id1));
-    assert!(!suppliers.iter().any(|s| s.id == id2));
+    assert!(suppliers.items.iter().any(|s| s.id == id1));
+    assert!(!suppliers.items.iter().any(|s| s.id == id2));
 }
 
 pub async fn supplier_test_filter_by_phone<S: SupplierRepository>(
@@ -845,21 +849,21 @@ pub async fn supplier_test_filter_by_phone<S: SupplierRepository>(
     .await
     .expect("Failed to create supplier");
 
-    let filter = SupplierFilter {
-        name: None,
-        code: None,
-        email: None,
-        phone: Some("555".to_string()),
-        npwp: None,
+    let query = SupplierQuery {
+        filter: SupplierFilter {
+            phone: Some("555".to_string()),
+            ..SupplierFilter::default()
+        },
+        ..default_query()
     };
 
     let suppliers = repo
-        .get_all(ctx, &filter, &super::default_pagination())
+        .get_all(ctx, &query)
         .await
         .expect("Failed to get suppliers");
 
-    assert!(suppliers.iter().any(|s| s.id == id1));
-    assert!(!suppliers.iter().any(|s| s.id == id2));
+    assert!(suppliers.items.iter().any(|s| s.id == id1));
+    assert!(!suppliers.items.iter().any(|s| s.id == id2));
 }
 
 pub async fn supplier_test_filter_by_npwp<S: SupplierRepository>(
@@ -903,21 +907,21 @@ pub async fn supplier_test_filter_by_npwp<S: SupplierRepository>(
     .await
     .expect("Failed to create supplier");
 
-    let filter = SupplierFilter {
-        name: None,
-        code: None,
-        email: None,
-        phone: None,
-        npwp: Some("1234".to_string()),
+    let query = SupplierQuery {
+        filter: SupplierFilter {
+            npwp: Some("1234".to_string()),
+            ..SupplierFilter::default()
+        },
+        ..default_query()
     };
 
     let suppliers = repo
-        .get_all(ctx, &filter, &super::default_pagination())
+        .get_all(ctx, &query)
         .await
         .expect("Failed to get suppliers");
 
-    assert!(suppliers.iter().any(|s| s.id == id1));
-    assert!(!suppliers.iter().any(|s| s.id == id2));
+    assert!(suppliers.items.iter().any(|s| s.id == id1));
+    assert!(!suppliers.items.iter().any(|s| s.id == id2));
 }
 
 pub async fn supplier_test_filter_multiple_criteria<S: SupplierRepository>(
@@ -980,30 +984,31 @@ pub async fn supplier_test_filter_multiple_criteria<S: SupplierRepository>(
     .unwrap();
 
     // Filter by both name and code
-    let filter = SupplierFilter {
-        name: Some("Alpha".to_string()),
-        code: Some("ALP".to_string()),
-        email: None,
-        phone: None,
-        npwp: None,
+    let query = SupplierQuery {
+        filter: SupplierFilter {
+            name: Some("Alpha".to_string()),
+            code: Some("ALP".to_string()),
+            ..SupplierFilter::default()
+        },
+        ..default_query()
     };
 
     let suppliers = repo
-        .get_all(ctx, &filter, &super::default_pagination())
+        .get_all(ctx, &query)
         .await
         .expect("Failed to get suppliers");
 
     // Only id1 matches both criteria
-    assert!(suppliers.iter().any(|s| s.id == id1));
-    assert!(!suppliers.iter().any(|s| s.id == id2)); // Has Alpha name but BET code
-    assert!(!suppliers.iter().any(|s| s.id == id3)); // Has ALP code but Beta name
+    assert!(suppliers.items.iter().any(|s| s.id == id1));
+    assert!(!suppliers.items.iter().any(|s| s.id == id2)); // Has Alpha name but BET code
+    assert!(!suppliers.items.iter().any(|s| s.id == id3)); // Has ALP code but Beta name
 }
 
 // =============================================================================
-// Pagination Tests
+// Cursor Pagination Tests
 // =============================================================================
 
-pub async fn supplier_test_pagination<S: SupplierRepository>(
+pub async fn supplier_test_cursor_pagination_asc<S: SupplierRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &S,
 ) {
@@ -1025,22 +1030,147 @@ pub async fn supplier_test_pagination<S: SupplierRepository>(
             .expect("Failed to create supplier");
     }
 
-    // Get first page (2 items)
+    // Get first page (2 items, ascending by id)
     let page1 = repo
-        .get_all(ctx, &default_filter(), &PaginationOptions::new(1, 2, None))
+        .get_all(
+            ctx,
+            &SupplierQuery {
+                limit: 2,
+                ..default_query()
+            },
+        )
         .await
         .expect("Failed to get page 1");
-    assert_eq!(page1.len(), 2);
+    assert_eq!(page1.items.len(), 2);
+    assert!(
+        page1.next_cursor.is_some(),
+        "Expected a next cursor for page 1"
+    );
 
-    // Get second page (2 items)
+    // Get second page using cursor
+    let cursor = page1.next_cursor.unwrap();
     let page2 = repo
-        .get_all(ctx, &default_filter(), &PaginationOptions::new(2, 2, None))
+        .get_all(
+            ctx,
+            &SupplierQuery {
+                limit: 2,
+                cursor: Some(cursor),
+                ..default_query()
+            },
+        )
         .await
         .expect("Failed to get page 2");
-    assert_eq!(page2.len(), 2);
+    assert_eq!(page2.items.len(), 2);
 
     // Verify pages don't overlap
-    for s1 in &page1 {
-        assert!(!page2.iter().any(|s2| s2.id == s1.id));
+    for s1 in &page1.items {
+        assert!(!page2.items.iter().any(|s2| s2.id == s1.id));
     }
+}
+
+pub async fn supplier_test_cursor_pagination_desc<S: SupplierRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
+    // Create 4 suppliers
+    for i in 0..4 {
+        let id = super::generate_test_id().await;
+        let supplier = SupplierCreate {
+            name: format!("Desc Supplier {}", i),
+            code: None,
+            email: None,
+            address: None,
+            phone: None,
+            npwp: None,
+            npwp_name: None,
+            metadata: None,
+        };
+        repo.create(ctx, id, &supplier)
+            .await
+            .expect("Failed to create supplier");
+    }
+
+    // Get first page descending
+    let page1 = repo
+        .get_all(
+            ctx,
+            &SupplierQuery {
+                limit: 2,
+                sort_direction: SortDirection::Desc,
+                ..default_query()
+            },
+        )
+        .await
+        .expect("Failed to get page 1");
+    assert_eq!(page1.items.len(), 2);
+    assert!(page1.next_cursor.is_some());
+
+    // IDs should be in descending order
+    assert!(page1.items[0].id > page1.items[1].id);
+
+    // Get second page using cursor
+    let cursor = page1.next_cursor.unwrap();
+    let page2 = repo
+        .get_all(
+            ctx,
+            &SupplierQuery {
+                limit: 2,
+                sort_direction: SortDirection::Desc,
+                cursor: Some(cursor),
+                ..default_query()
+            },
+        )
+        .await
+        .expect("Failed to get page 2");
+    assert_eq!(page2.items.len(), 2);
+
+    // All items in page2 should have lower IDs than items in page1
+    for s1 in &page1.items {
+        for s2 in &page2.items {
+            assert!(
+                s1.id > s2.id,
+                "Page 1 IDs should be > page 2 IDs in desc order"
+            );
+        }
+    }
+}
+
+pub async fn supplier_test_cursor_pagination_no_next<S: SupplierRepository>(
+    ctx: &RepoCtx<DatabaseConnection>,
+    repo: &S,
+) {
+    // Create exactly 3 suppliers
+    for i in 0..3 {
+        let id = super::generate_test_id().await;
+        let supplier = SupplierCreate {
+            name: format!("NoNext Supplier {}", i),
+            code: None,
+            email: None,
+            address: None,
+            phone: None,
+            npwp: None,
+            npwp_name: None,
+            metadata: None,
+        };
+        repo.create(ctx, id, &supplier)
+            .await
+            .expect("Failed to create supplier");
+    }
+
+    // Fetch all 3 at once — no next cursor expected
+    let page = repo
+        .get_all(
+            ctx,
+            &SupplierQuery {
+                limit: 10,
+                ..default_query()
+            },
+        )
+        .await
+        .expect("Failed to get page");
+    assert!(
+        page.next_cursor.is_none(),
+        "Expected no next cursor when all items fit in one page"
+    );
+    assert!(page.items.len() >= 3);
 }

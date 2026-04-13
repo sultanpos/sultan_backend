@@ -3,10 +3,7 @@ use sea_orm::ConnectionTrait;
 
 use crate::domain::{
     DomainResult,
-    model::{
-        pagination::PaginationOptions,
-        supplier::{Supplier, SupplierCreate, SupplierFilter, SupplierUpdate},
-    },
+    model::supplier::{Supplier, SupplierCreate, SupplierPage, SupplierQuery, SupplierUpdate},
 };
 
 /// Repository trait for Supplier operations.
@@ -118,7 +115,7 @@ pub trait SupplierRepository: Send + Sync {
     async fn delete(&self, ctx: &super::RepoCtx<impl ConnectionTrait>, id: i64)
     -> DomainResult<()>;
 
-    /// Retrieves all suppliers with filtering and pagination.
+    /// Retrieves all suppliers with cursor-based pagination and filtering.
     ///
     /// Supports filtering by name, code, email, phone, and npwp.
     /// All filters use partial matching (LIKE).
@@ -127,19 +124,17 @@ pub trait SupplierRepository: Send + Sync {
     /// # Arguments
     ///
     /// * `ctx` - Repository context with database connection
-    /// * `filter` - Filter criteria (all fields are optional)
-    /// * `pagination` - Pagination options (page, page_size, order)
+    /// * `query` - Query options including filter, sort field, sort direction, cursor, and limit
     ///
     /// # Returns
     ///
-    /// * `Ok(Vec<Supplier>)` - List of suppliers matching the criteria
+    /// * `Ok(SupplierPage)` - Page of suppliers with optional next cursor
     /// * `Err(Error)` - Database error
     async fn get_all(
         &self,
         ctx: &super::RepoCtx<impl ConnectionTrait>,
-        filter: &SupplierFilter,
-        pagination: &PaginationOptions,
-    ) -> DomainResult<Vec<Supplier>>;
+        query: &SupplierQuery,
+    ) -> DomainResult<SupplierPage>;
 
     /// Retrieves a supplier by ID (excluding soft-deleted records).
     ///

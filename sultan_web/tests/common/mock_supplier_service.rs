@@ -3,10 +3,7 @@ use sultan_core::application::SupplierServiceTrait;
 use sultan_core::domain::{
     DomainResult, Error,
     context::Context,
-    model::{
-        pagination::PaginationOptions,
-        supplier::{Supplier, SupplierCreate, SupplierFilter, SupplierUpdate},
-    },
+    model::supplier::{Supplier, SupplierCreate, SupplierPage, SupplierQuery, SupplierUpdate},
 };
 
 pub struct MockSupplierService {
@@ -100,21 +97,19 @@ impl SupplierServiceTrait for MockSupplierService {
         }
     }
 
-    async fn get_all(
-        &self,
-        _ctx: &Context,
-        filter: &SupplierFilter,
-        _pagination: &PaginationOptions,
-    ) -> DomainResult<Vec<Supplier>> {
+    async fn get_all(&self, _ctx: &Context, filter: &SupplierQuery) -> DomainResult<SupplierPage> {
         if !self.should_succeed {
             return Err(Error::Internal("Failed to get suppliers".to_string()));
         }
 
         // Return empty if name filter is "empty"
-        if let Some(name) = &filter.name
+        if let Some(name) = &filter.filter.name
             && name == "empty"
         {
-            return Ok(vec![]);
+            return Ok(SupplierPage {
+                items: vec![],
+                next_cursor: None,
+            });
         }
 
         // Return filtered results if filter is provided
@@ -152,22 +147,25 @@ impl SupplierServiceTrait for MockSupplierService {
         ];
 
         // Apply filters
-        if let Some(name) = &filter.name {
+        if let Some(name) = &filter.filter.name {
             suppliers.retain(|s| s.name.contains(name));
         }
-        if let Some(code) = &filter.code {
+        if let Some(code) = &filter.filter.code {
             suppliers.retain(|s| s.code.as_ref().is_some_and(|c| c.contains(code)));
         }
-        if let Some(phone) = &filter.phone {
+        if let Some(phone) = &filter.filter.phone {
             suppliers.retain(|s| s.phone.as_ref().is_some_and(|p| p.contains(phone)));
         }
-        if let Some(email) = &filter.email {
+        if let Some(email) = &filter.filter.email {
             suppliers.retain(|s| s.email.as_ref().is_some_and(|e| e.contains(email)));
         }
-        if let Some(npwp) = &filter.npwp {
+        if let Some(npwp) = &filter.filter.npwp {
             suppliers.retain(|s| s.npwp.as_ref().is_some_and(|n| n.contains(npwp)));
         }
 
-        Ok(suppliers)
+        Ok(SupplierPage {
+            items: suppliers,
+            next_cursor: None,
+        })
     }
 }

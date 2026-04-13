@@ -4,7 +4,7 @@ use sea_orm::DatabaseConnection;
 use crate::application::ServiceDbHelper;
 use crate::domain::Context;
 use crate::domain::DomainResult;
-use crate::domain::model::branch::{Branch, BranchCreate, BranchUpdate};
+use crate::domain::model::branch::{Branch, BranchCreate, BranchPage, BranchQuery, BranchUpdate};
 use crate::domain::model::permission::action;
 use crate::domain::model::permission::resource;
 use crate::snowflake::IdGenerator;
@@ -16,7 +16,7 @@ pub trait BranchServiceTrait: Send + Sync {
     async fn update(&self, ctx: &Context, id: i64, branch: &BranchUpdate) -> DomainResult<()>;
     async fn delete(&self, ctx: &Context, id: i64) -> DomainResult<()>;
     async fn get_by_id(&self, ctx: &Context, id: i64) -> DomainResult<Option<Branch>>;
-    async fn get_all(&self, ctx: &Context) -> DomainResult<Vec<Branch>>;
+    async fn get_all(&self, ctx: &Context, query: &BranchQuery) -> DomainResult<BranchPage>;
 }
 
 pub struct BranchService<R, I> {
@@ -98,10 +98,10 @@ impl<R: BranchRepository, I: IdGenerator> BranchServiceTrait for BranchService<R
         self.repository.get_by_id(&repo_ctx, id).await
     }
 
-    async fn get_all(&self, ctx: &Context) -> DomainResult<Vec<Branch>> {
+    async fn get_all(&self, ctx: &Context, query: &BranchQuery) -> DomainResult<BranchPage> {
         ctx.require_access(None, resource::BRANCH, action::READ)?;
         let repo_ctx = self.repo_ctx(ctx);
-        self.repository.get_all(&repo_ctx).await
+        self.repository.get_all(&repo_ctx, query).await
     }
 }
 
@@ -126,7 +126,7 @@ mod tests {
         update_fn: Arc<Mutex<Option<Box<dyn Fn(i64, BranchUpdate) -> DomainResult<()> + Send>>>>,
         delete_fn: Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<()> + Send>>>>,
         get_by_id_fn: Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<Option<Branch>> + Send>>>>,
-        get_all_fn: Arc<Mutex<Option<Box<dyn Fn() -> DomainResult<Vec<Branch>> + Send>>>>,
+        get_all_fn: Arc<Mutex<Option<Box<dyn Fn(BranchQuery) -> DomainResult<BranchPage> + Send>>>>,
         set_all_is_main_false_fn:
             Arc<Mutex<Option<Box<dyn Fn(Option<i64>) -> DomainResult<()> + Send>>>>,
     }
@@ -173,7 +173,7 @@ mod tests {
 
         fn expect_get_all<F>(&mut self, f: F)
         where
-            F: Fn() -> DomainResult<Vec<Branch>> + Send + 'static,
+            F: Fn(BranchQuery) -> DomainResult<BranchPage> + Send + 'static,
         {
             *self.get_all_fn.lock().unwrap() = Some(Box::new(f));
         }
@@ -239,10 +239,14 @@ mod tests {
             }
         }
 
-        async fn get_all(&self, _ctx: &RepoCtx<impl ConnectionTrait>) -> DomainResult<Vec<Branch>> {
+        async fn get_all(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            query: &BranchQuery,
+        ) -> DomainResult<BranchPage> {
             let func = self.get_all_fn.lock().unwrap();
             if let Some(f) = func.as_ref() {
-                f()
+                f(query.clone())
             } else {
                 panic!("get_all not mocked")
             }
@@ -467,6 +471,18 @@ mod tests {
         assert!(matches!(result, Err(Error::Database(msg)) if msg == "DB Error"));
     }
 
+    fn default_branch_query() -> BranchQuery {
+        use crate::domain::model::branch::{BranchFilter, BranchSortField};
+        use crate::domain::model::product::SortDirection;
+        BranchQuery {
+            filter: BranchFilter::default(),
+            sort_field: BranchSortField::CreatedAt,
+            sort_direction: SortDirection::Desc,
+            cursor: None,
+            limit: 20,
+        }
+    }
+
     #[tokio::test]
     async fn test_get_all_branches_success() {
         let mut mock_repo = MockBranchRepo::new();
@@ -488,15 +504,21 @@ mod tests {
             image: None,
         };
 
-        mock_repo.expect_get_all(move || Ok(vec![branch.clone()]));
+        mock_repo.expect_get_all(move |_| {
+            Ok(BranchPage {
+                items: vec![branch.clone()],
+                next_cursor: None,
+            })
+        });
 
         let service = BranchService::new(mock_repo, mock_id_gen, db);
-        let result = service.get_all(&ctx).await;
+        let query = default_branch_query();
+        let result = service.get_all(&ctx, &query).await;
 
         assert!(result.is_ok());
-        let branches = result.unwrap();
-        assert_eq!(branches.len(), 1);
-        assert_eq!(branches[0].name, "Test Branch");
+        let page = result.unwrap();
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].name, "Test Branch");
     }
 
     #[tokio::test]
@@ -506,10 +528,11 @@ mod tests {
         let ctx = create_test_context();
         let db = create_test_db().await;
 
-        mock_repo.expect_get_all(|| Err(Error::Database("DB Error".to_string())));
+        mock_repo.expect_get_all(|_| Err(Error::Database("DB Error".to_string())));
 
         let service = BranchService::new(mock_repo, mock_id_gen, db);
-        let result = service.get_all(&ctx).await;
+        let query = default_branch_query();
+        let result = service.get_all(&ctx, &query).await;
 
         assert!(matches!(result, Err(Error::Database(msg)) if msg == "DB Error"));
     }

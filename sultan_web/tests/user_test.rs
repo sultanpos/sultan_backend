@@ -679,3 +679,180 @@ async fn test_verify_jwt_middleware_permission_caching() {
     assert_eq!(json2["has_user_read"], true);
     assert_eq!(json2["has_user_create"], true);
 }
+
+// ============================================================================
+// GET /api/user - Get All Users Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_all_users_success() {
+    let app_state = MockAppStateBuilder::new()
+        .with_user_service(Arc::new(MockUserService::new_get_all_success()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/user", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::OK);
+    let items = response["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["username"].as_str().unwrap(), "sultan");
+    assert!(response["next_cursor"].is_null());
+}
+
+#[tokio::test]
+async fn test_get_all_users_response_structure() {
+    let app_state = MockAppStateBuilder::new()
+        .with_user_service(Arc::new(MockUserService::new_get_all_success()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/user", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(response.get("items").is_some());
+    assert!(response.get("next_cursor").is_some());
+}
+
+#[tokio::test]
+async fn test_get_all_users_sort_by_name() {
+    let app_state = MockAppStateBuilder::new()
+        .with_user_service(Arc::new(MockUserService::new_get_all_success()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(
+        app,
+        "GET",
+        "/api/user?sort_field=name&sort_direction=asc",
+        None,
+    )
+    .await
+    .expect("Request failed");
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(response["items"].is_array());
+}
+
+#[tokio::test]
+async fn test_get_all_users_sort_by_updated_at() {
+    let app_state = MockAppStateBuilder::new()
+        .with_user_service(Arc::new(MockUserService::new_get_all_success()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(
+        app,
+        "GET",
+        "/api/user?sort_field=updated_at&sort_direction=desc",
+        None,
+    )
+    .await
+    .expect("Request failed");
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(response["items"].is_array());
+}
+
+#[tokio::test]
+async fn test_get_all_users_with_username_filter() {
+    let app_state = MockAppStateBuilder::new()
+        .with_user_service(Arc::new(MockUserService::new_get_all_success()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/user?username=sultan", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(response["items"].is_array());
+}
+
+#[tokio::test]
+async fn test_get_all_users_with_name_filter() {
+    let app_state = MockAppStateBuilder::new()
+        .with_user_service(Arc::new(MockUserService::new_get_all_success()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/user?name=Sultan", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(response["items"].is_array());
+}
+
+#[tokio::test]
+async fn test_get_all_users_with_email_filter() {
+    let app_state = MockAppStateBuilder::new()
+        .with_user_service(Arc::new(MockUserService::new_get_all_success()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/user?email=sultan@test.com", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(response["items"].is_array());
+}
+
+#[tokio::test]
+async fn test_get_all_users_with_limit() {
+    let app_state = MockAppStateBuilder::new()
+        .with_user_service(Arc::new(MockUserService::new_get_all_success()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/user?limit=5", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(response["items"].as_array().unwrap().len() <= 5);
+}
+
+#[tokio::test]
+async fn test_get_all_users_invalid_sort_field() {
+    let app_state = MockAppStateBuilder::new()
+        .with_user_service(Arc::new(MockUserService::new_get_all_success()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/user?sort_field=invalid", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(response["error"].as_str().unwrap().contains("sort_field"));
+}
+
+#[tokio::test]
+async fn test_get_all_users_invalid_sort_direction() {
+    let app_state = MockAppStateBuilder::new()
+        .with_user_service(Arc::new(MockUserService::new_get_all_success()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/user?sort_direction=invalid", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        response["error"]
+            .as_str()
+            .unwrap()
+            .contains("sort_direction")
+    );
+}
+
+#[tokio::test]
+async fn test_get_all_users_invalid_cursor() {
+    let app_state = MockAppStateBuilder::new()
+        .with_user_service(Arc::new(MockUserService::new_get_all_success()));
+    let app = build_test_router(app_state);
+
+    let (status, response) = make_request(app, "GET", "/api/user?cursor=not_valid_base64!!!", None)
+        .await
+        .expect("Request failed");
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(response["error"].as_str().unwrap().contains("cursor"));
+}

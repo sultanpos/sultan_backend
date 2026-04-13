@@ -1,10 +1,16 @@
 use async_trait::async_trait;
-use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait, Order,
+    QueryFilter, QueryOrder, QuerySelect, Set, sea_query::Expr,
+};
 
 use crate::{
     domain::{
         DomainResult, Error,
-        model::product::{UnitOfMeasure, UnitOfMeasureCreate, UnitOfMeasureUpdate},
+        model::product::{
+            SortDirection, UnitCursor, UnitOfMeasure, UnitOfMeasureCreate, UnitOfMeasureUpdate,
+            UnitPage, UnitQuery, UnitSortField,
+        },
     },
     storage::{
         RepoCtx,
@@ -147,12 +153,93 @@ impl UnitOfMeasureRepository for SqliteUnitOfMeasureRepository {
     async fn get_all(
         &self,
         ctx: &RepoCtx<impl ConnectionTrait>,
-    ) -> DomainResult<Vec<UnitOfMeasure>> {
-        let units = UnitEntity::find()
-            .filter(UnitColumn::IsDeleted.eq(false))
-            .all(&ctx.db)
-            .await?;
+        query: &UnitQuery,
+    ) -> DomainResult<UnitPage> {
+        let mut select = UnitEntity::find().filter(UnitColumn::IsDeleted.eq(false));
 
-        Ok(units.into_iter().map(|u| u.to_domain()).collect())
+        // ── Map sort direction ────────────────────────────────────────────────
+        let order = match query.sort_direction {
+            SortDirection::Asc => Order::Asc,
+            SortDirection::Desc => Order::Desc,
+        };
+
+        // ── Cursor condition ──────────────────────────────────────────────────
+        if let Some(cursor) = &query.cursor {
+            let cond = match query.sort_field {
+                // For Id sort, id IS the sort column — no tiebreaker needed
+                UnitSortField::Id => match query.sort_direction {
+                    SortDirection::Asc => {
+                        Condition::all().add(Expr::col(UnitColumn::Id).gt(cursor.id))
+                    }
+                    SortDirection::Desc => {
+                        Condition::all().add(Expr::col(UnitColumn::Id).lt(cursor.id))
+                    }
+                },
+                // For string/date fields: (field > val) OR (field = val AND id > cursor_id)
+                UnitSortField::UpdatedAt | UnitSortField::Name => {
+                    let sort_col = match query.sort_field {
+                        UnitSortField::UpdatedAt => UnitColumn::UpdatedAt,
+                        UnitSortField::Name => UnitColumn::Name,
+                        UnitSortField::Id => unreachable!(),
+                    };
+                    match query.sort_direction {
+                        SortDirection::Asc => Condition::any()
+                            .add(Expr::col(sort_col).gt(cursor.field_value.clone()))
+                            .add(
+                                Condition::all()
+                                    .add(Expr::col(sort_col).eq(cursor.field_value.clone()))
+                                    .add(Expr::col(UnitColumn::Id).gt(cursor.id)),
+                            ),
+                        SortDirection::Desc => Condition::any()
+                            .add(Expr::col(sort_col).lt(cursor.field_value.clone()))
+                            .add(
+                                Condition::all()
+                                    .add(Expr::col(sort_col).eq(cursor.field_value.clone()))
+                                    .add(Expr::col(UnitColumn::Id).lt(cursor.id)),
+                            ),
+                    }
+                }
+            };
+            select = select.filter(cond);
+        }
+
+        // ── Ordering: (sort_field, id) ────────────────────────────────────────
+        select = match query.sort_field {
+            UnitSortField::Id => select.order_by(UnitColumn::Id, order),
+            UnitSortField::UpdatedAt => select
+                .order_by(UnitColumn::UpdatedAt, order.clone())
+                .order_by(UnitColumn::Id, order),
+            UnitSortField::Name => select
+                .order_by(UnitColumn::Name, order.clone())
+                .order_by(UnitColumn::Id, order),
+        };
+
+        // Fetch limit + 1 to detect whether there is a next page
+        let fetch_limit = query.limit + 1;
+        let rows = select.limit(fetch_limit).all(&ctx.db).await?;
+
+        let has_next = rows.len() as u64 > query.limit;
+        let models: Vec<_> = rows.into_iter().take(query.limit as usize).collect();
+
+        // ── Build next_cursor from the last item ──────────────────────────────
+        let next_cursor = if has_next {
+            models.last().map(|last| {
+                let field_value = match query.sort_field {
+                    UnitSortField::Id => last.id.to_string(),
+                    UnitSortField::UpdatedAt => last.updated_at.clone(),
+                    UnitSortField::Name => last.name.clone(),
+                };
+                UnitCursor {
+                    field_value,
+                    id: last.id,
+                }
+            })
+        } else {
+            None
+        };
+
+        let items: Vec<UnitOfMeasure> = models.into_iter().map(|m| m.to_domain()).collect();
+
+        Ok(UnitPage { items, next_cursor })
     }
 }

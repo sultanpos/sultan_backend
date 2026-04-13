@@ -6,9 +6,8 @@ use std::time::Duration;
 use crate::application::ServiceDbHelper;
 use crate::application::cache::CacheService;
 use crate::crypto::password::PasswordHash;
-use crate::domain::model::pagination::PaginationOptions;
 use crate::domain::model::permission::{Permission, PermissionCreate, action, resource};
-use crate::domain::model::user::{UserCreate, UserFilter, UserUpdate};
+use crate::domain::model::user::{UserCreate, UserPage, UserQuery, UserUpdate};
 use crate::domain::{Context, DomainResult, User};
 use crate::snowflake::IdGenerator;
 use crate::storage::UserRepository;
@@ -33,12 +32,7 @@ pub trait UserServiceTrait: Send + Sync {
         permissions: Option<Vec<PermissionCreate>>,
     ) -> DomainResult<()>;
     async fn get_by_id(&self, ctx: &Context, user_id: i64) -> DomainResult<Option<User>>;
-    async fn get_all(
-        &self,
-        ctx: &Context,
-        filter: &UserFilter,
-        pagination: &PaginationOptions,
-    ) -> DomainResult<Vec<User>>;
+    async fn get_all(&self, ctx: &Context, query: &UserQuery) -> DomainResult<UserPage>;
     async fn reset_password(
         &self,
         ctx: &Context,
@@ -176,16 +170,11 @@ where
         self.repository.get_by_id(&repo_ctx, user_id).await
     }
 
-    async fn get_all(
-        &self,
-        ctx: &Context,
-        filter: &UserFilter,
-        pagination: &PaginationOptions,
-    ) -> DomainResult<Vec<User>> {
+    async fn get_all(&self, ctx: &Context, query: &UserQuery) -> DomainResult<UserPage> {
         ctx.require_access(None, resource::USER, action::READ)?;
 
         let repo_ctx = self.repo_ctx(ctx);
-        self.repository.get_all(&repo_ctx, filter, pagination).await
+        self.repository.get_all(&repo_ctx, query).await
     }
 
     async fn reset_password(
@@ -299,9 +288,9 @@ mod tests {
     use super::*;
     use crate::application::InMemoryCache;
     use crate::domain::Error;
-    use crate::domain::model::pagination::PaginationOptions;
     use crate::domain::model::permission::Permission;
-    use crate::domain::model::user::UserFilter;
+    use crate::domain::model::product::SortDirection;
+    use crate::domain::model::user::{UserPage, UserQuery, UserSortField};
     use crate::storage::RepoCtx;
     use sea_orm::ConnectionTrait;
     use std::collections::HashMap;
@@ -324,7 +313,7 @@ mod tests {
             Mutex<Option<Box<dyn Fn(i64, &[PermissionCreate]) -> DomainResult<()> + Send + Sync>>>,
         delete_permission_by_user_id_fn:
             Mutex<Option<Box<dyn Fn(i64) -> DomainResult<()> + Send + Sync>>>,
-        get_all_fn: Mutex<Option<Box<dyn Fn() -> DomainResult<Vec<User>> + Send + Sync>>>,
+        get_all_fn: Mutex<Option<Box<dyn Fn(&UserQuery) -> DomainResult<UserPage> + Send + Sync>>>,
     }
 
     impl MockUserRepository {
@@ -401,7 +390,7 @@ mod tests {
 
         fn expect_get_all<F>(&self, f: F)
         where
-            F: Fn() -> DomainResult<Vec<User>> + Send + Sync + 'static,
+            F: Fn(&UserQuery) -> DomainResult<UserPage> + Send + Sync + 'static,
         {
             *self.get_all_fn.lock().unwrap() = Some(Box::new(f));
         }
@@ -475,12 +464,11 @@ mod tests {
         async fn get_all(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
-            _filter: &UserFilter,
-            _pagination: &PaginationOptions,
-        ) -> DomainResult<Vec<User>> {
+            query: &UserQuery,
+        ) -> DomainResult<UserPage> {
             let guard = self.get_all_fn.lock().unwrap();
             if let Some(f) = guard.as_ref() {
-                f()
+                f(query)
             } else {
                 panic!("get_all not mocked")
             }
@@ -1277,7 +1265,12 @@ mod tests {
 
         let users = vec![create_full_user()];
         let users_clone = users.clone();
-        mock_repo.expect_get_all(move || Ok(users_clone.clone()));
+        mock_repo.expect_get_all(move |_| {
+            Ok(UserPage {
+                items: users_clone.clone(),
+                next_cursor: None,
+            })
+        });
 
         let service = UserService::new(
             mock_repo,
@@ -1287,14 +1280,19 @@ mod tests {
             db,
         );
 
-        let filter = UserFilter::default();
-        let pagination = PaginationOptions::new(1, 20, None);
-        let result = service.get_all(&ctx, &filter, &pagination).await;
+        let query = UserQuery {
+            filter: crate::domain::model::user::UserFilter::default(),
+            sort_field: UserSortField::Id,
+            sort_direction: SortDirection::Asc,
+            cursor: None,
+            limit: 20,
+        };
+        let result = service.get_all(&ctx, &query).await;
 
         assert!(result.is_ok());
-        let user_list = result.unwrap();
-        assert_eq!(user_list.len(), 1);
-        assert_eq!(user_list[0].username, "testuser");
+        let page = result.unwrap();
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].username, "testuser");
     }
 
     #[tokio::test]
@@ -1312,9 +1310,14 @@ mod tests {
             db,
         );
 
-        let filter = UserFilter::default();
-        let pagination = PaginationOptions::new(1, 20, None);
-        let result = service.get_all(&ctx, &filter, &pagination).await;
+        let query = UserQuery {
+            filter: crate::domain::model::user::UserFilter::default(),
+            sort_field: UserSortField::Id,
+            sort_direction: SortDirection::Asc,
+            cursor: None,
+            limit: 20,
+        };
+        let result = service.get_all(&ctx, &query).await;
 
         assert!(matches!(result, Err(Error::Forbidden(_))));
     }
@@ -1326,7 +1329,12 @@ mod tests {
         let db = create_test_db().await;
         let ctx = create_test_context();
 
-        mock_repo.expect_get_all(|| Ok(vec![]));
+        mock_repo.expect_get_all(|_| {
+            Ok(UserPage {
+                items: vec![],
+                next_cursor: None,
+            })
+        });
 
         let service = UserService::new(
             mock_repo,
@@ -1336,12 +1344,17 @@ mod tests {
             db,
         );
 
-        let filter = UserFilter::default();
-        let pagination = PaginationOptions::new(1, 20, None);
-        let result = service.get_all(&ctx, &filter, &pagination).await;
+        let query = UserQuery {
+            filter: crate::domain::model::user::UserFilter::default(),
+            sort_field: UserSortField::Id,
+            sort_direction: SortDirection::Asc,
+            cursor: None,
+            limit: 20,
+        };
+        let result = service.get_all(&ctx, &query).await;
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
+        assert_eq!(result.unwrap().items.len(), 0);
     }
 
     // ==========================================================================

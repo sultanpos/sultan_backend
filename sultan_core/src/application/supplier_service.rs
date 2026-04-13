@@ -6,9 +6,8 @@ use crate::{
     domain::{
         Context, DomainResult,
         model::{
-            pagination::PaginationOptions,
             permission::{action, resource},
-            supplier::{Supplier, SupplierCreate, SupplierFilter, SupplierUpdate},
+            supplier::{Supplier, SupplierCreate, SupplierPage, SupplierQuery, SupplierUpdate},
         },
     },
     snowflake::IdGenerator,
@@ -21,12 +20,7 @@ pub trait SupplierServiceTrait: Send + Sync {
     async fn update(&self, ctx: &Context, id: i64, supplier: &SupplierUpdate) -> DomainResult<()>;
     async fn delete(&self, ctx: &Context, id: i64) -> DomainResult<()>;
     async fn get_by_id(&self, ctx: &Context, id: i64) -> DomainResult<Option<Supplier>>;
-    async fn get_all(
-        &self,
-        ctx: &Context,
-        filter: &SupplierFilter,
-        pagination: &PaginationOptions,
-    ) -> DomainResult<Vec<Supplier>>;
+    async fn get_all(&self, ctx: &Context, query: &SupplierQuery) -> DomainResult<SupplierPage>;
 }
 
 pub struct SupplierService<R, I> {
@@ -91,15 +85,10 @@ where
         self.repository.get_by_id(&repo_ctx, id).await
     }
 
-    async fn get_all(
-        &self,
-        ctx: &Context,
-        filter: &SupplierFilter,
-        pagination: &PaginationOptions,
-    ) -> DomainResult<Vec<Supplier>> {
+    async fn get_all(&self, ctx: &Context, query: &SupplierQuery) -> DomainResult<SupplierPage> {
         ctx.require_access(None, resource::SUPPLIER, action::READ)?;
         let repo_ctx = self.repo_ctx(ctx);
-        self.repository.get_all(&repo_ctx, filter, pagination).await
+        self.repository.get_all(&repo_ctx, query).await
     }
 }
 
@@ -124,16 +113,8 @@ mod tests {
         update_fn: Arc<Mutex<Option<Box<dyn Fn(i64, SupplierUpdate) -> DomainResult<()> + Send>>>>,
         delete_fn: Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<()> + Send>>>>,
         get_by_id_fn: Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<Option<Supplier>> + Send>>>>,
-        get_all_fn: Arc<
-            Mutex<
-                Option<
-                    Box<
-                        dyn Fn(SupplierFilter, PaginationOptions) -> DomainResult<Vec<Supplier>>
-                            + Send,
-                    >,
-                >,
-            >,
-        >,
+        get_all_fn:
+            Arc<Mutex<Option<Box<dyn Fn(SupplierQuery) -> DomainResult<SupplierPage> + Send>>>>,
     }
 
     impl MockSupplierRepo {
@@ -177,9 +158,7 @@ mod tests {
 
         fn expect_get_all<F>(&mut self, f: F)
         where
-            F: Fn(SupplierFilter, PaginationOptions) -> DomainResult<Vec<Supplier>>
-                + Send
-                + 'static,
+            F: Fn(SupplierQuery) -> DomainResult<SupplierPage> + Send + 'static,
         {
             *self.get_all_fn.lock().unwrap() = Some(Box::new(f));
         }
@@ -240,12 +219,11 @@ mod tests {
         async fn get_all(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
-            filter: &SupplierFilter,
-            pagination: &PaginationOptions,
-        ) -> DomainResult<Vec<Supplier>> {
+            query: &SupplierQuery,
+        ) -> DomainResult<SupplierPage> {
             let func = self.get_all_fn.lock().unwrap();
             if let Some(f) = func.as_ref() {
-                f(filter.clone(), pagination.clone())
+                f(query.clone())
             } else {
                 panic!("get_all not mocked")
             }
@@ -312,18 +290,16 @@ mod tests {
         }
     }
 
-    fn create_default_filter() -> SupplierFilter {
-        SupplierFilter {
-            name: None,
-            code: None,
-            phone: None,
-            npwp: None,
-            email: None,
+    fn create_default_query() -> SupplierQuery {
+        use crate::domain::model::product::SortDirection;
+        use crate::domain::model::supplier::{SupplierFilter, SupplierSortField};
+        SupplierQuery {
+            filter: SupplierFilter::default(),
+            sort_field: SupplierSortField::Id,
+            sort_direction: SortDirection::Asc,
+            cursor: None,
+            limit: 20,
         }
-    }
-
-    fn create_default_pagination() -> PaginationOptions {
-        PaginationOptions::new(1, 10, None)
     }
 
     // =============================================================================
@@ -585,17 +561,21 @@ mod tests {
         let suppliers = vec![create_full_supplier()];
         let suppliers_clone = suppliers.clone();
 
-        mock_repo.expect_get_all(move |_, _| Ok(suppliers_clone.clone()));
+        mock_repo.expect_get_all(move |_| {
+            Ok(SupplierPage {
+                items: suppliers_clone.clone(),
+                next_cursor: None,
+            })
+        });
 
         let service = SupplierService::new(mock_repo, create_mock_id_gen(1), db);
-        let filter = create_default_filter();
-        let pagination = create_default_pagination();
-        let result = service.get_all(&ctx, &filter, &pagination).await;
+        let query = create_default_query();
+        let result = service.get_all(&ctx, &query).await;
 
         assert!(result.is_ok());
-        let result_suppliers = result.unwrap();
-        assert_eq!(result_suppliers.len(), 1);
-        assert_eq!(result_suppliers[0].name, "Test Supplier");
+        let page = result.unwrap();
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].name, "Test Supplier");
     }
 
     #[tokio::test]
@@ -604,15 +584,19 @@ mod tests {
         let ctx = create_test_context();
         let db = create_test_db().await;
 
-        mock_repo.expect_get_all(|_, _| Ok(vec![]));
+        mock_repo.expect_get_all(|_| {
+            Ok(SupplierPage {
+                items: vec![],
+                next_cursor: None,
+            })
+        });
 
         let service = SupplierService::new(mock_repo, create_mock_id_gen(1), db);
-        let filter = create_default_filter();
-        let pagination = create_default_pagination();
-        let result = service.get_all(&ctx, &filter, &pagination).await;
+        let query = create_default_query();
+        let result = service.get_all(&ctx, &query).await;
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
+        assert_eq!(result.unwrap().items.len(), 0);
     }
 
     #[tokio::test]
@@ -622,9 +606,8 @@ mod tests {
         let db = create_test_db().await;
 
         let service = SupplierService::new(mock_repo, create_mock_id_gen(1), db);
-        let filter = create_default_filter();
-        let pagination = create_default_pagination();
-        let result = service.get_all(&ctx, &filter, &pagination).await;
+        let query = create_default_query();
+        let result = service.get_all(&ctx, &query).await;
 
         assert!(matches!(result, Err(Error::Forbidden(_))));
     }
@@ -635,12 +618,11 @@ mod tests {
         let ctx = create_test_context();
         let db = create_test_db().await;
 
-        mock_repo.expect_get_all(|_, _| Err(Error::Database("DB Error".to_string())));
+        mock_repo.expect_get_all(|_| Err(Error::Database("DB Error".to_string())));
 
         let service = SupplierService::new(mock_repo, create_mock_id_gen(1), db);
-        let filter = create_default_filter();
-        let pagination = create_default_pagination();
-        let result = service.get_all(&ctx, &filter, &pagination).await;
+        let query = create_default_query();
+        let result = service.get_all(&ctx, &query).await;
 
         assert!(matches!(result, Err(Error::Database(msg)) if msg == "DB Error"));
     }
@@ -654,47 +636,27 @@ mod tests {
         let suppliers = vec![create_full_supplier()];
         let suppliers_clone = suppliers.clone();
 
-        mock_repo.expect_get_all(move |filter, _| {
-            assert_eq!(filter.name, Some("Test".to_string()));
-            Ok(suppliers_clone.clone())
+        mock_repo.expect_get_all(move |query| {
+            assert_eq!(query.filter.name, Some("Test".to_string()));
+            Ok(SupplierPage {
+                items: suppliers_clone.clone(),
+                next_cursor: None,
+            })
         });
 
         let service = SupplierService::new(mock_repo, create_mock_id_gen(1), db);
-        let filter = SupplierFilter {
-            name: Some("Test".to_string()),
-            code: None,
-            phone: None,
-            npwp: None,
-            email: None,
+        use crate::domain::model::supplier::SupplierFilter;
+        let query = SupplierQuery {
+            filter: SupplierFilter {
+                name: Some("Test".to_string()),
+                ..SupplierFilter::default()
+            },
+            ..create_default_query()
         };
-        let pagination = create_default_pagination();
-        let result = service.get_all(&ctx, &filter, &pagination).await;
+        let result = service.get_all(&ctx, &query).await;
 
         assert!(result.is_ok());
-        let result_suppliers = result.unwrap();
-        assert_eq!(result_suppliers.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn test_get_all_with_pagination() {
-        let mut mock_repo = MockSupplierRepo::new();
-        let ctx = create_test_context();
-        let db = create_test_db().await;
-
-        let suppliers = vec![create_full_supplier()];
-        let suppliers_clone = suppliers.clone();
-
-        mock_repo.expect_get_all(move |_, pagination| {
-            assert_eq!(pagination.page, 2);
-            assert_eq!(pagination.page_size, 20);
-            Ok(suppliers_clone.clone())
-        });
-
-        let service = SupplierService::new(mock_repo, create_mock_id_gen(1), db);
-        let filter = create_default_filter();
-        let pagination = PaginationOptions::new(2, 20, None);
-        let result = service.get_all(&ctx, &filter, &pagination).await;
-
-        assert!(result.is_ok());
+        let page = result.unwrap();
+        assert_eq!(page.items.len(), 1);
     }
 }

@@ -1,20 +1,21 @@
 use async_trait::async_trait;
+use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait, Order,
+    QueryFilter, QueryOrder, QuerySelect, Set,
 };
 
 use crate::{
     domain::{
         DomainResult, Error,
-        model::{
-            customer::{Customer, CustomerCreate, CustomerFilter, CustomerUpdate},
-            pagination::PaginationOptions,
+        model::customer::{
+            Customer, CustomerCreate, CustomerCursor, CustomerPage, CustomerQuery, CustomerUpdate,
         },
     },
     storage::{
         RepoCtx,
         customer_repo::CustomerRepository,
-        sqlite::entity::{CustomerActiveModel, CustomerColumn, CustomerEntity},
+        sqlite::entity::{CustomerActiveModel, CustomerColumn, CustomerEntity, CustomerModel},
     },
 };
 
@@ -220,45 +221,121 @@ impl CustomerRepository for SqliteCustomerRepository {
     async fn get_all(
         &self,
         ctx: &RepoCtx<impl ConnectionTrait>,
-        filter: &CustomerFilter,
-        pagination: &PaginationOptions,
-    ) -> DomainResult<Vec<Customer>> {
-        use sea_orm::Condition;
+        query: &CustomerQuery,
+    ) -> DomainResult<CustomerPage> {
+        use crate::domain::model::customer::CustomerSortField;
+        use crate::domain::model::product::SortDirection;
 
-        let mut query = CustomerEntity::find().filter(CustomerColumn::IsDeleted.eq(false));
+        let mut select = CustomerEntity::find().filter(CustomerColumn::IsDeleted.eq(false));
 
-        // Apply filters
+        // ── Filters ──────────────────────────────────────────────────────────
         let mut condition = Condition::all();
 
-        if let Some(number) = &filter.number {
+        if let Some(number) = &query.filter.number {
             condition = condition.add(CustomerColumn::Number.contains(number));
         }
 
-        if let Some(name) = &filter.name {
+        if let Some(name) = &query.filter.name {
             condition = condition.add(CustomerColumn::Name.contains(name));
         }
 
-        if let Some(email) = &filter.email {
+        if let Some(email) = &query.filter.email {
             condition = condition.add(CustomerColumn::Email.contains(email));
         }
 
-        if let Some(phone) = &filter.phone {
+        if let Some(phone) = &query.filter.phone {
             condition = condition.add(CustomerColumn::Phone.contains(phone));
         }
 
-        if let Some(level) = filter.level {
+        if let Some(level) = query.filter.level {
             condition = condition.add(CustomerColumn::Level.eq(level));
         }
 
-        query = query.filter(condition);
+        select = select.filter(condition);
 
-        // Apply pagination
-        let customers = query
-            .limit(pagination.limit() as u64)
-            .offset(pagination.offset() as u64)
-            .all(&ctx.db)
-            .await?;
+        // ── Map sort field to column ──────────────────────────────────────────
+        let order = match query.sort_direction {
+            SortDirection::Asc => Order::Asc,
+            SortDirection::Desc => Order::Desc,
+        };
 
-        Ok(customers.into_iter().map(|c| c.to_domain()).collect())
+        // ── Cursor condition ──────────────────────────────────────────────────
+        if let Some(cursor) = &query.cursor {
+            let cond = match query.sort_field {
+                // For Id sort, id IS the sort column — no tiebreaker needed
+                CustomerSortField::Id => match query.sort_direction {
+                    SortDirection::Asc => {
+                        Condition::all().add(Expr::col(CustomerColumn::Id).gt(cursor.id))
+                    }
+                    SortDirection::Desc => {
+                        Condition::all().add(Expr::col(CustomerColumn::Id).lt(cursor.id))
+                    }
+                },
+                // For string/date fields: (field > val) OR (field = val AND id > cursor_id)
+                CustomerSortField::UpdatedAt | CustomerSortField::Name => {
+                    let sort_col = match query.sort_field {
+                        CustomerSortField::UpdatedAt => CustomerColumn::UpdatedAt,
+                        CustomerSortField::Name => CustomerColumn::Name,
+                        CustomerSortField::Id => unreachable!(),
+                    };
+                    match query.sort_direction {
+                        SortDirection::Asc => Condition::any()
+                            .add(Expr::col(sort_col).gt(cursor.field_value.clone()))
+                            .add(
+                                Condition::all()
+                                    .add(Expr::col(sort_col).eq(cursor.field_value.clone()))
+                                    .add(Expr::col(CustomerColumn::Id).gt(cursor.id)),
+                            ),
+                        SortDirection::Desc => Condition::any()
+                            .add(Expr::col(sort_col).lt(cursor.field_value.clone()))
+                            .add(
+                                Condition::all()
+                                    .add(Expr::col(sort_col).eq(cursor.field_value.clone()))
+                                    .add(Expr::col(CustomerColumn::Id).lt(cursor.id)),
+                            ),
+                    }
+                }
+            };
+            select = select.filter(cond);
+        }
+
+        // ── Ordering: (sort_field, id) ────────────────────────────────────────
+        select = match query.sort_field {
+            CustomerSortField::Id => select.order_by(CustomerColumn::Id, order),
+            CustomerSortField::UpdatedAt => select
+                .order_by(CustomerColumn::UpdatedAt, order.clone())
+                .order_by(CustomerColumn::Id, order),
+            CustomerSortField::Name => select
+                .order_by(CustomerColumn::Name, order.clone())
+                .order_by(CustomerColumn::Id, order),
+        };
+
+        // Fetch limit + 1 to detect whether there is a next page
+        let fetch_limit = query.limit + 1;
+        let rows: Vec<CustomerModel> = select.limit(fetch_limit).all(&ctx.db).await?;
+
+        let has_next = rows.len() as u64 > query.limit;
+        let models: Vec<_> = rows.into_iter().take(query.limit as usize).collect();
+
+        // ── Build next_cursor from the last item ──────────────────────────────
+        let next_cursor = if has_next {
+            models.last().map(|last| {
+                let field_value = match query.sort_field {
+                    CustomerSortField::Id => last.id.to_string(),
+                    CustomerSortField::UpdatedAt => last.updated_at.clone(),
+                    CustomerSortField::Name => last.name.clone(),
+                };
+                CustomerCursor {
+                    field_value,
+                    id: last.id,
+                }
+            })
+        } else {
+            None
+        };
+
+        let items: Vec<Customer> = models.into_iter().map(|m| m.to_domain()).collect();
+
+        Ok(CustomerPage { items, next_cursor })
     }
 }

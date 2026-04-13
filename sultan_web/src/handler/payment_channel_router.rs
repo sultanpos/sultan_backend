@@ -17,11 +17,14 @@ use utoipa::OpenApi;
 use validator::Validate;
 
 use crate::AppState;
-use crate::dto::payment_channel::{
-    BulkPriorityUpdateRequest, PaymentChannelCreateRequest, PaymentChannelCreateResponse,
-    PaymentChannelQueryParams, PaymentChannelResponse, PaymentChannelUpdateRequest,
+use crate::dto::{
+    ErrorResponse,
+    payment_channel::{
+        BulkPriorityUpdateRequest, PaymentChannelCreateRequest, PaymentChannelCreateResponse,
+        PaymentChannelListResponse, PaymentChannelQueryParams, PaymentChannelResponse,
+        PaymentChannelUpdateRequest,
+    },
 };
-use crate::dto::{ErrorResponse, ListResponse};
 
 // ============================================================================
 // OpenAPI Documentation
@@ -37,7 +40,8 @@ use crate::dto::{ErrorResponse, ListResponse};
         PaymentChannelResponse,
         PaymentChannelQueryParams,
         BulkPriorityUpdateRequest,
-        ListResponse<PaymentChannelResponse>,
+        PaymentChannelListResponse,
+        PaymentChannelResponse,
         ErrorResponse,
     )),
     tags(
@@ -197,7 +201,7 @@ async fn get_by_id(
     tag = "payment-channel",
     params(PaymentChannelQueryParams),
     responses(
-        (status = 200, description = "List of payment channels", body = ListResponse<PaymentChannelResponse>),
+        (status = 200, description = "List of payment channels", body = PaymentChannelListResponse),
         (status = 401, description = "Unauthorized", body = ErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -220,12 +224,12 @@ async fn get_all(
 
     Ok((
         StatusCode::OK,
-        Json(ListResponse {
-            data: channels
+        Json(PaymentChannelListResponse::from_items(
+            channels
                 .into_iter()
                 .map(PaymentChannelResponse::from)
                 .collect(),
-        }),
+        )),
     ))
 }
 

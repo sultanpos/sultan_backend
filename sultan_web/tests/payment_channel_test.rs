@@ -68,8 +68,9 @@ async fn test_get_all_success() {
         .expect("Request failed");
 
     assert_eq!(status, StatusCode::OK);
-    assert!(response["data"].as_array().unwrap().len() == 1);
-    assert_eq!(response["data"][0]["name"].as_str().unwrap(), "Cash");
+    assert!(response["items"].as_array().unwrap().len() == 1);
+    assert_eq!(response["items"][0]["name"].as_str().unwrap(), "Cash");
+    assert!(response["next_cursor"].is_null());
 }
 
 // ============================================================================

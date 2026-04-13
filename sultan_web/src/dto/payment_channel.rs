@@ -122,3 +122,20 @@ pub struct PaymentChannelQueryParams {
     #[serde(default, deserialize_with = "super::option_string_to_i64")]
     pub branch_id: Option<i64>,
 }
+
+/// List response for payment channels (all matching channels returned, no cursor pagination)
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PaymentChannelListResponse {
+    pub items: Vec<PaymentChannelResponse>,
+    /// Always `null` — payment channels are not cursor-paginated
+    pub next_cursor: Option<String>,
+}
+
+impl PaymentChannelListResponse {
+    pub fn from_items(items: Vec<PaymentChannelResponse>) -> Self {
+        Self {
+            items,
+            next_cursor: None,
+        }
+    }
+}

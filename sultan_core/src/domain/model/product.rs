@@ -98,6 +98,39 @@ pub struct CursorPage<T> {
     pub next_cursor: Option<ProductCursor>,
 }
 
+/// Sort fields available for unit of measure listing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UnitSortField {
+    Id,
+    UpdatedAt,
+    Name,
+}
+
+/// Cursor for keyset (cursor-based) pagination over units of measure.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnitCursor {
+    /// Value of the primary sort field from the last item of the previous page.
+    pub field_value: String,
+    /// ID of the last item of the previous page (tiebreaker).
+    pub id: i64,
+}
+
+/// Options for querying a list of units with cursor-based pagination.
+#[derive(Debug, Clone)]
+pub struct UnitQuery {
+    pub sort_field: UnitSortField,
+    pub sort_direction: SortDirection,
+    pub cursor: Option<UnitCursor>,
+    pub limit: u64,
+}
+
+/// A page of units with an optional cursor pointing to the next page.
+#[derive(Debug, Clone)]
+pub struct UnitPage {
+    pub items: Vec<UnitOfMeasure>,
+    pub next_cursor: Option<UnitCursor>,
+}
+
 #[derive(Debug, Clone)]
 pub struct UnitOfMeasure {
     pub id: i64,

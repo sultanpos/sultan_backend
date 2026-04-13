@@ -1,10 +1,9 @@
 use async_trait::async_trait;
 use sultan_core::application::CustomerServiceTrait;
-use sultan_core::domain::model::pagination::PaginationOptions;
 use sultan_core::domain::{
     DomainResult, Error,
     context::Context,
-    model::customer::{Customer, CustomerCreate, CustomerFilter, CustomerUpdate},
+    model::customer::{Customer, CustomerCreate, CustomerPage, CustomerQuery, CustomerUpdate},
 };
 
 pub struct MockCustomerService {
@@ -103,22 +102,23 @@ impl CustomerServiceTrait for MockCustomerService {
         }
     }
 
-    async fn get_all(
-        &self,
-        _ctx: &Context,
-        _filter: &CustomerFilter,
-        _pagination: &PaginationOptions,
-    ) -> DomainResult<Vec<Customer>> {
+    async fn get_all(&self, _ctx: &Context, _query: &CustomerQuery) -> DomainResult<CustomerPage> {
         if !self.should_succeed {
             return Err(Error::Internal("Failed to get customers".to_string()));
         }
         if self.return_empty {
-            return Ok(vec![]);
+            return Ok(CustomerPage {
+                items: vec![],
+                next_cursor: None,
+            });
         }
-        Ok(vec![
-            create_mock_customer(1, "CUST001", "John Doe"),
-            create_mock_customer(2, "CUST002", "Jane Smith"),
-        ])
+        Ok(CustomerPage {
+            items: vec![
+                create_mock_customer(1, "CUST001", "John Doe"),
+                create_mock_customer(2, "CUST002", "Jane Smith"),
+            ],
+            next_cursor: None,
+        })
     }
 }
 

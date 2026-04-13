@@ -1,5 +1,5 @@
 use axum::Extension;
-use axum::extract::Path;
+use axum::extract::{Path, Query};
 use axum::routing::get;
 use axum::{
     Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::delete,
@@ -16,7 +16,8 @@ use validator::Validate;
 
 use crate::AppState;
 use crate::dto::branch::{
-    BranchCreateResponse, BranchListResponse, BranchResponse, BranchUpdateRequest,
+    BranchCreateResponse, BranchListResponse, BranchQueryParams, BranchResponse,
+    BranchUpdateRequest,
 };
 use crate::dto::{BranchCreateRequest, ErrorResponse};
 
@@ -32,6 +33,7 @@ use crate::dto::{BranchCreateRequest, ErrorResponse};
         BranchCreateResponse,
         BranchUpdateRequest,
         BranchResponse,
+        BranchQueryParams,
         BranchListResponse,
         ErrorResponse,
     )),
@@ -197,6 +199,7 @@ async fn get_by_id(
     operation_id = "list_branches",
     path = "/api/branch",
     tag = "branch",
+    params(BranchQueryParams),
     responses(
         (status = 200, description = "Branches retrieved successfully", body = BranchListResponse),
         (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse)
@@ -205,18 +208,15 @@ async fn get_by_id(
         ("bearer_auth" = [])
     )
 )]
-#[instrument(skip(branch_service, ctx))]
+#[instrument(skip(branch_service, ctx, params))]
 async fn get_all(
     State(branch_service): State<Arc<dyn BranchServiceTrait>>,
     Extension(ctx): Extension<Context>,
+    Query(params): Query<BranchQueryParams>,
 ) -> DomainResult<impl IntoResponse> {
-    let branches = branch_service.get_all(&ctx).await?;
-    Ok((
-        StatusCode::OK,
-        Json(BranchListResponse {
-            branches: branches.into_iter().map(BranchResponse::from).collect(),
-        }),
-    ))
+    let query = params.to_query()?;
+    let page = branch_service.get_all(&ctx, &query).await?;
+    Ok((StatusCode::OK, Json(BranchListResponse::from_page(page))))
 }
 
 // ============================================================================

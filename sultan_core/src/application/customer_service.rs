@@ -8,8 +8,7 @@ use crate::{
     domain::{
         Context, DomainResult,
         model::{
-            customer::{Customer, CustomerCreate, CustomerFilter, CustomerUpdate},
-            pagination::PaginationOptions,
+            customer::{Customer, CustomerCreate, CustomerPage, CustomerQuery, CustomerUpdate},
             permission::{action, resource},
         },
     },
@@ -24,12 +23,7 @@ pub trait CustomerServiceTrait: Send + Sync {
     async fn delete(&self, ctx: &Context, id: i64) -> DomainResult<()>;
     async fn get_by_number(&self, ctx: &Context, number: &str) -> DomainResult<Option<Customer>>;
     async fn get_by_id(&self, ctx: &Context, id: i64) -> DomainResult<Option<Customer>>;
-    async fn get_all(
-        &self,
-        ctx: &Context,
-        filter: &CustomerFilter,
-        pagination: &PaginationOptions,
-    ) -> DomainResult<Vec<Customer>>;
+    async fn get_all(&self, ctx: &Context, query: &CustomerQuery) -> DomainResult<CustomerPage>;
 }
 
 pub struct CustomerService<R, I> {
@@ -114,15 +108,10 @@ where
         self.repository.get_by_id(&repo_ctx, id).await
     }
 
-    async fn get_all(
-        &self,
-        ctx: &Context,
-        filter: &CustomerFilter,
-        pagination: &PaginationOptions,
-    ) -> DomainResult<Vec<Customer>> {
+    async fn get_all(&self, ctx: &Context, query: &CustomerQuery) -> DomainResult<CustomerPage> {
         ctx.require_access(None, resource::CUSTOMER, action::READ)?;
         let repo_ctx = self.repo_ctx(ctx);
-        self.repository.get_all(&repo_ctx, filter, pagination).await
+        self.repository.get_all(&repo_ctx, query).await
     }
 }
 
@@ -133,6 +122,7 @@ mod tests {
     use crate::application::create_mock_id_gen;
     use crate::domain::Error;
     use crate::domain::model::Update;
+    use crate::domain::model::customer::CustomerFilter;
     use crate::storage::RepoCtx;
     use async_trait::async_trait;
     use chrono::Utc;
@@ -149,16 +139,8 @@ mod tests {
         get_by_id_fn: Arc<Mutex<Option<Box<dyn Fn(i64) -> DomainResult<Option<Customer>> + Send>>>>,
         get_by_number_fn:
             Arc<Mutex<Option<Box<dyn Fn(String) -> DomainResult<Option<Customer>> + Send>>>>,
-        get_all_fn: Arc<
-            Mutex<
-                Option<
-                    Box<
-                        dyn Fn(CustomerFilter, PaginationOptions) -> DomainResult<Vec<Customer>>
-                            + Send,
-                    >,
-                >,
-            >,
-        >,
+        get_all_fn:
+            Arc<Mutex<Option<Box<dyn Fn(CustomerQuery) -> DomainResult<CustomerPage> + Send>>>>,
     }
 
     impl MockCustomerRepo {
@@ -210,9 +192,7 @@ mod tests {
 
         fn expect_get_all<F>(&mut self, f: F)
         where
-            F: Fn(CustomerFilter, PaginationOptions) -> DomainResult<Vec<Customer>>
-                + Send
-                + 'static,
+            F: Fn(CustomerQuery) -> DomainResult<CustomerPage> + Send + 'static,
         {
             *self.get_all_fn.lock().unwrap() = Some(Box::new(f));
         }
@@ -286,12 +266,11 @@ mod tests {
         async fn get_all(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
-            filter: &CustomerFilter,
-            pagination: &PaginationOptions,
-        ) -> DomainResult<Vec<Customer>> {
+            query: &CustomerQuery,
+        ) -> DomainResult<CustomerPage> {
             let func = self.get_all_fn.lock().unwrap();
             if let Some(f) = func.as_ref() {
-                f(filter.clone(), pagination.clone())
+                f(query.clone())
             } else {
                 panic!("get_all not mocked")
             }
@@ -400,18 +379,22 @@ mod tests {
         }
     }
 
-    fn create_default_filter() -> CustomerFilter {
-        CustomerFilter {
-            number: None,
-            name: None,
-            email: None,
-            phone: None,
-            level: None,
-        }
-    }
+    fn create_default_query() -> CustomerQuery {
+        use crate::domain::model::product::SortDirection;
 
-    fn create_default_pagination() -> PaginationOptions {
-        PaginationOptions::new(1, 10, None)
+        CustomerQuery {
+            filter: CustomerFilter {
+                number: None,
+                name: None,
+                email: None,
+                phone: None,
+                level: None,
+            },
+            sort_field: crate::domain::model::customer::CustomerSortField::Id,
+            sort_direction: SortDirection::Asc,
+            cursor: None,
+            limit: 20,
+        }
     }
 
     // =============================================================================
@@ -829,7 +812,12 @@ mod tests {
         let customers = vec![create_full_customer()];
         let customers_clone = customers.clone();
 
-        mock_repo.expect_get_all(move |_, _| Ok(customers_clone.clone()));
+        mock_repo.expect_get_all(move |_query| {
+            Ok(CustomerPage {
+                items: customers_clone.clone(),
+                next_cursor: None,
+            })
+        });
 
         let service = CustomerService::new(
             mock_repo,
@@ -837,14 +825,13 @@ mod tests {
             Arc::new(MockNumberService::new()),
             db,
         );
-        let filter = create_default_filter();
-        let pagination = create_default_pagination();
-        let result = service.get_all(&ctx, &filter, &pagination).await;
+        let query = create_default_query();
+        let result = service.get_all(&ctx, &query).await;
 
         assert!(result.is_ok());
-        let result_customers = result.unwrap();
-        assert_eq!(result_customers.len(), 1);
-        assert_eq!(result_customers[0].name, "Test Customer");
+        let page = result.unwrap();
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].name, "Test Customer");
     }
 
     #[tokio::test]
@@ -853,7 +840,12 @@ mod tests {
         let db = create_test_db().await;
         let ctx = create_test_context();
 
-        mock_repo.expect_get_all(|_, _| Ok(vec![]));
+        mock_repo.expect_get_all(|_query| {
+            Ok(CustomerPage {
+                items: vec![],
+                next_cursor: None,
+            })
+        });
 
         let service = CustomerService::new(
             mock_repo,
@@ -861,12 +853,11 @@ mod tests {
             Arc::new(MockNumberService::new()),
             db,
         );
-        let filter = create_default_filter();
-        let pagination = create_default_pagination();
-        let result = service.get_all(&ctx, &filter, &pagination).await;
+        let query = create_default_query();
+        let result = service.get_all(&ctx, &query).await;
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
+        assert_eq!(result.unwrap().items.len(), 0);
     }
 
     #[tokio::test]
@@ -879,10 +870,9 @@ mod tests {
             Arc::new(MockNumberService::new()),
             db,
         );
-        let filter = create_default_filter();
-        let pagination = create_default_pagination();
+        let query = create_default_query();
 
-        let result = service.get_all(&ctx, &filter, &pagination).await;
+        let result = service.get_all(&ctx, &query).await;
         assert!(matches!(result, Err(Error::Forbidden(_))));
     }
 
@@ -892,7 +882,7 @@ mod tests {
         let db = create_test_db().await;
         let ctx = create_test_context();
 
-        mock_repo.expect_get_all(|_, _| Err(Error::Database("DB Error".to_string())));
+        mock_repo.expect_get_all(|_query| Err(Error::Database("DB Error".to_string())));
 
         let service = CustomerService::new(
             mock_repo,
@@ -900,9 +890,8 @@ mod tests {
             Arc::new(MockNumberService::new()),
             db,
         );
-        let filter = create_default_filter();
-        let pagination = create_default_pagination();
-        let result = service.get_all(&ctx, &filter, &pagination).await;
+        let query = create_default_query();
+        let result = service.get_all(&ctx, &query).await;
         assert!(matches!(result, Err(Error::Database(msg)) if msg == "DB Error"));
     }
 
@@ -915,9 +904,12 @@ mod tests {
         let customers = vec![create_full_customer()];
         let customers_clone = customers.clone();
 
-        mock_repo.expect_get_all(move |filter, _| {
-            assert_eq!(filter.name, Some("Test".to_string()));
-            Ok(customers_clone.clone())
+        mock_repo.expect_get_all(move |query| {
+            assert_eq!(query.filter.name, Some("Test".to_string()));
+            Ok(CustomerPage {
+                items: customers_clone.clone(),
+                next_cursor: None,
+            })
         });
 
         let service = CustomerService::new(
@@ -926,46 +918,24 @@ mod tests {
             Arc::new(MockNumberService::new()),
             db,
         );
-        let filter = CustomerFilter {
-            number: None,
-            name: Some("Test".to_string()),
-            email: None,
-            phone: None,
-            level: None,
+        use crate::domain::model::product::SortDirection;
+        let query = CustomerQuery {
+            filter: CustomerFilter {
+                number: None,
+                name: Some("Test".to_string()),
+                email: None,
+                phone: None,
+                level: None,
+            },
+            sort_field: crate::domain::model::customer::CustomerSortField::Id,
+            sort_direction: SortDirection::Asc,
+            cursor: None,
+            limit: 20,
         };
-        let pagination = create_default_pagination();
-        let result = service.get_all(&ctx, &filter, &pagination).await;
+        let result = service.get_all(&ctx, &query).await;
 
         assert!(result.is_ok());
-        let result_customers = result.unwrap();
-        assert_eq!(result_customers.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn test_get_all_with_pagination() {
-        let mut mock_repo = MockCustomerRepo::new();
-        let db = create_test_db().await;
-        let ctx = create_test_context();
-
-        let customers = vec![create_full_customer()];
-        let customers_clone = customers.clone();
-
-        mock_repo.expect_get_all(move |_, pagination| {
-            assert_eq!(pagination.page, 2);
-            assert_eq!(pagination.page_size, 20);
-            Ok(customers_clone.clone())
-        });
-
-        let service = CustomerService::new(
-            mock_repo,
-            create_mock_id_gen(1),
-            Arc::new(MockNumberService::new()),
-            db,
-        );
-        let filter = create_default_filter();
-        let pagination = PaginationOptions::new(2, 20, None);
-        let result = service.get_all(&ctx, &filter, &pagination).await;
-
-        assert!(result.is_ok());
+        let page = result.unwrap();
+        assert_eq!(page.items.len(), 1);
     }
 }
