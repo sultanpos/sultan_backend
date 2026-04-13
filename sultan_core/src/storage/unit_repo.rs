@@ -1,6 +1,8 @@
 use crate::domain::{
     DomainResult,
-    model::product::{UnitOfMeasure, UnitOfMeasureCreate, UnitOfMeasureUpdate},
+    model::product::{
+        UnitOfMeasure, UnitOfMeasureCreate, UnitOfMeasureUpdate, UnitPage, UnitQuery,
+    },
 };
 use async_trait::async_trait;
 use sea_orm::ConnectionTrait;
@@ -124,18 +126,20 @@ pub trait UnitOfMeasureRepository: Send + Sync {
     async fn delete(&self, ctx: &super::RepoCtx<impl ConnectionTrait>, id: i64)
     -> DomainResult<()>;
 
-    /// Lists all non-deleted units of measure.
+    /// Lists all non-deleted units of measure with cursor-based pagination.
     ///
     /// # Arguments
     ///
     /// * `ctx` - Repository context with database connection
+    /// * `query` - Query options including sort field/direction, cursor, and limit
     ///
     /// # Returns
     ///
-    /// * `Ok(Vec<unit>)` - List of all active units
+    /// * `Ok(UnitPage)` - Page of units with optional next cursor
     /// * `Err(Error)` - Database error
     async fn get_all(
         &self,
         ctx: &super::RepoCtx<impl ConnectionTrait>,
-    ) -> DomainResult<Vec<UnitOfMeasure>>;
+        query: &UnitQuery,
+    ) -> DomainResult<UnitPage>;
 }
