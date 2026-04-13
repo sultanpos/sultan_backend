@@ -439,7 +439,7 @@ async fn test_get_all_categories_success() {
 
     // Assert
     assert_eq!(status, StatusCode::OK);
-    let categories = response.as_array().unwrap();
+    let categories = response["items"].as_array().unwrap();
     assert_eq!(categories.len(), 2);
 
     // Check first category
@@ -455,6 +455,7 @@ async fn test_get_all_categories_success() {
         categories[1]["description"].as_str().unwrap(),
         "Books and magazines"
     );
+    assert!(response["next_cursor"].is_null());
 }
 
 #[tokio::test]
@@ -520,8 +521,9 @@ async fn test_get_all_categories_empty() {
 
     // Assert
     assert_eq!(status, StatusCode::OK);
-    let categories = response.as_array().unwrap();
+    let categories = response["items"].as_array().unwrap();
     assert_eq!(categories.len(), 0);
+    assert!(response["next_cursor"].is_null());
 }
 
 // ============================================================================
@@ -664,7 +666,7 @@ async fn test_get_all_categories_with_children_structure() {
 
     // Assert
     assert_eq!(status, StatusCode::OK);
-    let categories = response.as_array().unwrap();
+    let categories = response["items"].as_array().unwrap();
     assert!(!categories.is_empty());
 
     // Verify structure includes children arrays (even if empty)
@@ -674,6 +676,7 @@ async fn test_get_all_categories_with_children_structure() {
         // children field should be present in the response
         assert!(category.get("children").is_some());
     }
+    assert!(response["next_cursor"].is_null());
 }
 
 #[tokio::test]

@@ -58,6 +58,23 @@ pub struct CategoryUpdateRequest {
     pub parent_id: Update<i64>,
 }
 
+/// List response for categories (all categories returned, no pagination)
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CategoryListResponse {
+    pub items: Vec<CategoryResponse>,
+    /// Always `null` — categories are not paginated
+    pub next_cursor: Option<String>,
+}
+
+impl CategoryListResponse {
+    pub fn from_items(items: Vec<CategoryResponse>) -> Self {
+        Self {
+            items,
+            next_cursor: None,
+        }
+    }
+}
+
 /// Child category response (simplified, no recursion)
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CategoryChildResponse {

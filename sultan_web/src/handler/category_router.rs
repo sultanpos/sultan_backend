@@ -15,7 +15,9 @@ use utoipa::OpenApi;
 use validator::Validate;
 
 use crate::AppState;
-use crate::dto::category::{CategoryChildResponse, CategoryResponse, CategoryUpdateRequest};
+use crate::dto::category::{
+    CategoryChildResponse, CategoryListResponse, CategoryResponse, CategoryUpdateRequest,
+};
 use crate::dto::{CategoryCreateRequest, CategoryCreateResponse, ErrorResponse};
 
 // ============================================================================
@@ -29,6 +31,7 @@ use crate::dto::{CategoryCreateRequest, CategoryCreateResponse, ErrorResponse};
         CategoryCreateRequest,
         CategoryCreateResponse,
         CategoryUpdateRequest,
+        CategoryListResponse,
         CategoryResponse,
         CategoryChildResponse,
         ErrorResponse
@@ -229,7 +232,7 @@ async fn get_by_id(
     path = "/api/category",
     tag = "category",
     responses(
-        (status = 200, description = "Categories retrieved successfully", body = Vec<CategoryResponse>),
+        (status = 200, description = "Categories retrieved successfully", body = CategoryListResponse),
         (status = 401, description = "Unauthorized - missing or invalid token", body = ErrorResponse)
     ),
     security(
@@ -242,28 +245,27 @@ async fn get_all(
     Extension(ctx): Extension<Context>,
 ) -> DomainResult<impl IntoResponse> {
     let result = category_service.get_all(&ctx).await?;
+    let items = result
+        .into_iter()
+        .map(|category| CategoryResponse {
+            id: category.id,
+            name: category.name,
+            description: category.description,
+            children: category.children.map(|children| {
+                children
+                    .into_iter()
+                    .map(|child| CategoryChildResponse {
+                        id: child.id,
+                        name: child.name,
+                        description: child.description,
+                    })
+                    .collect()
+            }),
+        })
+        .collect::<Vec<_>>();
     Ok((
         StatusCode::OK,
-        Json(
-            result
-                .into_iter()
-                .map(|category| CategoryResponse {
-                    id: category.id,
-                    name: category.name,
-                    description: category.description,
-                    children: category.children.map(|children| {
-                        children
-                            .into_iter()
-                            .map(|child| CategoryChildResponse {
-                                id: child.id,
-                                name: child.name,
-                                description: child.description,
-                            })
-                            .collect()
-                    }),
-                })
-                .collect::<Vec<_>>(),
-        ),
+        Json(CategoryListResponse::from_items(items)),
     ))
 }
 
