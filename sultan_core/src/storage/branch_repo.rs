@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use sea_orm::ConnectionTrait;
 
 use crate::domain::DomainResult;
-use crate::domain::model::branch::{Branch, BranchCreate, BranchUpdate};
+use crate::domain::model::branch::{Branch, BranchCreate, BranchPage, BranchQuery, BranchUpdate};
 
 /// Repository trait for Branch operations.
 ///
@@ -43,7 +43,7 @@ use crate::domain::model::branch::{Branch, BranchCreate, BranchUpdate};
 ///     let branch = repo.get_by_id(&ctx, 12345).await?;
 ///     
 ///     // List all branches
-///     let branches = repo.get_all(&ctx).await?;
+///     let branches = repo.get_all(&ctx, &query).await?;
 ///     
 ///     Ok(())
 /// }
@@ -110,20 +110,24 @@ pub trait BranchRepository: Send + Sync {
     async fn delete(&self, ctx: &super::RepoCtx<impl ConnectionTrait>, id: i64)
     -> DomainResult<()>;
 
-    /// Lists all non-deleted branches.
+    /// Lists non-deleted branches with cursor-based pagination.
+    ///
+    /// Results are ordered by `(sort_field, id)` to guarantee stable ordering.
     ///
     /// # Arguments
     ///
     /// * `ctx` - Repository context with database connection
+    /// * `query` - Query options including filter, sort, cursor, and limit
     ///
     /// # Returns
     ///
-    /// * `Ok(Vec<Branch>)` - List of all active branches
+    /// * `Ok(BranchPage)` - Page of branches with an optional next cursor
     /// * `Err(Error)` - Database error
     async fn get_all(
         &self,
         ctx: &super::RepoCtx<impl ConnectionTrait>,
-    ) -> DomainResult<Vec<Branch>>;
+        query: &BranchQuery,
+    ) -> DomainResult<BranchPage>;
 
     /// Retrieves a branch by ID (excluding soft-deleted records).
     ///

@@ -1,6 +1,46 @@
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 
-use super::Update;
+use super::{Update, product::SortDirection};
+
+/// Sort fields available for branch listing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BranchSortField {
+    CreatedAt,
+    Name,
+}
+
+/// Cursor for keyset (cursor-based) pagination over branches.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BranchCursor {
+    /// Value of the primary sort field from the last item of the previous page.
+    pub field_value: String,
+    /// ID of the last item of the previous page (tiebreaker).
+    pub id: i64,
+}
+
+/// Filter options for branch listing.
+#[derive(Debug, Clone, Default)]
+pub struct BranchFilter {
+    pub name: Option<String>,
+}
+
+/// Options for querying a list of branches with cursor-based pagination.
+#[derive(Debug, Clone)]
+pub struct BranchQuery {
+    pub filter: BranchFilter,
+    pub sort_field: BranchSortField,
+    pub sort_direction: SortDirection,
+    pub cursor: Option<BranchCursor>,
+    pub limit: u64,
+}
+
+/// A page of branches with an optional cursor pointing to the next page.
+#[derive(Debug, Clone)]
+pub struct BranchPage {
+    pub items: Vec<Branch>,
+    pub next_cursor: Option<BranchCursor>,
+}
 
 #[derive(Debug, Clone)]
 pub struct Branch {
