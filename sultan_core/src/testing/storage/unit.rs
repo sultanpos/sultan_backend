@@ -3,7 +3,9 @@ use sea_orm::DatabaseConnection;
 use crate::{
     domain::model::{
         Update,
-        product::{SortDirection, UnitOfMeasureCreate, UnitOfMeasureUpdate, UnitQuery, UnitSortField},
+        product::{
+            SortDirection, UnitOfMeasureCreate, UnitOfMeasureUpdate, UnitQuery, UnitSortField,
+        },
     },
     storage::{RepoCtx, unit_repo::UnitOfMeasureRepository},
 };
@@ -274,7 +276,11 @@ pub async fn unit_test_get_all<U: UnitOfMeasureRepository>(
 
     // Should have at least our 3 units (may have more from other tests)
     assert!(page.items.len() >= 3);
-    assert!(page.items.iter().any(|u| u.id == id1 && u.name == "Kilogram"));
+    assert!(
+        page.items
+            .iter()
+            .any(|u| u.id == id1 && u.name == "Kilogram")
+    );
     assert!(page.items.iter().any(|u| u.id == id2 && u.name == "Liter"));
     assert!(page.items.iter().any(|u| u.id == id3 && u.name == "Piece"));
 }
