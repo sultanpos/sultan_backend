@@ -8,6 +8,7 @@ pub mod machine_service;
 pub mod number_service;
 pub mod payment_channel_service;
 pub mod product_service;
+pub mod purchase_order_service;
 pub mod supplier_service;
 pub mod user_service;
 
@@ -21,6 +22,7 @@ pub use machine_service::{MachineService, MachineServiceTrait};
 pub use number_service::{NumberService, NumberServiceTrait};
 pub use payment_channel_service::{PaymentChannelService, PaymentChannelServiceTrait};
 pub use product_service::{ProductService, ProductServiceTrait};
+pub use purchase_order_service::{PurchaseOrderService, PurchaseOrderServiceTrait};
 pub use supplier_service::{SupplierService, SupplierServiceTrait};
 pub use user_service::{UserService, UserServiceTrait};
 
