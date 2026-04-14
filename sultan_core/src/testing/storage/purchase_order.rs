@@ -166,7 +166,6 @@ pub async fn purchase_order_test_create_and_get_by_id<C: PurchaseOrderRepository
     let variant_id = create_test_product_variant(ctx).await;
 
     let id = super::generate_test_id().await;
-    let item_id = super::generate_test_id().await;
 
     let create = PurchaseOrderCreate {
         branch_id,
@@ -180,6 +179,10 @@ pub async fn purchase_order_test_create_and_get_by_id<C: PurchaseOrderRepository
         notes: Some("Test order".to_string()),
         metadata: None,
     };
+
+    repo.create(ctx, id, &create).await.expect("create failed");
+
+    let item_id = super::generate_test_id().await;
     let create_item = PurchaseOrderItemCreate {
         product_variant_id: variant_id,
         product_name: "Test Product".to_string(),
@@ -189,10 +192,9 @@ pub async fn purchase_order_test_create_and_get_by_id<C: PurchaseOrderRepository
         unit_cost: 5_000,
         discount_amount: 0,
     };
-
-    repo.create(ctx, id, &create, &[(item_id, create_item)])
+    repo.add_item(ctx, id, item_id, &create_item)
         .await
-        .expect("create failed");
+        .expect("add_item failed");
 
     let fetched = repo
         .get_by_id(ctx, id)
@@ -242,10 +244,12 @@ pub async fn purchase_order_test_update<C: PurchaseOrderRepository>(
             notes: None,
             metadata: None,
         },
-        &[(item_id, one_item(variant_id))],
     )
     .await
     .expect("create failed");
+    repo.add_item(ctx, id, item_id, &one_item(variant_id))
+        .await
+        .expect("add_item failed");
 
     repo.update(
         ctx,
@@ -298,10 +302,12 @@ pub async fn purchase_order_test_add_payment_updates_paid_amount<C: PurchaseOrde
             notes: None,
             metadata: None,
         },
-        &[(item_id, one_item(variant_id))], // total = 20_000
     )
     .await
     .expect("create failed");
+    repo.add_item(ctx, id, item_id, &one_item(variant_id))
+        .await
+        .expect("add_item failed");
 
     let channel_id = create_test_payment_channel(ctx).await;
     repo.add_payment(
@@ -353,10 +359,12 @@ pub async fn purchase_order_test_add_payment_full_status_paid<C: PurchaseOrderRe
             notes: None,
             metadata: None,
         },
-        &[(item_id, one_item(variant_id))], // total = 20_000
     )
     .await
     .expect("create failed");
+    repo.add_item(ctx, id, item_id, &one_item(variant_id))
+        .await
+        .expect("add_item failed");
 
     let channel_id = create_test_payment_channel(ctx).await;
     repo.add_payment(
@@ -429,10 +437,12 @@ pub async fn purchase_order_test_soft_delete<C: PurchaseOrderRepository>(
             notes: None,
             metadata: None,
         },
-        &[(item_id, one_item(variant_id))],
     )
     .await
     .expect("create failed");
+    repo.add_item(ctx, id, item_id, &one_item(variant_id))
+        .await
+        .expect("add_item failed");
 
     repo.delete(ctx, id).await.expect("delete failed");
 
@@ -507,10 +517,12 @@ pub async fn purchase_order_test_get_all_filter_by_status<C: PurchaseOrderReposi
                 notes: None,
                 metadata: None,
             },
-            &[(item_id, one_item(variant_id))],
         )
         .await
         .expect("create failed");
+        repo.add_item(ctx, id, item_id, &one_item(variant_id))
+            .await
+            .expect("add_item failed");
     }
 
     repo.update(
@@ -575,10 +587,12 @@ pub async fn purchase_order_test_get_all_filter_by_supplier<C: PurchaseOrderRepo
                 notes: None,
                 metadata: None,
             },
-            &[(item_id, one_item(variant_id))],
         )
         .await
         .expect("create failed");
+        repo.add_item(ctx, id, item_id, &one_item(variant_id))
+            .await
+            .expect("add_item failed");
     }
 
     let page = repo
@@ -621,10 +635,12 @@ pub async fn purchase_order_test_get_all_filter_by_number<C: PurchaseOrderReposi
             notes: None,
             metadata: None,
         },
-        &[(item_id, one_item(variant_id))],
     )
     .await
     .expect("create failed");
+    repo.add_item(ctx, id, item_id, &one_item(variant_id))
+        .await
+        .expect("add_item failed");
 
     let page = repo
         .get_all(
@@ -665,10 +681,12 @@ pub async fn purchase_order_test_get_all_filter_by_reference_number<C: PurchaseO
             notes: None,
             metadata: None,
         },
-        &[(item_id, one_item(variant_id))],
     )
     .await
     .expect("create failed");
+    repo.add_item(ctx, id, item_id, &one_item(variant_id))
+        .await
+        .expect("add_item failed");
 
     let page = repo
         .get_all(
@@ -711,10 +729,12 @@ pub async fn purchase_order_test_cursor_pagination<C: PurchaseOrderRepository>(
                 notes: None,
                 metadata: None,
             },
-            &[(item_id, one_item(variant_id))],
         )
         .await
         .expect("create failed");
+        repo.add_item(ctx, id, item_id, &one_item(variant_id))
+            .await
+            .expect("add_item failed");
     }
 
     let page1 = repo
@@ -781,25 +801,25 @@ pub async fn purchase_order_test_add_item<C: PurchaseOrderRepository>(
         notes: None,
         metadata: None,
     };
-    repo.create(
+    repo.create(ctx, order_id, &create)
+        .await
+        .expect("create failed");
+    repo.add_item(
         ctx,
         order_id,
-        &create,
-        &[(
-            item_id1,
-            PurchaseOrderItemCreate {
-                product_variant_id: variant_id,
-                product_name: "Product A".to_string(),
-                variant_name: None,
-                barcode: None,
-                quantity: 5,
-                unit_cost: 1_000,
-                discount_amount: 0,
-            },
-        )],
+        item_id1,
+        &PurchaseOrderItemCreate {
+            product_variant_id: variant_id,
+            product_name: "Product A".to_string(),
+            variant_name: None,
+            barcode: None,
+            quantity: 5,
+            unit_cost: 1_000,
+            discount_amount: 0,
+        },
     )
     .await
-    .expect("create failed");
+    .expect("add_item failed");
 
     let order_before = repo.get_by_id(ctx, order_id).await.unwrap().unwrap();
     assert_eq!(order_before.subtotal, 5_000);
@@ -849,21 +869,25 @@ pub async fn purchase_order_test_update_item<C: PurchaseOrderRepository>(
             notes: None,
             metadata: None,
         },
-        &[(
-            item_id,
-            PurchaseOrderItemCreate {
-                product_variant_id: variant_id,
-                product_name: "Old Name".to_string(),
-                variant_name: None,
-                barcode: None,
-                quantity: 2,
-                unit_cost: 5_000,
-                discount_amount: 0,
-            },
-        )],
     )
     .await
     .expect("create failed");
+    repo.add_item(
+        ctx,
+        order_id,
+        item_id,
+        &PurchaseOrderItemCreate {
+            product_variant_id: variant_id,
+            product_name: "Old Name".to_string(),
+            variant_name: None,
+            barcode: None,
+            quantity: 2,
+            unit_cost: 5_000,
+            discount_amount: 0,
+        },
+    )
+    .await
+    .expect("add_item failed");
 
     repo.update_item(
         ctx,
@@ -912,35 +936,41 @@ pub async fn purchase_order_test_delete_item<C: PurchaseOrderRepository>(
             notes: None,
             metadata: None,
         },
-        &[
-            (
-                item_id1,
-                PurchaseOrderItemCreate {
-                    product_variant_id: variant_id,
-                    product_name: "Item 1".to_string(),
-                    variant_name: None,
-                    barcode: None,
-                    quantity: 2,
-                    unit_cost: 5_000,
-                    discount_amount: 0,
-                },
-            ),
-            (
-                item_id2,
-                PurchaseOrderItemCreate {
-                    product_variant_id: variant_id,
-                    product_name: "Item 2".to_string(),
-                    variant_name: None,
-                    barcode: None,
-                    quantity: 1,
-                    unit_cost: 3_000,
-                    discount_amount: 0,
-                },
-            ),
-        ],
     )
     .await
     .expect("create failed");
+    repo.add_item(
+        ctx,
+        order_id,
+        item_id1,
+        &PurchaseOrderItemCreate {
+            product_variant_id: variant_id,
+            product_name: "Item 1".to_string(),
+            variant_name: None,
+            barcode: None,
+            quantity: 2,
+            unit_cost: 5_000,
+            discount_amount: 0,
+        },
+    )
+    .await
+    .expect("add_item failed");
+    repo.add_item(
+        ctx,
+        order_id,
+        item_id2,
+        &PurchaseOrderItemCreate {
+            product_variant_id: variant_id,
+            product_name: "Item 2".to_string(),
+            variant_name: None,
+            barcode: None,
+            quantity: 1,
+            unit_cost: 3_000,
+            discount_amount: 0,
+        },
+    )
+    .await
+    .expect("add_item failed");
 
     let order_before = repo.get_by_id(ctx, order_id).await.unwrap().unwrap();
     assert_eq!(order_before.subtotal, 13_000);
@@ -988,10 +1018,12 @@ pub async fn purchase_order_test_get_items<C: PurchaseOrderRepository>(
             notes: None,
             metadata: None,
         },
-        &[(item_id, one_item(variant_id))],
     )
     .await
     .expect("create failed");
+    repo.add_item(ctx, order_id, item_id, &one_item(variant_id))
+        .await
+        .expect("add_item failed");
 
     let items = repo
         .get_items(ctx, order_id)
@@ -1029,10 +1061,12 @@ pub async fn purchase_order_test_get_payments<C: PurchaseOrderRepository>(
             notes: None,
             metadata: None,
         },
-        &[(item_id, one_item(variant_id))],
     )
     .await
     .expect("create failed");
+    repo.add_item(ctx, order_id, item_id, &one_item(variant_id))
+        .await
+        .expect("add_item failed");
 
     let channel_id = create_test_payment_channel(ctx).await;
     repo.add_payment(
@@ -1085,10 +1119,12 @@ pub async fn purchase_order_test_update_payment<C: PurchaseOrderRepository>(
             notes: None,
             metadata: None,
         },
-        &[(item_id, one_item(variant_id))], // subtotal = 20_000
     )
     .await
     .expect("create failed");
+    repo.add_item(ctx, order_id, item_id, &one_item(variant_id))
+        .await
+        .expect("add_item failed");
 
     let channel_id_1 = create_test_payment_channel(ctx).await;
     let channel_id_2 = create_test_payment_channel(ctx).await;
@@ -1165,10 +1201,12 @@ pub async fn purchase_order_test_delete_payment<C: PurchaseOrderRepository>(
             notes: None,
             metadata: None,
         },
-        &[(item_id, one_item(variant_id))], // total = 20_000
     )
     .await
     .expect("create failed");
+    repo.add_item(ctx, order_id, item_id, &one_item(variant_id))
+        .await
+        .expect("add_item failed");
 
     let channel_id = create_test_payment_channel(ctx).await;
     repo.add_payment(
@@ -1246,10 +1284,12 @@ pub async fn purchase_order_test_pagination_asc_ordering_and_last_page<
                 notes: None,
                 metadata: None,
             },
-            &[(item_id, one_item(variant_id))],
         )
         .await
         .expect("create failed");
+        repo.add_item(ctx, id, item_id, &one_item(variant_id))
+            .await
+            .expect("add_item failed");
     }
 
     let query = |cursor| PurchaseOrderQuery {
@@ -1323,10 +1363,12 @@ pub async fn purchase_order_test_pagination_desc_ordering<C: PurchaseOrderReposi
                 notes: None,
                 metadata: None,
             },
-            &[(item_id, one_item(variant_id))],
         )
         .await
         .expect("create failed");
+        repo.add_item(ctx, id, item_id, &one_item(variant_id))
+            .await
+            .expect("add_item failed");
     }
 
     let query = |cursor| PurchaseOrderQuery {
@@ -1398,10 +1440,12 @@ pub async fn purchase_order_test_pagination_order_date_nulls_excluded<
                 notes: None,
                 metadata: None,
             },
-            &[(item_id, one_item(variant_id))],
         )
         .await
         .expect("create with date failed");
+        repo.add_item(ctx, id, item_id, &one_item(variant_id))
+            .await
+            .expect("add_item failed");
     }
     for number in &null_numbers {
         let id = super::generate_test_id().await;
@@ -1421,10 +1465,12 @@ pub async fn purchase_order_test_pagination_order_date_nulls_excluded<
                 notes: None,
                 metadata: None,
             },
-            &[(item_id, one_item(variant_id))],
         )
         .await
         .expect("create without date failed");
+        repo.add_item(ctx, id, item_id, &one_item(variant_id))
+            .await
+            .expect("add_item failed");
     }
 
     let page = repo
@@ -1485,10 +1531,12 @@ pub async fn purchase_order_test_pagination_payment_due_date_nulls_excluded<
                 notes: None,
                 metadata: None,
             },
-            &[(item_id, one_item(variant_id))],
         )
         .await
         .expect("create with due_date failed");
+        repo.add_item(ctx, id, item_id, &one_item(variant_id))
+            .await
+            .expect("add_item failed");
     }
     for number in &null_numbers {
         let id = super::generate_test_id().await;
@@ -1508,10 +1556,12 @@ pub async fn purchase_order_test_pagination_payment_due_date_nulls_excluded<
                 notes: None,
                 metadata: None,
             },
-            &[(item_id, one_item(variant_id))],
         )
         .await
         .expect("create without due_date failed");
+        repo.add_item(ctx, id, item_id, &one_item(variant_id))
+            .await
+            .expect("add_item failed");
     }
 
     let page = repo

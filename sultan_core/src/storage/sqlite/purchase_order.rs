@@ -117,12 +117,8 @@ impl PurchaseOrderRepository for SqlitePurchaseOrderRepository {
         ctx: &RepoCtx<impl ConnectionTrait>,
         id: i64,
         data: &PurchaseOrderCreate,
-        items: &[(i64, PurchaseOrderItemCreate)],
     ) -> DomainResult<()> {
         let now = now_str();
-
-        let subtotal: i64 = items.iter().map(|(_, item)| item.total_cost()).sum();
-        let total_amount = subtotal - data.discount_amount;
 
         let order = PurchaseOrderActiveModel {
             id: Set(id),
@@ -142,9 +138,9 @@ impl PurchaseOrderRepository for SqlitePurchaseOrderRepository {
             order_date: Set(data.order_date.clone()),
             expected_date: Set(data.expected_date.clone()),
             received_date: Set(None),
-            subtotal: Set(subtotal),
+            subtotal: Set(0),
             discount_amount: Set(data.discount_amount),
-            total_amount: Set(total_amount),
+            total_amount: Set(0),
             payment_status: Set(PaymentStatus::Unpaid.as_str().to_string()),
             payment_due_date: Set(data.payment_due_date.clone()),
             paid_amount: Set(0),
@@ -156,26 +152,6 @@ impl PurchaseOrderRepository for SqlitePurchaseOrderRepository {
                 .and_then(|v| serde_json::to_string(v).ok())),
         };
         order.insert(&ctx.db).await?;
-
-        for (item_id, item_data) in items {
-            let item = PurchaseOrderItemActiveModel {
-                id: Set(*item_id),
-                created_at: Set(now.clone()),
-                updated_at: Set(now.clone()),
-                purchase_order_id: Set(id),
-                product_variant_id: Set(item_data.product_variant_id),
-                product_name: Set(item_data.product_name.clone()),
-                variant_name: Set(item_data.variant_name.clone()),
-                barcode: Set(item_data.barcode.clone()),
-                quantity: Set(item_data.quantity),
-                unit_cost: Set(item_data.unit_cost),
-                discount_amount: Set(item_data.discount_amount),
-                total_cost: Set(item_data.total_cost()),
-                metadata: Set(None),
-            };
-            item.insert(&ctx.db).await?;
-        }
-
         Ok(())
     }
 

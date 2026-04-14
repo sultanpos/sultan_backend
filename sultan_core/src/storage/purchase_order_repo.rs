@@ -15,17 +15,15 @@ pub trait PurchaseOrderRepository: Send + Sync {
     /// Creates a new purchase order together with its line items.
     ///
     /// `id` is the Snowflake ID for the purchase_order row. Each element of
-    /// `items` is `(snowflake_id, create_data)` for the corresponding line item.
     ///
-    /// **Transaction responsibility**: this method executes multiple INSERT
-    /// statements (order + items). To guarantee all-or-nothing semantics, pass
+    /// **Transaction responsibility**: this method executes INSERT
+    /// order. To guarantee all-or-nothing semantics, pass
     /// a `RepoCtx` whose `db` is a `&DatabaseTransaction` started by the caller.
     async fn create(
         &self,
         ctx: &super::RepoCtx<impl ConnectionTrait>,
         id: i64,
         data: &PurchaseOrderCreate,
-        items: &[(i64, PurchaseOrderItemCreate)],
     ) -> DomainResult<()>;
 
     /// Appends a payment row to an existing purchase order and updates
