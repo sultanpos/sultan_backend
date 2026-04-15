@@ -7,5 +7,6 @@ pub mod machine_router;
 pub mod middleware;
 pub mod payment_channel_router;
 pub mod product_router;
+pub mod purchase_order_router;
 pub mod supplier_routes;
 pub mod user_routes;

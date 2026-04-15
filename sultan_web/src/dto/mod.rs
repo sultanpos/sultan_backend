@@ -7,6 +7,7 @@ pub mod login;
 pub mod machine;
 pub mod payment_channel;
 pub mod product;
+pub mod purchase_order;
 pub mod supplier;
 pub mod user;
 
