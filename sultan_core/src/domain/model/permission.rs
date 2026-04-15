@@ -12,6 +12,7 @@ pub mod resource {
     pub const MACHINE: i32 = 11;
     pub const CASHIER_SESSION: i32 = 12;
     pub const PAYMENT_CHANNEL: i32 = 13;
+    pub const PURCHASE_ORDER: i32 = 14;
 }
 
 pub mod action {

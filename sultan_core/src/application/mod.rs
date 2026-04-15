@@ -8,6 +8,7 @@ pub mod machine_service;
 pub mod number_service;
 pub mod payment_channel_service;
 pub mod product_service;
+pub mod purchase_order_service;
 pub mod supplier_service;
 pub mod user_service;
 
@@ -21,6 +22,7 @@ pub use machine_service::{MachineService, MachineServiceTrait};
 pub use number_service::{NumberService, NumberServiceTrait};
 pub use payment_channel_service::{PaymentChannelService, PaymentChannelServiceTrait};
 pub use product_service::{ProductService, ProductServiceTrait};
+pub use purchase_order_service::{PurchaseOrderService, PurchaseOrderServiceTrait};
 pub use supplier_service::{SupplierService, SupplierServiceTrait};
 pub use user_service::{UserService, UserServiceTrait};
 
@@ -70,4 +72,60 @@ pub fn create_mock_id_gen(id: i64) -> MockIdGen {
     let mut mock_id_gen = MockIdGen::new();
     mock_id_gen.expect_generate().returning(move || Ok(id));
     mock_id_gen
+}
+
+#[cfg(test)]
+pub mod test_helpers {
+    use std::sync::{Arc, Mutex};
+
+    use async_trait::async_trait;
+
+    use crate::{
+        application::NumberServiceTrait,
+        domain::{Context, DomainResult},
+    };
+
+    #[derive(Clone)]
+    pub struct MockNumberService {
+        pub generate_fn: Arc<
+            Mutex<
+                Option<
+                    Box<dyn Fn(String, Option<i64>, Option<i32>) -> DomainResult<String> + Send>,
+                >,
+            >,
+        >,
+    }
+
+    impl MockNumberService {
+        pub fn new() -> Self {
+            Self {
+                generate_fn: Arc::new(Mutex::new(None)),
+            }
+        }
+
+        pub fn expect_generate<F>(&mut self, f: F)
+        where
+            F: Fn(String, Option<i64>, Option<i32>) -> DomainResult<String> + Send + 'static,
+        {
+            *self.generate_fn.lock().unwrap() = Some(Box::new(f));
+        }
+    }
+
+    #[async_trait]
+    impl NumberServiceTrait for MockNumberService {
+        async fn generate(
+            &self,
+            _ctx: &Context,
+            prefix: &str,
+            branch_id: Option<i64>,
+            month: Option<i32>,
+        ) -> DomainResult<String> {
+            let func = self.generate_fn.lock().unwrap();
+            if let Some(f) = func.as_ref() {
+                f(prefix.to_string(), branch_id, month)
+            } else {
+                panic!("generate not mocked")
+            }
+        }
+    }
 }

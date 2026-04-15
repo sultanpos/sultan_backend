@@ -277,50 +277,7 @@ mod tests {
         }
     }
 
-    // Mock NumberService
-    #[derive(Clone)]
-    struct MockNumberService {
-        generate_fn: Arc<
-            Mutex<
-                Option<
-                    Box<dyn Fn(String, Option<i64>, Option<i32>) -> DomainResult<String> + Send>,
-                >,
-            >,
-        >,
-    }
-
-    impl MockNumberService {
-        fn new() -> Self {
-            Self {
-                generate_fn: Arc::new(Mutex::new(None)),
-            }
-        }
-
-        fn expect_generate<F>(&mut self, f: F)
-        where
-            F: Fn(String, Option<i64>, Option<i32>) -> DomainResult<String> + Send + 'static,
-        {
-            *self.generate_fn.lock().unwrap() = Some(Box::new(f));
-        }
-    }
-
-    #[async_trait]
-    impl NumberServiceTrait for MockNumberService {
-        async fn generate(
-            &self,
-            _ctx: &Context,
-            prefix: &str,
-            branch_id: Option<i64>,
-            month: Option<i32>,
-        ) -> DomainResult<String> {
-            let func = self.generate_fn.lock().unwrap();
-            if let Some(f) = func.as_ref() {
-                f(prefix.to_string(), branch_id, month)
-            } else {
-                panic!("generate not mocked")
-            }
-        }
-    }
+    use crate::application::test_helpers::MockNumberService;
 
     async fn create_test_db() -> DatabaseConnection {
         Database::connect("sqlite::memory:").await.unwrap()
