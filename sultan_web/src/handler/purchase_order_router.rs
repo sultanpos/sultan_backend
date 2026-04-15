@@ -73,9 +73,9 @@ async fn create(
         .create(
             &ctx,
             &PurchaseOrderCreate {
+                number: "".to_string(),
                 branch_id: payload.branch_id,
                 supplier_id: payload.supplier_id,
-                number: payload.number,
                 reference_number: payload.reference_number,
                 order_date: payload.order_date,
                 expected_date: payload.expected_date,

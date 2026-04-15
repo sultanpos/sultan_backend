@@ -137,7 +137,7 @@ pub async fn create_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
     let customer_service = CustomerService::new(
         customer_repository,
         SnowflakeGenerator::new(1)?,
-        number_service,
+        number_service.clone(),
         db_connection.clone(),
     );
     let supplier_service = SupplierService::new(
@@ -181,6 +181,7 @@ pub async fn create_app_state(config: &AppConfig) -> anyhow::Result<AppState> {
     let purchase_order_service = PurchaseOrderService::new(
         purchase_order_repository,
         SnowflakeGenerator::new(1)?,
+        number_service.clone(),
         db_connection.clone(),
     );
 

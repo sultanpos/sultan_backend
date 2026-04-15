@@ -1,4 +1,4 @@
-use super::i64_to_string;
+use super::{i64_to_string, option_string_to_i64, string_to_i64};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
@@ -6,7 +6,11 @@ use validator::Validate;
 
 #[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct PurchaseOrderCreateRequest {
+    #[schema(example = "14")]
+    #[serde(default, deserialize_with = "string_to_i64")]
     pub branch_id: i64,
+    #[schema(example = "15")]
+    #[serde(default, deserialize_with = "option_string_to_i64")]
     pub supplier_id: Option<i64>,
     #[validate(length(
         min = 1,
@@ -14,7 +18,6 @@ pub struct PurchaseOrderCreateRequest {
         message = "Number must be between 1 and 100 characters"
     ))]
     #[schema(example = "PO-0001")]
-    pub number: String,
     pub reference_number: Option<String>,
     pub order_date: Option<String>,
     pub expected_date: Option<String>,

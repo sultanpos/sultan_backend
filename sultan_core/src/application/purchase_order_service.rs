@@ -1,6 +1,11 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
+use chrono::Datelike;
+use chrono::Local;
 use sea_orm::DatabaseConnection;
 
+use crate::application::NumberServiceTrait;
 use crate::application::ServiceDbHelper;
 use crate::domain::Context;
 use crate::domain::DomainResult;
@@ -17,14 +22,21 @@ pub trait PurchaseOrderServiceTrait: Send + Sync {
 pub struct PurchaseOrderService<R, I> {
     repository: R,
     id_generator: I,
+    number_service: Arc<dyn NumberServiceTrait>,
     db: DatabaseConnection,
 }
 
 impl<R: PurchaseOrderRepository, I: IdGenerator> PurchaseOrderService<R, I> {
-    pub fn new(repository: R, id_generator: I, db: DatabaseConnection) -> Self {
+    pub fn new(
+        repository: R,
+        id_generator: I,
+        number_service: Arc<dyn NumberServiceTrait>,
+        db: DatabaseConnection,
+    ) -> Self {
         Self {
             repository,
             id_generator,
+            number_service,
             db,
         }
     }
@@ -47,6 +59,13 @@ impl<R: PurchaseOrderRepository, I: IdGenerator> PurchaseOrderServiceTrait
             action::CREATE,
         )?;
         let id = self.id_generator.generate()?;
+        let mut create_with_number = data.clone();
+        let now = Local::now();
+        let month = now.month() as i32;
+        create_with_number.number = self
+            .number_service
+            .generate(ctx, "PO", Some(data.branch_id), Some(month))
+            .await?;
         let repo_ctx = self.repo_ctx(ctx);
         self.repository.create(&repo_ctx, id, data).await?;
         Ok(id)
@@ -92,6 +111,51 @@ mod tests {
             F: Fn(i64, PurchaseOrderCreate) -> DomainResult<()> + Send + 'static,
         {
             *self.create_fn.lock().unwrap() = Some(Box::new(f));
+        }
+    }
+
+    // Mock NumberService
+    #[derive(Clone)]
+    struct MockNumberService {
+        generate_fn: Arc<
+            Mutex<
+                Option<
+                    Box<dyn Fn(String, Option<i64>, Option<i32>) -> DomainResult<String> + Send>,
+                >,
+            >,
+        >,
+    }
+
+    impl MockNumberService {
+        fn new() -> Self {
+            Self {
+                generate_fn: Arc::new(Mutex::new(None)),
+            }
+        }
+
+        fn expect_generate<F>(&mut self, f: F)
+        where
+            F: Fn(String, Option<i64>, Option<i32>) -> DomainResult<String> + Send + 'static,
+        {
+            *self.generate_fn.lock().unwrap() = Some(Box::new(f));
+        }
+    }
+
+    #[async_trait]
+    impl NumberServiceTrait for MockNumberService {
+        async fn generate(
+            &self,
+            _ctx: &Context,
+            prefix: &str,
+            branch_id: Option<i64>,
+            month: Option<i32>,
+        ) -> DomainResult<String> {
+            let func = self.generate_fn.lock().unwrap();
+            if let Some(f) = func.as_ref() {
+                f(prefix.to_string(), branch_id, month)
+            } else {
+                panic!("generate not mocked")
+            }
         }
     }
 
@@ -236,8 +300,13 @@ mod tests {
         let mut repo = MockPurchaseOrderRepo::new();
         repo.expect_create(|_id, _data| Ok(()));
         let id_gen = create_mock_id_gen(42);
+        let mut mock_number_service = MockNumberService::new();
+        mock_number_service.expect_generate(|prefix, _, _| {
+            assert_eq!(prefix, "PO");
+            Ok("PO001".to_string())
+        });
 
-        let service = PurchaseOrderService::new(repo, id_gen, db);
+        let service = PurchaseOrderService::new(repo, id_gen, Arc::new(mock_number_service), db);
         let ctx = create_test_context();
 
         let result = service.create(&ctx, &make_create_data()).await;
@@ -250,8 +319,13 @@ mod tests {
         let db = create_test_db().await;
         let repo = MockPurchaseOrderRepo::new();
         let id_gen = create_mock_id_gen(42);
+        let mut mock_number_service = MockNumberService::new();
+        mock_number_service.expect_generate(|prefix, _, _| {
+            assert_eq!(prefix, "PO");
+            Ok("PO001".to_string())
+        });
 
-        let service = PurchaseOrderService::new(repo, id_gen, db);
+        let service = PurchaseOrderService::new(repo, id_gen, Arc::new(mock_number_service), db);
         let ctx = create_unauthorized_context();
 
         let result = service.create(&ctx, &make_create_data()).await;
@@ -264,8 +338,13 @@ mod tests {
         let mut repo = MockPurchaseOrderRepo::new();
         repo.expect_create(|_id, _data| Err(Error::Internal("db error".to_string())));
         let id_gen = create_mock_id_gen(99);
+        let mut mock_number_service = MockNumberService::new();
+        mock_number_service.expect_generate(|prefix, _, _| {
+            assert_eq!(prefix, "PO");
+            Ok("PO001".to_string())
+        });
 
-        let service = PurchaseOrderService::new(repo, id_gen, db);
+        let service = PurchaseOrderService::new(repo, id_gen, Arc::new(mock_number_service), db);
         let ctx = create_test_context();
 
         let result = service.create(&ctx, &make_create_data()).await;
@@ -280,8 +359,14 @@ mod tests {
         mock_id_gen
             .expect_generate()
             .returning(|| Err(crate::snowflake::SnowflakeError::InvalidNode(999)));
+        let mut mock_number_service = MockNumberService::new();
+        mock_number_service.expect_generate(|prefix, _, _| {
+            assert_eq!(prefix, "PO");
+            Ok("PO001".to_string())
+        });
 
-        let service = PurchaseOrderService::new(repo, mock_id_gen, db);
+        let service =
+            PurchaseOrderService::new(repo, mock_id_gen, Arc::new(mock_number_service), db);
         let ctx = create_test_context();
 
         let result = service.create(&ctx, &make_create_data()).await;
@@ -300,8 +385,13 @@ mod tests {
             Ok(())
         });
         let id_gen = create_mock_id_gen(100);
+        let mut mock_number_service = MockNumberService::new();
+        mock_number_service.expect_generate(|prefix, _, _| {
+            assert_eq!(prefix, "PO");
+            Ok("PO001".to_string())
+        });
 
-        let service = PurchaseOrderService::new(repo, id_gen, db);
+        let service = PurchaseOrderService::new(repo, id_gen, Arc::new(mock_number_service), db);
         let ctx = create_test_context();
 
         let data = PurchaseOrderCreate {

@@ -31,9 +31,8 @@ async fn test_create_purchase_order_success() {
     let app = build_test_router(app_state);
 
     let body = json!({
-        "branch_id": 1,
+        "branch_id": "1",
         "supplier_id": null,
-        "number": "PO-0001",
         "reference_number": null,
         "order_date": null,
         "expected_date": null,
@@ -53,31 +52,6 @@ async fn test_create_purchase_order_success() {
 }
 
 #[tokio::test]
-async fn test_create_purchase_order_validation_error_empty_number() {
-    let app_state = MockAppStateBuilder::new()
-        .with_purchase_order_service(Arc::new(MockPurchaseOrderService::new_success()));
-
-    let app = build_test_router(app_state);
-
-    let body = json!({
-        "branch_id": 1,
-        "number": ""
-    });
-
-    let (status, response) = make_request(app, "POST", "/api/purchase-order", Some(body))
-        .await
-        .expect("Request failed");
-
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(
-        response["error"]
-            .as_str()
-            .unwrap()
-            .contains("Number must be")
-    );
-}
-
-#[tokio::test]
 async fn test_create_purchase_order_service_error() {
     let app_state = MockAppStateBuilder::new()
         .with_purchase_order_service(Arc::new(MockPurchaseOrderService::new_failure()));
@@ -85,8 +59,7 @@ async fn test_create_purchase_order_service_error() {
     let app = build_test_router(app_state);
 
     let body = json!({
-        "branch_id": 1,
-        "number": "PO-0001"
+        "branch_id": "1",
     });
 
     let (status, _response) = make_request(app, "POST", "/api/purchase-order", Some(body))
