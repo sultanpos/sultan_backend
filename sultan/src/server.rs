@@ -44,6 +44,7 @@ use uuid::Uuid;
 use crate::config::AppConfig;
 use sultan_web::{
     AppState,
+    purchase_order_router::{PurchaseOrderApiDoc, purchase_order_router},
     supplier_routes::supplier_router,
     user_routes::{UserApiDoc, user_router},
 };
@@ -331,6 +332,7 @@ pub fn build_router(app_state: AppState) -> anyhow::Result<Router> {
         .nest("/payment-channel", payment_channel_router())
         .nest("/product", product_router())
         .nest("/user", user_router())
+        .nest("/purchase-order", purchase_order_router())
         .route_layer(axum::middleware::from_fn_with_state(
             app_state.clone(),
             verify_jwt,
@@ -347,6 +349,7 @@ pub fn build_router(app_state: AppState) -> anyhow::Result<Router> {
     openapi.merge(CashierSessionApiDoc::openapi());
     openapi.merge(PaymentChannelApiDoc::openapi());
     openapi.merge(ProductApiDoc::openapi());
+    openapi.merge(PurchaseOrderApiDoc::openapi());
     // Add Bearer token security scheme
     if let Some(components) = openapi.components.as_mut() {
         components.add_security_scheme(
