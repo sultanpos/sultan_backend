@@ -271,4 +271,54 @@ mod tests {
         let result = service.create(&ctx, &make_create_data()).await;
         assert!(matches!(result, Err(Error::Internal(_))));
     }
+
+    #[tokio::test]
+    async fn test_create_id_generator_error() {
+        let db = create_test_db().await;
+        let repo = MockPurchaseOrderRepo::new();
+        let mut mock_id_gen = crate::application::MockIdGen::new();
+        mock_id_gen
+            .expect_generate()
+            .returning(|| Err(crate::snowflake::SnowflakeError::InvalidNode(999)));
+
+        let service = PurchaseOrderService::new(repo, mock_id_gen, db);
+        let ctx = create_test_context();
+
+        let result = service.create(&ctx, &make_create_data()).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_create_success_with_optional_fields() {
+        let db = create_test_db().await;
+        let mut repo = MockPurchaseOrderRepo::new();
+        repo.expect_create(|_id, data| {
+            assert_eq!(data.number, "PO-0002");
+            assert_eq!(data.supplier_id, Some(10));
+            assert_eq!(data.discount_amount, 500);
+            assert!(data.notes.is_some());
+            Ok(())
+        });
+        let id_gen = create_mock_id_gen(100);
+
+        let service = PurchaseOrderService::new(repo, id_gen, db);
+        let ctx = create_test_context();
+
+        let data = PurchaseOrderCreate {
+            branch_id: 1,
+            supplier_id: Some(10),
+            number: "PO-0002".to_string(),
+            reference_number: Some("REF-001".to_string()),
+            order_date: Some("2026-04-15T00:00:00.000Z".to_string()),
+            expected_date: Some("2026-04-30T00:00:00.000Z".to_string()),
+            payment_due_date: Some("2026-05-15T00:00:00.000Z".to_string()),
+            discount_amount: 500,
+            notes: Some("Test notes".to_string()),
+            metadata: None,
+        };
+
+        let result = service.create(&ctx, &data).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 100);
+    }
 }
