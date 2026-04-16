@@ -11,12 +11,20 @@ use crate::domain::Context;
 use crate::domain::DomainResult;
 use crate::domain::model::permission::{action, resource};
 use crate::domain::model::purchase_order::PurchaseOrderCreate;
+use crate::domain::model::purchase_order::PurchaseOrderUpdate;
 use crate::snowflake::IdGenerator;
 use crate::storage::PurchaseOrderRepository;
 
 #[async_trait]
 pub trait PurchaseOrderServiceTrait: Send + Sync {
     async fn create(&self, ctx: &Context, data: &PurchaseOrderCreate) -> DomainResult<i64>;
+    async fn update(
+        &self,
+        ctx: &Context,
+        id: i64,
+        branch_id: i64,
+        data: &PurchaseOrderUpdate,
+    ) -> DomainResult<()>;
 }
 
 pub struct PurchaseOrderService<R, I> {
@@ -70,6 +78,19 @@ impl<R: PurchaseOrderRepository, I: IdGenerator> PurchaseOrderServiceTrait
         self.repository.create(&repo_ctx, id, data).await?;
         Ok(id)
     }
+
+    async fn update(
+        &self,
+        ctx: &Context,
+        id: i64,
+        branch_id: i64,
+        data: &PurchaseOrderUpdate,
+    ) -> DomainResult<()> {
+        ctx.require_access(Some(branch_id), resource::PURCHASE_ORDER, action::UPDATE)?;
+        let repo_ctx = self.repo_ctx(ctx);
+        self.repository.update(&repo_ctx, id, data).await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -97,12 +118,15 @@ mod tests {
     struct MockPurchaseOrderRepo {
         create_fn:
             Arc<Mutex<Option<Box<dyn Fn(i64, PurchaseOrderCreate) -> DomainResult<()> + Send>>>>,
+        update_fn:
+            Arc<Mutex<Option<Box<dyn Fn(i64, PurchaseOrderUpdate) -> DomainResult<()> + Send>>>>,
     }
 
     impl MockPurchaseOrderRepo {
         fn new() -> Self {
             Self {
                 create_fn: Arc::new(Mutex::new(None)),
+                update_fn: Arc::new(Mutex::new(None)),
             }
         }
 
@@ -111,6 +135,13 @@ mod tests {
             F: Fn(i64, PurchaseOrderCreate) -> DomainResult<()> + Send + 'static,
         {
             *self.create_fn.lock().unwrap() = Some(Box::new(f));
+        }
+
+        fn expect_update<F>(&mut self, f: F)
+        where
+            F: Fn(i64, PurchaseOrderUpdate) -> DomainResult<()> + Send + 'static,
+        {
+            *self.update_fn.lock().unwrap() = Some(Box::new(f));
         }
     }
 
@@ -153,10 +184,15 @@ mod tests {
         async fn update(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
-            _id: i64,
-            _data: &crate::domain::model::purchase_order::PurchaseOrderUpdate,
+            id: i64,
+            data: &crate::domain::model::purchase_order::PurchaseOrderUpdate,
         ) -> DomainResult<()> {
-            panic!("update not mocked")
+            let func = self.update_fn.lock().unwrap();
+            if let Some(f) = func.as_ref() {
+                f(id, data.clone())
+            } else {
+                panic!("update not mocked")
+            }
         }
 
         async fn delete(&self, _ctx: &RepoCtx<impl ConnectionTrait>, _id: i64) -> DomainResult<()> {
@@ -367,5 +403,72 @@ mod tests {
         let result = service.create(&ctx, &data).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 100);
+    }
+
+    fn make_update_data() -> PurchaseOrderUpdate {
+        PurchaseOrderUpdate {
+            supplier_id: None,
+            reference_number: crate::domain::model::update::Update::Unchanged,
+            status: None,
+            order_date: crate::domain::model::update::Update::Unchanged,
+            expected_date: crate::domain::model::update::Update::Unchanged,
+            received_date: crate::domain::model::update::Update::Unchanged,
+            subtotal: None,
+            discount_amount: None,
+            total_amount: None,
+            payment_status: None,
+            payment_due_date: crate::domain::model::update::Update::Unchanged,
+            paid_amount: None,
+            returned_amount: None,
+            notes: crate::domain::model::update::Update::Unchanged,
+            metadata: crate::domain::model::update::Update::Unchanged,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_update_success() {
+        let db = create_test_db().await;
+        let mut repo = MockPurchaseOrderRepo::new();
+        repo.expect_update(|id, _data| {
+            assert_eq!(id, 10);
+            Ok(())
+        });
+        let id_gen = create_mock_id_gen(0);
+        let mock_number_service = MockNumberService::new();
+
+        let service = PurchaseOrderService::new(repo, id_gen, Arc::new(mock_number_service), db);
+        let ctx = create_test_context();
+
+        let result = service.update(&ctx, 10, 1, &make_update_data()).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_update_unauthorized() {
+        let db = create_test_db().await;
+        let repo = MockPurchaseOrderRepo::new();
+        let id_gen = create_mock_id_gen(0);
+        let mock_number_service = MockNumberService::new();
+
+        let service = PurchaseOrderService::new(repo, id_gen, Arc::new(mock_number_service), db);
+        let ctx = create_unauthorized_context();
+
+        let result = service.update(&ctx, 10, 1, &make_update_data()).await;
+        assert!(matches!(result, Err(Error::Forbidden(_))));
+    }
+
+    #[tokio::test]
+    async fn test_update_repo_error_propagated() {
+        let db = create_test_db().await;
+        let mut repo = MockPurchaseOrderRepo::new();
+        repo.expect_update(|_id, _data| Err(Error::NotFound("not found".to_string())));
+        let id_gen = create_mock_id_gen(0);
+        let mock_number_service = MockNumberService::new();
+
+        let service = PurchaseOrderService::new(repo, id_gen, Arc::new(mock_number_service), db);
+        let ctx = create_test_context();
+
+        let result = service.update(&ctx, 99, 1, &make_update_data()).await;
+        assert!(matches!(result, Err(Error::NotFound(_))));
     }
 }
