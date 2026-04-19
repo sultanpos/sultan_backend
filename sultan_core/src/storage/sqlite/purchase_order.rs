@@ -237,6 +237,7 @@ impl PurchaseOrderRepository for SqlitePurchaseOrderRepository {
     async fn update(
         &self,
         ctx: &RepoCtx<impl ConnectionTrait>,
+        branch_id: i64,
         id: i64,
         data: &PurchaseOrderUpdate,
     ) -> DomainResult<()> {
@@ -244,6 +245,7 @@ impl PurchaseOrderRepository for SqlitePurchaseOrderRepository {
 
         let mut q = PurchaseOrderEntity::update_many()
             .filter(PurchaseOrderColumn::Id.eq(id))
+            .filter(PurchaseOrderColumn::BranchId.eq(branch_id))
             .filter(PurchaseOrderColumn::IsDeleted.eq(false))
             .col_expr(PurchaseOrderColumn::UpdatedAt, Expr::value(now));
 

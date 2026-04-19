@@ -333,7 +333,10 @@ pub fn build_router(app_state: AppState) -> anyhow::Result<Router> {
         .nest("/payment-channel", payment_channel_router())
         .nest("/product", product_router())
         .nest("/user", user_router())
-        .nest("/purchase-order", purchase_order_router())
+        .nest(
+            "/branch/{branch_id}/purchase-order",
+            purchase_order_router(),
+        )
         .route_layer(axum::middleware::from_fn_with_state(
             app_state.clone(),
             verify_jwt,

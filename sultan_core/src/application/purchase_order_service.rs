@@ -11,12 +11,20 @@ use crate::domain::Context;
 use crate::domain::DomainResult;
 use crate::domain::model::permission::{action, resource};
 use crate::domain::model::purchase_order::PurchaseOrderCreate;
+use crate::domain::model::purchase_order::PurchaseOrderUpdate;
 use crate::snowflake::IdGenerator;
 use crate::storage::PurchaseOrderRepository;
 
 #[async_trait]
 pub trait PurchaseOrderServiceTrait: Send + Sync {
     async fn create(&self, ctx: &Context, data: &PurchaseOrderCreate) -> DomainResult<i64>;
+    async fn update(
+        &self,
+        ctx: &Context,
+        branch_id: i64,
+        id: i64,
+        data: &PurchaseOrderUpdate,
+    ) -> DomainResult<()>;
 }
 
 pub struct PurchaseOrderService<R, I> {
@@ -70,6 +78,21 @@ impl<R: PurchaseOrderRepository, I: IdGenerator> PurchaseOrderServiceTrait
         self.repository.create(&repo_ctx, id, data).await?;
         Ok(id)
     }
+
+    async fn update(
+        &self,
+        ctx: &Context,
+        branch_id: i64,
+        id: i64,
+        data: &PurchaseOrderUpdate,
+    ) -> DomainResult<()> {
+        ctx.require_access(Some(branch_id), resource::PURCHASE_ORDER, action::UPDATE)?;
+        let repo_ctx = self.repo_ctx(ctx);
+        self.repository
+            .update(&repo_ctx, branch_id, id, data)
+            .await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -97,12 +120,16 @@ mod tests {
     struct MockPurchaseOrderRepo {
         create_fn:
             Arc<Mutex<Option<Box<dyn Fn(i64, PurchaseOrderCreate) -> DomainResult<()> + Send>>>>,
+        update_fn: Arc<
+            Mutex<Option<Box<dyn Fn(i64, i64, PurchaseOrderUpdate) -> DomainResult<()> + Send>>>,
+        >,
     }
 
     impl MockPurchaseOrderRepo {
         fn new() -> Self {
             Self {
                 create_fn: Arc::new(Mutex::new(None)),
+                update_fn: Arc::new(Mutex::new(None)),
             }
         }
 
@@ -111,6 +138,13 @@ mod tests {
             F: Fn(i64, PurchaseOrderCreate) -> DomainResult<()> + Send + 'static,
         {
             *self.create_fn.lock().unwrap() = Some(Box::new(f));
+        }
+
+        fn expect_update<F>(&mut self, f: F)
+        where
+            F: Fn(i64, i64, PurchaseOrderUpdate) -> DomainResult<()> + Send + 'static,
+        {
+            *self.update_fn.lock().unwrap() = Some(Box::new(f));
         }
     }
 
@@ -153,10 +187,16 @@ mod tests {
         async fn update(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
-            _id: i64,
-            _data: &crate::domain::model::purchase_order::PurchaseOrderUpdate,
+            branch_id: i64,
+            id: i64,
+            data: &crate::domain::model::purchase_order::PurchaseOrderUpdate,
         ) -> DomainResult<()> {
-            panic!("update not mocked")
+            let func = self.update_fn.lock().unwrap();
+            if let Some(f) = func.as_ref() {
+                f(branch_id, id, data.clone())
+            } else {
+                panic!("update not mocked")
+            }
         }
 
         async fn delete(&self, _ctx: &RepoCtx<impl ConnectionTrait>, _id: i64) -> DomainResult<()> {
@@ -367,5 +407,100 @@ mod tests {
         let result = service.create(&ctx, &data).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 100);
+    }
+
+    fn make_update_data() -> PurchaseOrderUpdate {
+        PurchaseOrderUpdate {
+            supplier_id: None,
+            reference_number: crate::domain::model::update::Update::Unchanged,
+            status: None,
+            order_date: crate::domain::model::update::Update::Unchanged,
+            expected_date: crate::domain::model::update::Update::Unchanged,
+            received_date: crate::domain::model::update::Update::Unchanged,
+            subtotal: None,
+            discount_amount: None,
+            total_amount: None,
+            payment_status: None,
+            payment_due_date: crate::domain::model::update::Update::Unchanged,
+            paid_amount: None,
+            returned_amount: None,
+            notes: crate::domain::model::update::Update::Unchanged,
+            metadata: crate::domain::model::update::Update::Unchanged,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_update_success() {
+        let db = create_test_db().await;
+        let mut repo = MockPurchaseOrderRepo::new();
+        repo.expect_update(|branch_id, id, _data| {
+            assert_eq!(branch_id, 1);
+            assert_eq!(id, 10);
+            Ok(())
+        });
+        let id_gen = create_mock_id_gen(0);
+        let mock_number_service = MockNumberService::new();
+
+        let service = PurchaseOrderService::new(repo, id_gen, Arc::new(mock_number_service), db);
+        let ctx = create_test_context();
+
+        let result = service.update(&ctx, 1, 10, &make_update_data()).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_update_unauthorized() {
+        let db = create_test_db().await;
+        let repo = MockPurchaseOrderRepo::new();
+        let id_gen = create_mock_id_gen(0);
+        let mock_number_service = MockNumberService::new();
+
+        let service = PurchaseOrderService::new(repo, id_gen, Arc::new(mock_number_service), db);
+        let ctx = create_unauthorized_context();
+
+        let result = service.update(&ctx, 1, 10, &make_update_data()).await;
+        assert!(matches!(result, Err(Error::Forbidden(_))));
+    }
+
+    #[tokio::test]
+    async fn test_update_repo_error_propagated() {
+        let db = create_test_db().await;
+        let mut repo = MockPurchaseOrderRepo::new();
+        repo.expect_update(|_branch_id, _id, _data| Err(Error::NotFound("not found".to_string())));
+        let id_gen = create_mock_id_gen(0);
+        let mock_number_service = MockNumberService::new();
+
+        let service = PurchaseOrderService::new(repo, id_gen, Arc::new(mock_number_service), db);
+        let ctx = create_test_context();
+
+        let result = service.update(&ctx, 1, 99, &make_update_data()).await;
+        assert!(matches!(result, Err(Error::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_update_cross_branch_returns_not_found() {
+        // The repo is given branch_id=1 but the order belongs to branch 2.
+        // The repository should return NotFound when branch_id doesn't match.
+        let db = create_test_db().await;
+        let mut repo = MockPurchaseOrderRepo::new();
+        repo.expect_update(|branch_id, id, _data| {
+            // Simulate what the DB filter does: no rows match because
+            // the order belongs to a different branch.
+            assert_eq!(branch_id, 1);
+            assert_eq!(id, 99);
+            Err(Error::NotFound(format!(
+                "Purchase order with id {} not found",
+                id
+            )))
+        });
+        let id_gen = create_mock_id_gen(0);
+        let mock_number_service = MockNumberService::new();
+
+        let service = PurchaseOrderService::new(repo, id_gen, Arc::new(mock_number_service), db);
+        let ctx = create_test_context();
+
+        // branch_id=1 in context, but order 99 belongs to branch 2
+        let result = service.update(&ctx, 1, 99, &make_update_data()).await;
+        assert!(matches!(result, Err(Error::NotFound(_))));
     }
 }
