@@ -10,8 +10,9 @@ use crate::application::ServiceDbHelper;
 use crate::domain::Context;
 use crate::domain::DomainResult;
 use crate::domain::model::permission::{action, resource};
-use crate::domain::model::purchase_order::PurchaseOrderCreate;
-use crate::domain::model::purchase_order::PurchaseOrderUpdate;
+use crate::domain::model::purchase_order::{
+    PurchaseOrder, PurchaseOrderCreate, PurchaseOrderUpdate,
+};
 use crate::snowflake::IdGenerator;
 use crate::storage::PurchaseOrderRepository;
 
@@ -25,6 +26,13 @@ pub trait PurchaseOrderServiceTrait: Send + Sync {
         id: i64,
         data: &PurchaseOrderUpdate,
     ) -> DomainResult<()>;
+    async fn delete(&self, ctx: &Context, branch_id: i64, id: i64) -> DomainResult<()>;
+    async fn get(
+        &self,
+        ctx: &Context,
+        branch_id: i64,
+        id: i64,
+    ) -> DomainResult<Option<PurchaseOrder>>;
 }
 
 pub struct PurchaseOrderService<R, I> {
@@ -92,6 +100,24 @@ impl<R: PurchaseOrderRepository, I: IdGenerator> PurchaseOrderServiceTrait
             .update(&repo_ctx, branch_id, id, data)
             .await?;
         Ok(())
+    }
+
+    async fn delete(&self, ctx: &Context, branch_id: i64, id: i64) -> DomainResult<()> {
+        ctx.require_access(Some(branch_id), resource::PURCHASE_ORDER, action::DELETE)?;
+        let repo_ctx = self.repo_ctx(ctx);
+        self.repository.delete(&repo_ctx, branch_id, id).await?;
+        Ok(())
+    }
+
+    async fn get(
+        &self,
+        ctx: &Context,
+        branch_id: i64,
+        id: i64,
+    ) -> DomainResult<Option<PurchaseOrder>> {
+        ctx.require_access(Some(branch_id), resource::PURCHASE_ORDER, action::READ)?;
+        let repo_ctx = self.repo_ctx(ctx);
+        self.repository.get_by_id(&repo_ctx, branch_id, id).await
     }
 }
 
