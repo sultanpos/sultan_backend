@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use sultan_core::application::PurchaseOrderServiceTrait;
+use sultan_core::domain::model::purchase_order::PurchaseOrderUpdate;
 use sultan_core::domain::{
     DomainResult, Error, context::Context, model::purchase_order::PurchaseOrderCreate,
 };
@@ -35,5 +36,14 @@ impl PurchaseOrderServiceTrait for MockPurchaseOrderService {
             ));
         }
         Ok(self.id)
+    }
+    async fn update(
+        &self,
+        _ctx: &Context,
+        _branch_id: i64,
+        _id: i64,
+        _data: &PurchaseOrderUpdate,
+    ) -> DomainResult<()> {
+        Ok(())
     }
 }

@@ -1,11 +1,15 @@
+use axum::extract::Path;
 use axum::{
-    Extension, Json, Router, extract::State, http::StatusCode, response::IntoResponse,
-    routing::post,
+    Extension, Json, Router,
+    extract::State,
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{post, put},
 };
 use std::sync::Arc;
 use sultan_core::application::PurchaseOrderServiceTrait;
 use sultan_core::domain::context::Context;
-use sultan_core::domain::model::purchase_order::PurchaseOrderCreate;
+use sultan_core::domain::model::purchase_order::{PurchaseOrderCreate, PurchaseOrderUpdate};
 use sultan_core::domain::{DomainResult, Error};
 use tracing::instrument;
 use utoipa::OpenApi;
@@ -13,7 +17,9 @@ use validator::Validate;
 
 use crate::AppState;
 use crate::dto::ErrorResponse;
-use crate::dto::purchase_order::{PurchaseOrderCreateRequest, PurchaseOrderCreateResponse};
+use crate::dto::purchase_order::{
+    PurchaseOrderCreateRequest, PurchaseOrderCreateResponse, PurchaseOrderUpdateRequest,
+};
 
 // ============================================================================
 // OpenAPI Documentation
@@ -46,7 +52,7 @@ pub struct PurchaseOrderApiDoc;
 #[utoipa::path(
     post,
     operation_id = "create_purchase_order",
-    path = "/api/purchase-order",
+    path = "/api/branch/{branch_id}/purchase-order",
     tag = "purchase_order",
     request_body = PurchaseOrderCreateRequest,
     responses(
@@ -63,6 +69,7 @@ pub struct PurchaseOrderApiDoc;
 async fn create(
     State(purchase_order_service): State<Arc<dyn PurchaseOrderServiceTrait>>,
     Extension(ctx): Extension<Context>,
+    Path(branch_id): Path<i64>,
     Json(payload): Json<PurchaseOrderCreateRequest>,
 ) -> DomainResult<impl IntoResponse> {
     payload
@@ -74,7 +81,7 @@ async fn create(
             &ctx,
             &PurchaseOrderCreate {
                 number: "".to_string(),
-                branch_id: payload.branch_id,
+                branch_id,
                 supplier_id: payload.supplier_id,
                 reference_number: payload.reference_number,
                 order_date: payload.order_date,
@@ -93,10 +100,40 @@ async fn create(
     ))
 }
 
+async fn update(
+    State(purchase_order_service): State<Arc<dyn PurchaseOrderServiceTrait>>,
+    Extension(ctx): Extension<Context>,
+    Path(branch_id): Path<i64>,
+    Path(id): Path<i64>,
+    Json(payload): Json<PurchaseOrderUpdateRequest>,
+) -> DomainResult<impl IntoResponse> {
+    payload
+        .validate()
+        .map_err(|e| Error::ValidationError(format! {"{}", e}))?;
+
+    purchase_order_service
+        .update(
+            &ctx,
+            branch_id,
+            id,
+            &PurchaseOrderUpdate {
+                supplier_id: payload.supplier_id,
+                reference_number: payload.reference_number,
+
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 // ============================================================================
 // Router
 // ============================================================================
 
 pub fn purchase_order_router() -> Router<AppState> {
-    Router::new().route("/", post(create))
+    Router::new()
+        .route("/", post(create))
+        .route("/{id}", put(update))
 }

@@ -21,8 +21,8 @@ pub trait PurchaseOrderServiceTrait: Send + Sync {
     async fn update(
         &self,
         ctx: &Context,
-        id: i64,
         branch_id: i64,
+        id: i64,
         data: &PurchaseOrderUpdate,
     ) -> DomainResult<()>;
 }
@@ -82,8 +82,8 @@ impl<R: PurchaseOrderRepository, I: IdGenerator> PurchaseOrderServiceTrait
     async fn update(
         &self,
         ctx: &Context,
-        id: i64,
         branch_id: i64,
+        id: i64,
         data: &PurchaseOrderUpdate,
     ) -> DomainResult<()> {
         ctx.require_access(Some(branch_id), resource::PURCHASE_ORDER, action::UPDATE)?;
@@ -439,7 +439,7 @@ mod tests {
         let service = PurchaseOrderService::new(repo, id_gen, Arc::new(mock_number_service), db);
         let ctx = create_test_context();
 
-        let result = service.update(&ctx, 10, 1, &make_update_data()).await;
+        let result = service.update(&ctx, 1, 10, &make_update_data()).await;
         assert!(result.is_ok());
     }
 
@@ -453,7 +453,7 @@ mod tests {
         let service = PurchaseOrderService::new(repo, id_gen, Arc::new(mock_number_service), db);
         let ctx = create_unauthorized_context();
 
-        let result = service.update(&ctx, 10, 1, &make_update_data()).await;
+        let result = service.update(&ctx, 1, 10, &make_update_data()).await;
         assert!(matches!(result, Err(Error::Forbidden(_))));
     }
 
@@ -468,7 +468,7 @@ mod tests {
         let service = PurchaseOrderService::new(repo, id_gen, Arc::new(mock_number_service), db);
         let ctx = create_test_context();
 
-        let result = service.update(&ctx, 99, 1, &make_update_data()).await;
+        let result = service.update(&ctx, 1, 99, &make_update_data()).await;
         assert!(matches!(result, Err(Error::NotFound(_))));
     }
 }

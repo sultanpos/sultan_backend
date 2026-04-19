@@ -14,7 +14,10 @@ use sultan_web::handler::purchase_order_router::purchase_order_router;
 
 fn build_test_router(app_state: MockAppStateBuilder) -> Router {
     Router::new()
-        .nest("/api/purchase-order", purchase_order_router())
+        .nest(
+            "/api/branch/{branch_id}/purchase-order",
+            purchase_order_router(),
+        )
         .layer(from_fn(context_middleware))
         .with_state(app_state.build())
 }
@@ -31,7 +34,6 @@ async fn test_create_purchase_order_success() {
     let app = build_test_router(app_state);
 
     let body = json!({
-        "branch_id": "1",
         "supplier_id": null,
         "reference_number": null,
         "order_date": null,
@@ -42,7 +44,7 @@ async fn test_create_purchase_order_success() {
         "metadata": null
     });
 
-    let (status, response) = make_request(app, "POST", "/api/purchase-order", Some(body))
+    let (status, response) = make_request(app, "POST", "/api/branch/1/purchase-order", Some(body))
         .await
         .expect("Request failed");
 
@@ -58,11 +60,9 @@ async fn test_create_purchase_order_service_error() {
 
     let app = build_test_router(app_state);
 
-    let body = json!({
-        "branch_id": "1",
-    });
+    let body = json!({});
 
-    let (status, _response) = make_request(app, "POST", "/api/purchase-order", Some(body))
+    let (status, _response) = make_request(app, "POST", "/api/branch/1/purchase-order", Some(body))
         .await
         .expect("Request failed");
 
