@@ -33,7 +33,8 @@ pub struct PurchaseOrderCreateResponse {
     pub id: i64,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize, ToSchema, Default)]
+#[serde(default)]
 pub struct PurchaseOrderUpdateRequest {
     #[schema(example = "15")]
     #[serde(default, deserialize_with = "option_string_to_i64")]
