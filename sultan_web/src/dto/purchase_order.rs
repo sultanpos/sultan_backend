@@ -70,7 +70,6 @@ impl Validate for PurchaseOrderUpdateRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::Value;
     use sultan_core::domain::model::Update;
 
     fn default_update_request() -> PurchaseOrderUpdateRequest {
