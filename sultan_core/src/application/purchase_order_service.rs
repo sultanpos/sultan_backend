@@ -179,6 +179,7 @@ mod tests {
         async fn get_by_id(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
+            _branch_id: i64,
             _id: i64,
         ) -> DomainResult<Option<crate::domain::model::purchase_order::PurchaseOrder>> {
             panic!("get_by_id not mocked")
@@ -199,7 +200,12 @@ mod tests {
             }
         }
 
-        async fn delete(&self, _ctx: &RepoCtx<impl ConnectionTrait>, _id: i64) -> DomainResult<()> {
+        async fn delete(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            _branch_id: i64,
+            _id: i64,
+        ) -> DomainResult<()> {
             panic!("delete not mocked")
         }
 

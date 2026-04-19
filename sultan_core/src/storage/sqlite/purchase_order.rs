@@ -214,9 +214,11 @@ impl PurchaseOrderRepository for SqlitePurchaseOrderRepository {
     async fn get_by_id(
         &self,
         ctx: &RepoCtx<impl ConnectionTrait>,
+        branch_id: i64,
         id: i64,
     ) -> DomainResult<Option<PurchaseOrder>> {
         let order = PurchaseOrderEntity::find_by_id(id)
+            .filter(PurchaseOrderColumn::BranchId.eq(branch_id))
             .filter(PurchaseOrderColumn::IsDeleted.eq(false))
             .one(&ctx.db)
             .await?;
@@ -340,11 +342,17 @@ impl PurchaseOrderRepository for SqlitePurchaseOrderRepository {
         Ok(())
     }
 
-    async fn delete(&self, ctx: &RepoCtx<impl ConnectionTrait>, id: i64) -> DomainResult<()> {
+    async fn delete(
+        &self,
+        ctx: &RepoCtx<impl ConnectionTrait>,
+        branch_id: i64,
+        id: i64,
+    ) -> DomainResult<()> {
         let now = now_str();
 
         let result = PurchaseOrderEntity::update_many()
             .filter(PurchaseOrderColumn::Id.eq(id))
+            .filter(PurchaseOrderColumn::BranchId.eq(branch_id))
             .filter(PurchaseOrderColumn::IsDeleted.eq(false))
             .col_expr(PurchaseOrderColumn::IsDeleted, Expr::value(true))
             .col_expr(

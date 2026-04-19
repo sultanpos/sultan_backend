@@ -49,6 +49,7 @@ pub trait PurchaseOrderRepository: Send + Sync {
     async fn get_by_id(
         &self,
         ctx: &super::RepoCtx<impl ConnectionTrait>,
+        branch_id: i64,
         id: i64,
     ) -> DomainResult<Option<PurchaseOrder>>;
 
@@ -65,8 +66,12 @@ pub trait PurchaseOrderRepository: Send + Sync {
 
     /// Soft-deletes a purchase order.
     /// Returns `NotFound` if the order is already deleted or does not exist.
-    async fn delete(&self, ctx: &super::RepoCtx<impl ConnectionTrait>, id: i64)
-    -> DomainResult<()>;
+    async fn delete(
+        &self,
+        ctx: &super::RepoCtx<impl ConnectionTrait>,
+        branch_id: i64,
+        id: i64,
+    ) -> DomainResult<()>;
 
     /// Lists purchase orders with cursor-based pagination.
     async fn get_all(
