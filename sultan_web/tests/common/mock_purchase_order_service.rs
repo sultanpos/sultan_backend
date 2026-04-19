@@ -44,6 +44,11 @@ impl PurchaseOrderServiceTrait for MockPurchaseOrderService {
         _id: i64,
         _data: &PurchaseOrderUpdate,
     ) -> DomainResult<()> {
+        if !self.should_succeed {
+            return Err(Error::Internal(
+                "Failed to update purchase order".to_string(),
+            ));
+        }
         Ok(())
     }
 }

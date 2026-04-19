@@ -103,8 +103,7 @@ async fn create(
 async fn update(
     State(purchase_order_service): State<Arc<dyn PurchaseOrderServiceTrait>>,
     Extension(ctx): Extension<Context>,
-    Path(branch_id): Path<i64>,
-    Path(id): Path<i64>,
+    Path((branch_id, id)): Path<(i64, i64)>,
     Json(payload): Json<PurchaseOrderUpdateRequest>,
 ) -> DomainResult<impl IntoResponse> {
     payload
