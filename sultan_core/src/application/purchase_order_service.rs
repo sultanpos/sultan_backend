@@ -88,7 +88,9 @@ impl<R: PurchaseOrderRepository, I: IdGenerator> PurchaseOrderServiceTrait
     ) -> DomainResult<()> {
         ctx.require_access(Some(branch_id), resource::PURCHASE_ORDER, action::UPDATE)?;
         let repo_ctx = self.repo_ctx(ctx);
-        self.repository.update(&repo_ctx, id, data).await?;
+        self.repository
+            .update(&repo_ctx, branch_id, id, data)
+            .await?;
         Ok(())
     }
 }
@@ -118,8 +120,9 @@ mod tests {
     struct MockPurchaseOrderRepo {
         create_fn:
             Arc<Mutex<Option<Box<dyn Fn(i64, PurchaseOrderCreate) -> DomainResult<()> + Send>>>>,
-        update_fn:
-            Arc<Mutex<Option<Box<dyn Fn(i64, PurchaseOrderUpdate) -> DomainResult<()> + Send>>>>,
+        update_fn: Arc<
+            Mutex<Option<Box<dyn Fn(i64, i64, PurchaseOrderUpdate) -> DomainResult<()> + Send>>>,
+        >,
     }
 
     impl MockPurchaseOrderRepo {
@@ -139,7 +142,7 @@ mod tests {
 
         fn expect_update<F>(&mut self, f: F)
         where
-            F: Fn(i64, PurchaseOrderUpdate) -> DomainResult<()> + Send + 'static,
+            F: Fn(i64, i64, PurchaseOrderUpdate) -> DomainResult<()> + Send + 'static,
         {
             *self.update_fn.lock().unwrap() = Some(Box::new(f));
         }
@@ -184,12 +187,13 @@ mod tests {
         async fn update(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
+            branch_id: i64,
             id: i64,
             data: &crate::domain::model::purchase_order::PurchaseOrderUpdate,
         ) -> DomainResult<()> {
             let func = self.update_fn.lock().unwrap();
             if let Some(f) = func.as_ref() {
-                f(id, data.clone())
+                f(branch_id, id, data.clone())
             } else {
                 panic!("update not mocked")
             }
@@ -429,7 +433,8 @@ mod tests {
     async fn test_update_success() {
         let db = create_test_db().await;
         let mut repo = MockPurchaseOrderRepo::new();
-        repo.expect_update(|id, _data| {
+        repo.expect_update(|branch_id, id, _data| {
+            assert_eq!(branch_id, 1);
             assert_eq!(id, 10);
             Ok(())
         });
@@ -461,13 +466,40 @@ mod tests {
     async fn test_update_repo_error_propagated() {
         let db = create_test_db().await;
         let mut repo = MockPurchaseOrderRepo::new();
-        repo.expect_update(|_id, _data| Err(Error::NotFound("not found".to_string())));
+        repo.expect_update(|_branch_id, _id, _data| Err(Error::NotFound("not found".to_string())));
         let id_gen = create_mock_id_gen(0);
         let mock_number_service = MockNumberService::new();
 
         let service = PurchaseOrderService::new(repo, id_gen, Arc::new(mock_number_service), db);
         let ctx = create_test_context();
 
+        let result = service.update(&ctx, 1, 99, &make_update_data()).await;
+        assert!(matches!(result, Err(Error::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_update_cross_branch_returns_not_found() {
+        // The repo is given branch_id=1 but the order belongs to branch 2.
+        // The repository should return NotFound when branch_id doesn't match.
+        let db = create_test_db().await;
+        let mut repo = MockPurchaseOrderRepo::new();
+        repo.expect_update(|branch_id, id, _data| {
+            // Simulate what the DB filter does: no rows match because
+            // the order belongs to a different branch.
+            assert_eq!(branch_id, 1);
+            assert_eq!(id, 99);
+            Err(Error::NotFound(format!(
+                "Purchase order with id {} not found",
+                id
+            )))
+        });
+        let id_gen = create_mock_id_gen(0);
+        let mock_number_service = MockNumberService::new();
+
+        let service = PurchaseOrderService::new(repo, id_gen, Arc::new(mock_number_service), db);
+        let ctx = create_test_context();
+
+        // branch_id=1 in context, but order 99 belongs to branch 2
         let result = service.update(&ctx, 1, 99, &make_update_data()).await;
         assert!(matches!(result, Err(Error::NotFound(_))));
     }

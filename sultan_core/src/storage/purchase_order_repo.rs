@@ -53,10 +53,12 @@ pub trait PurchaseOrderRepository: Send + Sync {
     ) -> DomainResult<Option<PurchaseOrder>>;
 
     /// Partially updates the purchase order header fields.
-    /// Returns `NotFound` if the order is soft-deleted or does not exist.
+    /// Returns `NotFound` if the order is soft-deleted, does not exist, or
+    /// does not belong to `branch_id` (prevents cross-branch modifications).
     async fn update(
         &self,
         ctx: &super::RepoCtx<impl ConnectionTrait>,
+        branch_id: i64,
         id: i64,
         data: &PurchaseOrderUpdate,
     ) -> DomainResult<()>;

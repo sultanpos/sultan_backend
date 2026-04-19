@@ -253,6 +253,7 @@ pub async fn purchase_order_test_update<C: PurchaseOrderRepository>(
 
     repo.update(
         ctx,
+        branch_id,
         id,
         &PurchaseOrderUpdate {
             status: Some(PurchaseOrderStatus::Ordered),
@@ -477,6 +478,7 @@ pub async fn purchase_order_test_update_not_found<C: PurchaseOrderRepository>(
         .update(
             ctx,
             999_999_999,
+            999_999_999,
             &PurchaseOrderUpdate {
                 status: Some(PurchaseOrderStatus::Ordered),
                 ..Default::default()
@@ -527,6 +529,7 @@ pub async fn purchase_order_test_get_all_filter_by_status<C: PurchaseOrderReposi
 
     repo.update(
         ctx,
+        branch_id,
         id_ordered,
         &PurchaseOrderUpdate {
             status: Some(PurchaseOrderStatus::Ordered),
