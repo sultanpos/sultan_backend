@@ -1,7 +1,11 @@
-use super::{i64_to_string, option_string_to_i64, update_string_to_i64};
+use super::{i64_to_string, option_i64_to_string, option_string_to_i64, update_string_to_i64};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sultan_core::domain::model::Update;
+use sultan_core::domain::model::purchase_order::{
+    PurchaseOrder, PurchaseOrderItem, PurchasePayment,
+};
 use utoipa::ToSchema;
 use validator::{Validate, ValidationError, ValidationErrors};
 
@@ -48,6 +52,153 @@ pub struct PurchaseOrderUpdateRequest {
     pub discount_amount: Update<i64>,
     pub notes: Update<String>,
     pub metadata: Update<Value>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PurchaseOrderResponse {
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "i64_to_string")]
+    pub id: i64,
+    pub created_at: chrono::DateTime<Utc>,
+    pub updated_at: chrono::DateTime<Utc>,
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "i64_to_string")]
+    pub branch_id: i64,
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "option_i64_to_string")]
+    pub supplier_id: Option<i64>,
+    pub number: String,
+    pub reference_number: Option<String>,
+    #[schema(example = "draft")]
+    pub status: String,
+    pub order_date: Option<chrono::DateTime<Utc>>,
+    pub expected_date: Option<chrono::DateTime<Utc>>,
+    pub received_date: Option<chrono::DateTime<Utc>>,
+    pub subtotal: i64,
+    pub discount_amount: i64,
+    pub total_amount: i64,
+    #[schema(example = "unpaid")]
+    pub payment_status: String,
+    pub payment_due_date: Option<chrono::DateTime<Utc>>,
+    pub paid_amount: i64,
+    pub returned_amount: i64,
+    pub notes: Option<String>,
+    pub metadata: Option<Value>,
+    pub items: Vec<PurchaseOrderItemResponse>,
+    pub payments: Vec<PurchasePaymentResponse>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PurchaseOrderItemResponse {
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "i64_to_string")]
+    pub id: i64,
+    pub created_at: chrono::DateTime<Utc>,
+    pub updated_at: chrono::DateTime<Utc>,
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "i64_to_string")]
+    pub purchase_order_id: i64,
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "i64_to_string")]
+    pub product_variant_id: i64,
+    pub product_name: String,
+    pub variant_name: Option<String>,
+    pub barcode: Option<String>,
+    pub quantity: i64,
+    pub unit_cost: i64,
+    pub discount_amount: i64,
+    pub total_cost: i64,
+    pub metadata: Option<Value>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PurchasePaymentResponse {
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "i64_to_string")]
+    pub id: i64,
+    pub created_at: chrono::DateTime<Utc>,
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "i64_to_string")]
+    pub purchase_order_id: i64,
+    pub amount: i64,
+    #[schema(example = "1234567890", value_type = String)]
+    #[serde(serialize_with = "i64_to_string")]
+    pub payment_channel_id: i64,
+    pub paid_at: chrono::DateTime<Utc>,
+    pub reference: Option<String>,
+    pub notes: Option<String>,
+}
+
+impl From<PurchaseOrder> for PurchaseOrderResponse {
+    fn from(po: PurchaseOrder) -> Self {
+        Self {
+            id: po.id,
+            created_at: po.created_at,
+            updated_at: po.updated_at,
+            branch_id: po.branch_id,
+            supplier_id: po.supplier_id,
+            number: po.number,
+            reference_number: po.reference_number,
+            status: po.status.to_string(),
+            order_date: po.order_date,
+            expected_date: po.expected_date,
+            received_date: po.received_date,
+            subtotal: po.subtotal,
+            discount_amount: po.discount_amount,
+            total_amount: po.total_amount,
+            payment_status: po.payment_status.to_string(),
+            payment_due_date: po.payment_due_date,
+            paid_amount: po.paid_amount,
+            returned_amount: po.returned_amount,
+            notes: po.notes,
+            metadata: po.metadata,
+            items: po
+                .items
+                .into_iter()
+                .map(PurchaseOrderItemResponse::from)
+                .collect(),
+            payments: po
+                .payments
+                .into_iter()
+                .map(PurchasePaymentResponse::from)
+                .collect(),
+        }
+    }
+}
+
+impl From<PurchaseOrderItem> for PurchaseOrderItemResponse {
+    fn from(item: PurchaseOrderItem) -> Self {
+        Self {
+            id: item.id,
+            created_at: item.created_at,
+            updated_at: item.updated_at,
+            purchase_order_id: item.purchase_order_id,
+            product_variant_id: item.product_variant_id,
+            product_name: item.product_name,
+            variant_name: item.variant_name,
+            barcode: item.barcode,
+            quantity: item.quantity,
+            unit_cost: item.unit_cost,
+            discount_amount: item.discount_amount,
+            total_cost: item.total_cost,
+            metadata: item.metadata,
+        }
+    }
+}
+
+impl From<PurchasePayment> for PurchasePaymentResponse {
+    fn from(payment: PurchasePayment) -> Self {
+        Self {
+            id: payment.id,
+            created_at: payment.created_at,
+            purchase_order_id: payment.purchase_order_id,
+            amount: payment.amount,
+            payment_channel_id: payment.payment_channel_id,
+            paid_at: payment.paid_at,
+            reference: payment.reference,
+            notes: payment.notes,
+        }
+    }
 }
 
 impl Validate for PurchaseOrderUpdateRequest {

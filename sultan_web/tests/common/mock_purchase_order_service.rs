@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use sultan_core::application::PurchaseOrderServiceTrait;
-use sultan_core::domain::model::purchase_order::PurchaseOrderUpdate;
+use sultan_core::domain::model::purchase_order::{PurchaseOrder, PurchaseOrderUpdate};
 use sultan_core::domain::{
     DomainResult, Error, context::Context, model::purchase_order::PurchaseOrderCreate,
 };
@@ -8,6 +8,7 @@ use sultan_core::domain::{
 pub struct MockPurchaseOrderService {
     pub should_succeed: bool,
     pub id: i64,
+    pub purchase_order: Option<PurchaseOrder>,
 }
 
 impl MockPurchaseOrderService {
@@ -15,6 +16,15 @@ impl MockPurchaseOrderService {
         Self {
             should_succeed: true,
             id: 1,
+            purchase_order: None,
+        }
+    }
+
+    pub fn new_success_with_purchase_order(purchase_order: PurchaseOrder) -> Self {
+        Self {
+            should_succeed: true,
+            id: purchase_order.id,
+            purchase_order: Some(purchase_order),
         }
     }
 
@@ -23,6 +33,7 @@ impl MockPurchaseOrderService {
         Self {
             should_succeed: false,
             id: 1,
+            purchase_order: None,
         }
     }
 }
@@ -50,5 +61,24 @@ impl PurchaseOrderServiceTrait for MockPurchaseOrderService {
             ));
         }
         Ok(())
+    }
+    async fn delete(&self, _ctx: &Context, _branch_id: i64, _id: i64) -> DomainResult<()> {
+        if !self.should_succeed {
+            return Err(Error::Internal(
+                "Failed to delete purchase order".to_string(),
+            ));
+        }
+        Ok(())
+    }
+    async fn get(
+        &self,
+        _ctx: &Context,
+        _branch_id: i64,
+        _id: i64,
+    ) -> DomainResult<Option<PurchaseOrder>> {
+        if !self.should_succeed {
+            return Err(Error::Internal("Failed to get purchase order".to_string()));
+        }
+        Ok(self.purchase_order.clone())
     }
 }
