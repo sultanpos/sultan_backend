@@ -197,7 +197,7 @@ pub async fn purchase_order_test_create_and_get_by_id<C: PurchaseOrderRepository
         .expect("add_item failed");
 
     let fetched = repo
-        .get_by_id(ctx, id)
+        .get_by_id(ctx, branch_id, id)
         .await
         .expect("get_by_id failed")
         .expect("order not found");
@@ -218,6 +218,12 @@ pub async fn purchase_order_test_create_and_get_by_id<C: PurchaseOrderRepository
     assert_eq!(fetched.items[0].quantity, 10);
     assert_eq!(fetched.items[0].total_cost, 50_000);
     assert!(fetched.payments.is_empty());
+
+    let fetched_not_found = repo
+        .get_by_id(ctx, 99999, id)
+        .await
+        .expect("get_by_id failed");
+    assert!(fetched_not_found.is_none());
 }
 
 pub async fn purchase_order_test_update<C: PurchaseOrderRepository>(
@@ -266,7 +272,7 @@ pub async fn purchase_order_test_update<C: PurchaseOrderRepository>(
     .expect("update failed");
 
     let updated = repo
-        .get_by_id(ctx, id)
+        .get_by_id(ctx, branch_id, id)
         .await
         .unwrap()
         .expect("not found after update");
@@ -326,7 +332,7 @@ pub async fn purchase_order_test_add_payment_updates_paid_amount<C: PurchaseOrde
     .await
     .expect("add_payment failed");
 
-    let order = repo.get_by_id(ctx, id).await.unwrap().unwrap();
+    let order = repo.get_by_id(ctx, branch_id, id).await.unwrap().unwrap();
     assert_eq!(order.paid_amount, 10_000);
     assert_eq!(order.payment_status, PaymentStatus::Partial);
     assert_eq!(order.payments.len(), 1);
@@ -383,7 +389,7 @@ pub async fn purchase_order_test_add_payment_full_status_paid<C: PurchaseOrderRe
     .await
     .expect("add_payment failed");
 
-    let order = repo.get_by_id(ctx, id).await.unwrap().unwrap();
+    let order = repo.get_by_id(ctx, branch_id, id).await.unwrap().unwrap();
     assert_eq!(order.payment_status, PaymentStatus::Paid);
     assert_eq!(order.paid_amount, 20_000);
 }
@@ -445,9 +451,14 @@ pub async fn purchase_order_test_soft_delete<C: PurchaseOrderRepository>(
         .await
         .expect("add_item failed");
 
-    repo.delete(ctx, id).await.expect("delete failed");
+    let result = repo.delete(ctx, 999, id).await;
+    assert!(result.is_err());
 
-    let result = repo.get_by_id(ctx, id).await.unwrap();
+    repo.delete(ctx, branch_id, id)
+        .await
+        .expect("delete failed");
+
+    let result = repo.get_by_id(ctx, branch_id, id).await.unwrap();
     assert!(result.is_none(), "Deleted order must not be returned");
 }
 
@@ -455,7 +466,7 @@ pub async fn purchase_order_test_delete_not_found<C: PurchaseOrderRepository>(
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &C,
 ) {
-    let result = repo.delete(ctx, 999_999_999).await;
+    let result = repo.delete(ctx, 10, 999_999_999).await;
     assert!(
         matches!(result, Err(crate::domain::error::Error::NotFound(_))),
         "Expected NotFound for delete on non-existent order"
@@ -466,7 +477,7 @@ pub async fn purchase_order_test_get_by_id_not_found<C: PurchaseOrderRepository>
     ctx: &RepoCtx<DatabaseConnection>,
     repo: &C,
 ) {
-    let result = repo.get_by_id(ctx, 999_999_999).await.unwrap();
+    let result = repo.get_by_id(ctx, 1, 999_999_999).await.unwrap();
     assert!(result.is_none());
 }
 
@@ -824,7 +835,11 @@ pub async fn purchase_order_test_add_item<C: PurchaseOrderRepository>(
     .await
     .expect("add_item failed");
 
-    let order_before = repo.get_by_id(ctx, order_id).await.unwrap().unwrap();
+    let order_before = repo
+        .get_by_id(ctx, branch_id, order_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(order_before.subtotal, 5_000);
     assert_eq!(order_before.items.len(), 1);
 
@@ -841,7 +856,11 @@ pub async fn purchase_order_test_add_item<C: PurchaseOrderRepository>(
         .await
         .expect("add_item failed");
 
-    let order_after = repo.get_by_id(ctx, order_id).await.unwrap().unwrap();
+    let order_after = repo
+        .get_by_id(ctx, branch_id, order_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(order_after.subtotal, 11_000); // 5_000 + 6_000
     assert_eq!(order_after.total_amount, 11_000);
     assert_eq!(order_after.items.len(), 2);
@@ -905,7 +924,11 @@ pub async fn purchase_order_test_update_item<C: PurchaseOrderRepository>(
     .await
     .expect("update_item failed");
 
-    let order = repo.get_by_id(ctx, order_id).await.unwrap().unwrap();
+    let order = repo
+        .get_by_id(ctx, branch_id, order_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(order.items[0].quantity, 4);
     assert_eq!(order.items[0].unit_cost, 3_000);
     assert_eq!(order.items[0].total_cost, 12_000);
@@ -975,7 +998,11 @@ pub async fn purchase_order_test_delete_item<C: PurchaseOrderRepository>(
     .await
     .expect("add_item failed");
 
-    let order_before = repo.get_by_id(ctx, order_id).await.unwrap().unwrap();
+    let order_before = repo
+        .get_by_id(ctx, branch_id, order_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(order_before.subtotal, 13_000);
     assert_eq!(order_before.items.len(), 2);
 
@@ -983,7 +1010,11 @@ pub async fn purchase_order_test_delete_item<C: PurchaseOrderRepository>(
         .await
         .expect("delete_item failed");
 
-    let order_after = repo.get_by_id(ctx, order_id).await.unwrap().unwrap();
+    let order_after = repo
+        .get_by_id(ctx, branch_id, order_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(order_after.subtotal, 3_000);
     assert_eq!(order_after.total_amount, 3_000);
     assert_eq!(order_after.items.len(), 1);
@@ -1165,7 +1196,11 @@ pub async fn purchase_order_test_update_payment<C: PurchaseOrderRepository>(
     assert_eq!(payments[0].payment_channel_id, channel_id_2);
     assert_eq!(payments[0].notes, Some("updated".to_string()));
 
-    let order = repo.get_by_id(ctx, order_id).await.unwrap().unwrap();
+    let order = repo
+        .get_by_id(ctx, branch_id, order_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(order.paid_amount, 10_000);
     assert_eq!(order.payment_status, PaymentStatus::Partial);
 
@@ -1227,7 +1262,11 @@ pub async fn purchase_order_test_delete_payment<C: PurchaseOrderRepository>(
     .await
     .expect("add_payment failed");
 
-    let order_before = repo.get_by_id(ctx, order_id).await.unwrap().unwrap();
+    let order_before = repo
+        .get_by_id(ctx, branch_id, order_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(order_before.payment_status, PaymentStatus::Paid);
     assert_eq!(order_before.paid_amount, 20_000);
 
@@ -1235,7 +1274,11 @@ pub async fn purchase_order_test_delete_payment<C: PurchaseOrderRepository>(
         .await
         .expect("delete_payment failed");
 
-    let order_after = repo.get_by_id(ctx, order_id).await.unwrap().unwrap();
+    let order_after = repo
+        .get_by_id(ctx, branch_id, order_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(order_after.paid_amount, 0);
     assert_eq!(order_after.payment_status, PaymentStatus::Unpaid);
     let payments = repo.get_payments(ctx, order_id).await.unwrap();

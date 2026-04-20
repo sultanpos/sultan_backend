@@ -10,8 +10,9 @@ use crate::application::ServiceDbHelper;
 use crate::domain::Context;
 use crate::domain::DomainResult;
 use crate::domain::model::permission::{action, resource};
-use crate::domain::model::purchase_order::PurchaseOrderCreate;
-use crate::domain::model::purchase_order::PurchaseOrderUpdate;
+use crate::domain::model::purchase_order::{
+    PurchaseOrder, PurchaseOrderCreate, PurchaseOrderUpdate,
+};
 use crate::snowflake::IdGenerator;
 use crate::storage::PurchaseOrderRepository;
 
@@ -25,6 +26,13 @@ pub trait PurchaseOrderServiceTrait: Send + Sync {
         id: i64,
         data: &PurchaseOrderUpdate,
     ) -> DomainResult<()>;
+    async fn delete(&self, ctx: &Context, branch_id: i64, id: i64) -> DomainResult<()>;
+    async fn get(
+        &self,
+        ctx: &Context,
+        branch_id: i64,
+        id: i64,
+    ) -> DomainResult<Option<PurchaseOrder>>;
 }
 
 pub struct PurchaseOrderService<R, I> {
@@ -93,6 +101,24 @@ impl<R: PurchaseOrderRepository, I: IdGenerator> PurchaseOrderServiceTrait
             .await?;
         Ok(())
     }
+
+    async fn delete(&self, ctx: &Context, branch_id: i64, id: i64) -> DomainResult<()> {
+        ctx.require_access(Some(branch_id), resource::PURCHASE_ORDER, action::DELETE)?;
+        let repo_ctx = self.repo_ctx(ctx);
+        self.repository.delete(&repo_ctx, branch_id, id).await?;
+        Ok(())
+    }
+
+    async fn get(
+        &self,
+        ctx: &Context,
+        branch_id: i64,
+        id: i64,
+    ) -> DomainResult<Option<PurchaseOrder>> {
+        ctx.require_access(Some(branch_id), resource::PURCHASE_ORDER, action::READ)?;
+        let repo_ctx = self.repo_ctx(ctx);
+        self.repository.get_by_id(&repo_ctx, branch_id, id).await
+    }
 }
 
 #[cfg(test)]
@@ -123,6 +149,21 @@ mod tests {
         update_fn: Arc<
             Mutex<Option<Box<dyn Fn(i64, i64, PurchaseOrderUpdate) -> DomainResult<()> + Send>>>,
         >,
+        delete_fn: Arc<Mutex<Option<Box<dyn Fn(i64, i64) -> DomainResult<()> + Send>>>>,
+        get_by_id_fn: Arc<
+            Mutex<
+                Option<
+                    Box<
+                        dyn Fn(
+                                i64,
+                                i64,
+                            ) -> DomainResult<
+                                Option<crate::domain::model::purchase_order::PurchaseOrder>,
+                            > + Send,
+                    >,
+                >,
+            >,
+        >,
     }
 
     impl MockPurchaseOrderRepo {
@@ -130,6 +171,8 @@ mod tests {
             Self {
                 create_fn: Arc::new(Mutex::new(None)),
                 update_fn: Arc::new(Mutex::new(None)),
+                delete_fn: Arc::new(Mutex::new(None)),
+                get_by_id_fn: Arc::new(Mutex::new(None)),
             }
         }
 
@@ -145,6 +188,26 @@ mod tests {
             F: Fn(i64, i64, PurchaseOrderUpdate) -> DomainResult<()> + Send + 'static,
         {
             *self.update_fn.lock().unwrap() = Some(Box::new(f));
+        }
+
+        fn expect_delete<F>(&mut self, f: F)
+        where
+            F: Fn(i64, i64) -> DomainResult<()> + Send + 'static,
+        {
+            *self.delete_fn.lock().unwrap() = Some(Box::new(f));
+        }
+
+        fn expect_get_by_id<F>(&mut self, f: F)
+        where
+            F: Fn(
+                    i64,
+                    i64,
+                )
+                    -> DomainResult<Option<crate::domain::model::purchase_order::PurchaseOrder>>
+                + Send
+                + 'static,
+        {
+            *self.get_by_id_fn.lock().unwrap() = Some(Box::new(f));
         }
     }
 
@@ -179,9 +242,15 @@ mod tests {
         async fn get_by_id(
             &self,
             _ctx: &RepoCtx<impl ConnectionTrait>,
-            _id: i64,
+            branch_id: i64,
+            id: i64,
         ) -> DomainResult<Option<crate::domain::model::purchase_order::PurchaseOrder>> {
-            panic!("get_by_id not mocked")
+            let func = self.get_by_id_fn.lock().unwrap();
+            if let Some(f) = func.as_ref() {
+                f(branch_id, id)
+            } else {
+                panic!("get_by_id not mocked")
+            }
         }
 
         async fn update(
@@ -199,8 +268,18 @@ mod tests {
             }
         }
 
-        async fn delete(&self, _ctx: &RepoCtx<impl ConnectionTrait>, _id: i64) -> DomainResult<()> {
-            panic!("delete not mocked")
+        async fn delete(
+            &self,
+            _ctx: &RepoCtx<impl ConnectionTrait>,
+            branch_id: i64,
+            id: i64,
+        ) -> DomainResult<()> {
+            let func = self.delete_fn.lock().unwrap();
+            if let Some(f) = func.as_ref() {
+                f(branch_id, id)
+            } else {
+                panic!("delete not mocked")
+            }
         }
 
         async fn get_all(
@@ -502,5 +581,136 @@ mod tests {
         // branch_id=1 in context, but order 99 belongs to branch 2
         let result = service.update(&ctx, 1, 99, &make_update_data()).await;
         assert!(matches!(result, Err(Error::NotFound(_))));
+    }
+
+    fn make_purchase_order(
+        id: i64,
+        branch_id: i64,
+    ) -> crate::domain::model::purchase_order::PurchaseOrder {
+        crate::domain::model::purchase_order::PurchaseOrder {
+            id,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            deleted_at: None,
+            is_deleted: false,
+            branch_id,
+            supplier_id: None,
+            number: "PO-0001".to_string(),
+            reference_number: None,
+            status: crate::domain::model::purchase_order::PurchaseOrderStatus::Draft,
+            order_date: None,
+            expected_date: None,
+            received_date: None,
+            subtotal: 0,
+            discount_amount: 0,
+            total_amount: 0,
+            payment_status: crate::domain::model::purchase_order::PaymentStatus::Unpaid,
+            payment_due_date: None,
+            paid_amount: 0,
+            returned_amount: 0,
+            notes: None,
+            metadata: None,
+            items: vec![],
+            payments: vec![],
+        }
+    }
+
+    #[tokio::test]
+    async fn test_delete_success() {
+        let db = create_test_db().await;
+        let mut repo = MockPurchaseOrderRepo::new();
+        repo.expect_delete(|branch_id, id| {
+            assert_eq!(branch_id, 1);
+            assert_eq!(id, 10);
+            Ok(())
+        });
+        let id_gen = create_mock_id_gen(0);
+        let mock_number_service = MockNumberService::new();
+
+        let service = PurchaseOrderService::new(repo, id_gen, Arc::new(mock_number_service), db);
+        let ctx = create_test_context();
+
+        let result = service.delete(&ctx, 1, 10).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_delete_unauthorized() {
+        let db = create_test_db().await;
+        let repo = MockPurchaseOrderRepo::new();
+        let id_gen = create_mock_id_gen(0);
+        let mock_number_service = MockNumberService::new();
+
+        let service = PurchaseOrderService::new(repo, id_gen, Arc::new(mock_number_service), db);
+        let ctx = create_unauthorized_context();
+
+        let result = service.delete(&ctx, 1, 10).await;
+        assert!(matches!(result, Err(Error::Forbidden(_))));
+    }
+
+    #[tokio::test]
+    async fn test_delete_repo_error_propagated() {
+        let db = create_test_db().await;
+        let mut repo = MockPurchaseOrderRepo::new();
+        repo.expect_delete(|_branch_id, _id| Err(Error::NotFound("not found".to_string())));
+        let id_gen = create_mock_id_gen(0);
+        let mock_number_service = MockNumberService::new();
+
+        let service = PurchaseOrderService::new(repo, id_gen, Arc::new(mock_number_service), db);
+        let ctx = create_test_context();
+
+        let result = service.delete(&ctx, 1, 10).await;
+        assert!(matches!(result, Err(Error::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_get_success() {
+        let db = create_test_db().await;
+        let mut repo = MockPurchaseOrderRepo::new();
+        repo.expect_get_by_id(|branch_id, id| {
+            assert_eq!(branch_id, 1);
+            assert_eq!(id, 10);
+            Ok(Some(make_purchase_order(id, branch_id)))
+        });
+        let id_gen = create_mock_id_gen(0);
+        let mock_number_service = MockNumberService::new();
+
+        let service = PurchaseOrderService::new(repo, id_gen, Arc::new(mock_number_service), db);
+        let ctx = create_test_context();
+
+        let result = service.get(&ctx, 1, 10).await;
+        assert!(result.is_ok());
+        let po = result.unwrap();
+        assert!(po.is_some());
+        assert_eq!(po.unwrap().id, 10);
+    }
+
+    #[tokio::test]
+    async fn test_get_unauthorized() {
+        let db = create_test_db().await;
+        let repo = MockPurchaseOrderRepo::new();
+        let id_gen = create_mock_id_gen(0);
+        let mock_number_service = MockNumberService::new();
+
+        let service = PurchaseOrderService::new(repo, id_gen, Arc::new(mock_number_service), db);
+        let ctx = create_unauthorized_context();
+
+        let result = service.get(&ctx, 1, 10).await;
+        assert!(matches!(result, Err(Error::Forbidden(_))));
+    }
+
+    #[tokio::test]
+    async fn test_get_repo_error_propagated() {
+        let db = create_test_db().await;
+        let mut repo = MockPurchaseOrderRepo::new();
+        repo.expect_get_by_id(|_branch_id, _id| Err(Error::Internal("db error".to_string())));
+        let id_gen = create_mock_id_gen(0);
+        let mock_number_service = MockNumberService::new();
+
+        let service = PurchaseOrderService::new(repo, id_gen, Arc::new(mock_number_service), db);
+        let ctx = create_test_context();
+
+        let result = service.get(&ctx, 1, 10).await;
+        assert!(matches!(result, Err(Error::Internal(_))));
     }
 }
