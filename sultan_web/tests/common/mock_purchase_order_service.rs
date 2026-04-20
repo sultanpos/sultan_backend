@@ -20,6 +20,7 @@ impl MockPurchaseOrderService {
         }
     }
 
+    #[allow(dead_code)]
     pub fn new_success_with_purchase_order(purchase_order: PurchaseOrder) -> Self {
         Self {
             should_succeed: true,

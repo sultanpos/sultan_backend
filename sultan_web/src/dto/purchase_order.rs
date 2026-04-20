@@ -222,7 +222,12 @@ impl Validate for PurchaseOrderUpdateRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
+    use serde_json::json;
     use sultan_core::domain::model::Update;
+    use sultan_core::domain::model::purchase_order::{
+        PaymentStatus, PurchaseOrder, PurchaseOrderItem, PurchaseOrderStatus, PurchasePayment,
+    };
 
     fn default_update_request() -> PurchaseOrderUpdateRequest {
         PurchaseOrderUpdateRequest {
@@ -321,5 +326,113 @@ mod tests {
         };
         let err = req.validate().unwrap_err();
         assert!(err.field_errors().contains_key("supplier_id"));
+    }
+
+    #[test]
+    fn test_purchase_order_response_from_domain_maps_fields() {
+        let now = Utc::now();
+        let item = PurchaseOrderItem {
+            id: 11,
+            created_at: now,
+            updated_at: now,
+            purchase_order_id: 1,
+            product_variant_id: 101,
+            product_name: "Coffee Beans".to_string(),
+            variant_name: Some("1kg".to_string()),
+            barcode: Some("1234567890123".to_string()),
+            quantity: 2,
+            unit_cost: 10000,
+            discount_amount: 500,
+            total_cost: 19500,
+            metadata: Some(json!({"batch": "A1"})),
+        };
+        let payment = PurchasePayment {
+            id: 21,
+            created_at: now,
+            purchase_order_id: 1,
+            amount: 19500,
+            payment_channel_id: 7,
+            paid_at: now,
+            reference: Some("PAY-001".to_string()),
+            notes: Some("Paid in full".to_string()),
+        };
+        let po = PurchaseOrder {
+            id: 1,
+            created_at: now,
+            updated_at: now,
+            deleted_at: None,
+            is_deleted: false,
+            branch_id: 2,
+            supplier_id: Some(9),
+            number: "PO-0001".to_string(),
+            reference_number: Some("REF-001".to_string()),
+            status: PurchaseOrderStatus::Ordered,
+            order_date: Some(now),
+            expected_date: Some(now),
+            received_date: None,
+            subtotal: 20000,
+            discount_amount: 500,
+            total_amount: 19500,
+            payment_status: PaymentStatus::Partial,
+            payment_due_date: Some(now),
+            paid_amount: 10000,
+            returned_amount: 0,
+            notes: Some("urgent".to_string()),
+            metadata: Some(json!({"source": "test"})),
+            items: vec![item],
+            payments: vec![payment],
+        };
+
+        let response = PurchaseOrderResponse::from(po);
+
+        assert_eq!(response.id, 1);
+        assert_eq!(response.branch_id, 2);
+        assert_eq!(response.supplier_id, Some(9));
+        assert_eq!(response.status, "ordered");
+        assert_eq!(response.payment_status, "partial");
+        assert_eq!(response.items.len(), 1);
+        assert_eq!(response.items[0].product_name, "Coffee Beans");
+        assert_eq!(response.payments.len(), 1);
+        assert_eq!(response.payments[0].payment_channel_id, 7);
+    }
+
+    #[test]
+    fn test_purchase_order_response_from_domain_with_none_optional_fields() {
+        let now = Utc::now();
+        let po = PurchaseOrder {
+            id: 2,
+            created_at: now,
+            updated_at: now,
+            deleted_at: None,
+            is_deleted: false,
+            branch_id: 3,
+            supplier_id: None,
+            number: "PO-0002".to_string(),
+            reference_number: None,
+            status: PurchaseOrderStatus::Draft,
+            order_date: None,
+            expected_date: None,
+            received_date: None,
+            subtotal: 0,
+            discount_amount: 0,
+            total_amount: 0,
+            payment_status: PaymentStatus::Unpaid,
+            payment_due_date: None,
+            paid_amount: 0,
+            returned_amount: 0,
+            notes: None,
+            metadata: None,
+            items: vec![],
+            payments: vec![],
+        };
+
+        let response = PurchaseOrderResponse::from(po);
+
+        assert_eq!(response.id, 2);
+        assert_eq!(response.supplier_id, None);
+        assert_eq!(response.status, "draft");
+        assert_eq!(response.payment_status, "unpaid");
+        assert!(response.items.is_empty());
+        assert!(response.payments.is_empty());
     }
 }
